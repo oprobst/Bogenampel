@@ -6,3 +6,6 @@ Schaltung/**/*.*-bak
 .claude/sessions/
 .claude/cache/
 .claude/.env
+
+.specify/sessions/
+.specify/cache/
