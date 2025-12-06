@@ -1,0 +1,7 @@
+Schaltung/*.lck
+Schaltung/fp-info-cache
+Schaltung/Bogenampel-backups/*
+
+.claude/sessions/
+.claude/cache/
+.claude/.env
