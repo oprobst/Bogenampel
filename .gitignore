@@ -1,6 +1,7 @@
 Schaltung/*.lck
 Schaltung/fp-info-cache
 Schaltung/Bogenampel-backups/*
+Schaltung/**/*.*-bak
 
 .claude/sessions/
 .claude/cache/
