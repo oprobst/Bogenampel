@@ -14,7 +14,10 @@ PfeileHolenMenu::PfeileHolenMenu(Adafruit_ST7789& tft, ButtonManager& btnMgr)
     , firstDraw(true)
     , lastCursorPosition(0xFF)
     , connectionOk(false)
-    , lastConnectionOk(false) {
+    , lastConnectionOk(false)
+    , shooterCount(2)  // Default: 1-2 Schützen
+    , currentGroup(Groups::Type::GROUP_AB)
+    , currentPosition(Groups::Position::POS_1) {
 }
 
 void PfeileHolenMenu::begin() {
@@ -30,12 +33,17 @@ void PfeileHolenMenu::begin() {
 }
 
 void PfeileHolenMenu::update() {
-    // Button-Handling
+    // Anzahl sichtbarer Buttons bestimmen
+    // Bei 1-2 Schützen: 2 Buttons (Nächste Passe, Neustart)
+    // Bei 3-4 Schützen: 3 Buttons (Nächste Passe, Reihenfolge, Neustart)
+    uint8_t numButtons = (shooterCount == 4) ? 3 : 2;
+    uint8_t maxPosition = numButtons - 1;
 
+    // Button-Handling
     // Links: Cursor nach links (mit Wrapping)
     if (buttons.wasPressed(Button::LEFT)) {
         if (cursorPosition == 0) {
-            cursorPosition = 2;  // Wrap to last
+            cursorPosition = maxPosition;  // Wrap to last
         } else {
             cursorPosition--;
         }
@@ -45,16 +53,21 @@ void PfeileHolenMenu::update() {
     }
     // Rechts: Cursor nach rechts (mit Wrapping)
     else if (buttons.wasPressed(Button::RIGHT)) {
-        cursorPosition = (cursorPosition + 1) % 3;  // 0 → 1 → 2 → 0
+        cursorPosition = (cursorPosition + 1) % numButtons;
         needsUpdate = true;
         DEBUG_PRINT(F("PfeileHolenMenu: Cursor -> "));
         DEBUG_PRINTLN(cursorPosition);
     }
     // OK: Aktion auswählen
     else if (buttons.wasPressed(Button::OK)) {
-        selectedAction = static_cast<PfeileHolenAction>(cursorPosition);
+        // Bei 1-2 Schützen: Position 0=Nächste, 1=Neustart → Position 1 auf 2 mappen
+        if (shooterCount == 2 && cursorPosition == 1) {
+            selectedAction = PfeileHolenAction::NEUSTART;
+        } else {
+            selectedAction = static_cast<PfeileHolenAction>(cursorPosition);
+        }
         DEBUG_PRINT(F("PfeileHolenMenu: Aktion gewaehlt -> "));
-        DEBUG_PRINTLN(cursorPosition);
+        DEBUG_PRINTLN(static_cast<int>(selectedAction));
     }
 }
 
@@ -64,6 +77,7 @@ void PfeileHolenMenu::draw() {
         display.fillScreen(ST77XX_BLACK);
         drawHeader();
         drawOptions();
+        drawShooterGroupInfo();  // Schützengruppen-Info (nur bei 3-4 Schützen)
         drawHelp();
         drawConnectionIcon();
 
@@ -77,6 +91,7 @@ void PfeileHolenMenu::draw() {
         // Selective Redraw: Nur Optionen neu zeichnen wenn Cursor sich bewegt
         if (cursorPosition != lastCursorPosition) {
             drawOptions();
+            drawShooterGroupInfo();  // Schützengruppen-Info aktualisieren
             lastCursorPosition = cursorPosition;
             DEBUG_PRINTLN(F("PfeileHolenMenu: Selective redraw"));
         }
@@ -109,53 +124,148 @@ void PfeileHolenMenu::drawHeader() {
 
 void PfeileHolenMenu::drawOptions() {
     const uint16_t buttonY = 60;
-    const uint16_t buttonHeight = 40;
-    const uint16_t buttonSpacing = 15;
-    const uint16_t buttonWidth = 200;
-    const uint16_t buttonX = 10;
+    const uint16_t buttonHeight = 35;
+    const uint16_t buttonSpacing = 10;
+    const uint16_t margin = 10;
 
-    // Bereich löschen (alle 3 Buttons + Spacing)
-    display.fillRect(0, buttonY, display.width(), 3 * buttonHeight + 2 * buttonSpacing + 2, ST77XX_BLACK);
+    // Anzahl Buttons bestimmen
+    uint8_t numButtons = (shooterCount == 4) ? 3 : 2;
 
-    // Button-Texte
-    const char* buttonTexts[3] = {
-        "Naechste Passe",
-        "Reihenfolge",
-        "Neustart"
-    };
+    // Bereich löschen
+    display.fillRect(0, buttonY, display.width(), 2 * buttonHeight + buttonSpacing + 60, ST77XX_BLACK);
 
-    // Alle 3 Buttons zeichnen
-    for (uint8_t i = 0; i < 3; i++) {
-        uint16_t y = buttonY + i * (buttonHeight + buttonSpacing);
-        bool isSelected = (i == cursorPosition);
-
-        // Schatten (1px rechts und unten)
-        display.drawRect(buttonX + 1, y + 1, buttonWidth, buttonHeight, ST77XX_BLACK);
+    // =========================================================================
+    // Button 0: "Nächste Passe" - Volle Breite oben
+    // =========================================================================
+    {
+        uint16_t btnX = margin;
+        uint16_t btnY = buttonY;
+        uint16_t btnW = display.width() - 2 * margin;
+        uint16_t btnH = buttonHeight;
+        bool isSelected = (cursorPosition == 0);
 
         // Hintergrund wenn ausgewählt
         if (isSelected) {
-            display.fillRect(buttonX, y, buttonWidth, buttonHeight, Display::COLOR_DARKGRAY);
+            display.fillRect(btnX, btnY, btnW, btnH, Display::COLOR_DARKGRAY);
         }
 
-        // Rahmen (gelb wenn ausgewählt, weiß sonst)
+        // Rahmen
         uint16_t frameColor = isSelected ? ST77XX_YELLOW : ST77XX_WHITE;
-        display.drawRect(buttonX, y, buttonWidth, buttonHeight, frameColor);
+        display.drawRect(btnX, btnY, btnW, btnH, frameColor);
 
-        // Text zentriert im Button
+        // Text zentriert
         int16_t x1, y1;
         uint16_t w, h;
-        display.setTextSize(2);
-        display.getTextBounds(buttonTexts[i], 0, 0, &x1, &y1, &w, &h);
-        uint16_t text_x = buttonX + (buttonWidth - w) / 2;
-        uint16_t text_y = y + (buttonHeight - h) / 2;
-
-        display.setCursor(text_x, text_y);
+        display.setTextSize(2);  // Größere Schrift für Hauptbutton
+        display.getTextBounds("Naechste Passe", 0, 0, &x1, &y1, &w, &h);
+        display.setCursor(btnX + (btnW - w) / 2, btnY + (btnH - h) / 2);
         display.setTextColor(frameColor);
-        display.print(buttonTexts[i]);
+        display.print("Naechste Passe");
 
-        // Unterstreichung wenn ausgewählt
         if (isSelected) {
+            uint16_t text_x = btnX + (btnW - w) / 2;
+            uint16_t text_y = btnY + (btnH - h) / 2;
             display.drawLine(text_x, text_y + h + 1, text_x + w, text_y + h + 1, frameColor);
+        }
+    }
+
+    // =========================================================================
+    // Button 1 & 2: "Reihenfolge" (nur bei 3-4 Schützen) und "Neustart" - Halbe Breite nebeneinander
+    // =========================================================================
+    const uint16_t row2Y = buttonY + buttonHeight + buttonSpacing;
+    const uint16_t halfWidth = (display.width() - 3 * margin) / 2;
+
+    if (shooterCount == 4) {
+        // Bei 3-4 Schützen: "Reihenfolge" links, "Neustart" rechts
+
+        // "Reihenfolge" (Position 1)
+        {
+            uint16_t btnX = margin;
+            uint16_t btnY = row2Y;
+            uint16_t btnW = halfWidth;
+            uint16_t btnH = buttonHeight;
+            bool isSelected = (cursorPosition == 1);
+
+            if (isSelected) {
+                display.fillRect(btnX, btnY, btnW, btnH, Display::COLOR_DARKGRAY);
+            }
+
+            uint16_t frameColor = isSelected ? ST77XX_YELLOW : ST77XX_WHITE;
+            display.drawRect(btnX, btnY, btnW, btnH, frameColor);
+
+            int16_t x1, y1;
+            uint16_t w, h;
+            display.setTextSize(1);
+            display.getTextBounds("Reihenfolge", 0, 0, &x1, &y1, &w, &h);
+            display.setCursor(btnX + (btnW - w) / 2, btnY + (btnH - h) / 2);
+            display.setTextColor(frameColor);
+            display.print("Reihenfolge");
+
+            if (isSelected) {
+                uint16_t text_x = btnX + (btnW - w) / 2;
+                uint16_t text_y = btnY + (btnH - h) / 2;
+                display.drawLine(text_x, text_y + h + 1, text_x + w, text_y + h + 1, frameColor);
+            }
+        }
+
+        // "Neustart" (Position 2)
+        {
+            uint16_t btnX = margin + halfWidth + margin;
+            uint16_t btnY = row2Y;
+            uint16_t btnW = halfWidth;
+            uint16_t btnH = buttonHeight;
+            bool isSelected = (cursorPosition == 2);
+
+            if (isSelected) {
+                display.fillRect(btnX, btnY, btnW, btnH, Display::COLOR_DARKGRAY);
+            }
+
+            uint16_t frameColor = isSelected ? ST77XX_YELLOW : ST77XX_WHITE;
+            display.drawRect(btnX, btnY, btnW, btnH, frameColor);
+
+            int16_t x1, y1;
+            uint16_t w, h;
+            display.setTextSize(1);
+            display.getTextBounds("Neustart", 0, 0, &x1, &y1, &w, &h);
+            display.setCursor(btnX + (btnW - w) / 2, btnY + (btnH - h) / 2);
+            display.setTextColor(frameColor);
+            display.print("Neustart");
+
+            if (isSelected) {
+                uint16_t text_x = btnX + (btnW - w) / 2;
+                uint16_t text_y = btnY + (btnH - h) / 2;
+                display.drawLine(text_x, text_y + h + 1, text_x + w, text_y + h + 1, frameColor);
+            }
+        }
+    } else {
+        // Bei 1-2 Schützen: Nur "Neustart" volle Breite
+        {
+            uint16_t btnX = margin;
+            uint16_t btnY = row2Y;
+            uint16_t btnW = display.width() - 2 * margin;
+            uint16_t btnH = buttonHeight;
+            bool isSelected = (cursorPosition == 1);
+
+            if (isSelected) {
+                display.fillRect(btnX, btnY, btnW, btnH, Display::COLOR_DARKGRAY);
+            }
+
+            uint16_t frameColor = isSelected ? ST77XX_YELLOW : ST77XX_WHITE;
+            display.drawRect(btnX, btnY, btnW, btnH, frameColor);
+
+            int16_t x1, y1;
+            uint16_t w, h;
+            display.setTextSize(2);
+            display.getTextBounds("Neustart", 0, 0, &x1, &y1, &w, &h);
+            display.setCursor(btnX + (btnW - w) / 2, btnY + (btnH - h) / 2);
+            display.setTextColor(frameColor);
+            display.print("Neustart");
+
+            if (isSelected) {
+                uint16_t text_x = btnX + (btnW - w) / 2;
+                uint16_t text_y = btnY + (btnH - h) / 2;
+                display.drawLine(text_x, text_y + h + 1, text_x + w, text_y + h + 1, frameColor);
+            }
         }
     }
 }
@@ -239,5 +349,57 @@ void PfeileHolenMenu::updateConnectionStatus(bool isConnected) {
 
         DEBUG_PRINT(F("PfeileHolenMenu: Verbindungsstatus -> "));
         DEBUG_PRINTLN(isConnected ? F("OK") : F("NO"));
+    }
+}
+
+void PfeileHolenMenu::setTournamentConfig(uint8_t shooters, Groups::Type group, Groups::Position position) {
+    shooterCount = shooters;
+    currentGroup = group;
+    currentPosition = position;
+    needsUpdate = true;
+
+    DEBUG_PRINT(F("PfeileHolenMenu: Config -> "));
+    DEBUG_PRINT(shooters);
+    DEBUG_PRINT(F(" Schützen, Gruppe: "));
+    DEBUG_PRINT(group == Groups::Type::GROUP_AB ? F("A/B") : F("C/D"));
+    DEBUG_PRINT(F(", Position: "));
+    DEBUG_PRINTLN(static_cast<int>(position));
+}
+
+void PfeileHolenMenu::drawShooterGroupInfo() {
+    // Nur bei 3-4 Schützen anzeigen
+    if (shooterCount != 4) return;
+
+    // Position: Unter dem "Neustart" Button
+    const uint16_t infoY = display.height() - 50;
+    const uint16_t infoX = 10;
+
+    // Bereich löschen
+    display.fillRect(0, infoY, display.width(), 15, ST77XX_BLACK);
+
+    // 4-Sequenz anzeigen basierend auf aktuellem Zustand
+    // Zyklus: AB_POS1 -> CD_POS1 -> CD_POS2 -> AB_POS2 -> AB_POS1
+    // Format: Pfeile (->) für Gruppenwechsel in gleicher Passe
+    //         Geschweifte Klammern (} {) für Passenwechsel
+
+    display.setTextSize(1);
+    display.setTextColor(ST77XX_CYAN);
+    display.setCursor(infoX, infoY);
+
+    if (currentGroup == Groups::Type::GROUP_AB && currentPosition == Groups::Position::POS_1) {
+        // State 1: AB_POS1 -> nächste 3: CD_POS1, CD_POS2, AB_POS2
+        display.print(F("Aktiv: A/B | Naechste: -> C/D } { C/D -> A/B }"));
+    }
+    else if (currentGroup == Groups::Type::GROUP_CD && currentPosition == Groups::Position::POS_1) {
+        // State 2: CD_POS1 -> nächste 3: CD_POS2, AB_POS2, AB_POS1
+        display.print(F("Aktiv: C/D | Naechste: } { C/D -> A/B } { A/B"));
+    }
+    else if (currentGroup == Groups::Type::GROUP_CD && currentPosition == Groups::Position::POS_2) {
+        // State 3: CD_POS2 -> nächste 3: AB_POS2, AB_POS1, CD_POS1
+        display.print(F("Aktiv: C/D | Naechste: -> A/B } { A/B -> C/D }"));
+    }
+    else { // currentGroup == Groups::Type::GROUP_AB && currentPosition == Groups::Position::POS_2
+        // State 4: AB_POS2 -> nächste 3: AB_POS1, CD_POS1, CD_POS2
+        display.print(F("Aktiv: A/B | Naechste: } { A/B -> C/D } { C/D"));
     }
 }
