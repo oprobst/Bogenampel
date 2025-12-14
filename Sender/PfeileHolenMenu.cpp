@@ -178,7 +178,7 @@ void PfeileHolenMenu::drawOptions() {
     if (shooterCount == 4) {
         // Bei 3-4 Schützen: "Reihenfolge" links, "Neustart" rechts
 
-        // "Reihenfolge" (Position 1)
+        // "Abfolge" (Position 1)
         {
             uint16_t btnX = margin;
             uint16_t btnY = row2Y;
@@ -195,11 +195,11 @@ void PfeileHolenMenu::drawOptions() {
 
             int16_t x1, y1;
             uint16_t w, h;
-            display.setTextSize(1);
-            display.getTextBounds("Reihenfolge", 0, 0, &x1, &y1, &w, &h);
+            display.setTextSize(2);
+            display.getTextBounds("Abfolge", 0, 0, &x1, &y1, &w, &h);
             display.setCursor(btnX + (btnW - w) / 2, btnY + (btnH - h) / 2);
             display.setTextColor(frameColor);
-            display.print("Reihenfolge");
+            display.print("Abfolge");
 
             if (isSelected) {
                 uint16_t text_x = btnX + (btnW - w) / 2;
@@ -225,7 +225,7 @@ void PfeileHolenMenu::drawOptions() {
 
             int16_t x1, y1;
             uint16_t w, h;
-            display.setTextSize(1);
+            display.setTextSize(2);
             display.getTextBounds("Neustart", 0, 0, &x1, &y1, &w, &h);
             display.setCursor(btnX + (btnW - w) / 2, btnY + (btnH - h) / 2);
             display.setTextColor(frameColor);
@@ -373,33 +373,43 @@ void PfeileHolenMenu::drawShooterGroupInfo() {
     // Position: Unter dem "Neustart" Button
     const uint16_t infoY = display.height() - 50;
     const uint16_t infoX = 10;
+    const uint16_t lineHeight = 18; // Zeilenhöhe für Textgröße 2
 
-    // Bereich löschen
-    display.fillRect(0, infoY, display.width(), 15, ST77XX_BLACK);
+    // Bereich löschen (größer für 2 Zeilen mit Textgröße 2)
+    display.fillRect(0, infoY, display.width(), 40, ST77XX_BLACK);
 
     // 4-Sequenz anzeigen basierend auf aktuellem Zustand
     // Zyklus: AB_POS1 -> CD_POS1 -> CD_POS2 -> AB_POS2 -> AB_POS1
     // Format: Pfeile (->) für Gruppenwechsel in gleicher Passe
     //         Geschweifte Klammern (} {) für Passenwechsel
 
-    display.setTextSize(1);
+    display.setTextSize(2);
     display.setTextColor(ST77XX_CYAN);
+
+    // Zeile 1: "Aktiv: X/Y"
+    const char* currentGroupStr = (currentGroup == Groups::Type::GROUP_AB) ? "A/B" : "C/D";
     display.setCursor(infoX, infoY);
+    display.print(F("Aktiv: "));
+    display.print(currentGroupStr);
+
+    // Zeile 2: "Dann: ..." (zeigt nächste 3 Zustände)
+    display.setCursor(infoX, infoY + lineHeight);
+    display.print(F("Dann: "));
 
     if (currentGroup == Groups::Type::GROUP_AB && currentPosition == Groups::Position::POS_1) {
         // State 1: AB_POS1 -> nächste 3: CD_POS1, CD_POS2, AB_POS2
-        display.print(F("Aktiv: A/B | Naechste: -> C/D } { C/D -> A/B }"));
+        display.print(F("->C/D }{C/D->A/B}"));
     }
     else if (currentGroup == Groups::Type::GROUP_CD && currentPosition == Groups::Position::POS_1) {
         // State 2: CD_POS1 -> nächste 3: CD_POS2, AB_POS2, AB_POS1
-        display.print(F("Aktiv: C/D | Naechste: } { C/D -> A/B } { A/B"));
+        display.print(F("}{C/D->A/B}{A/B"));
     }
     else if (currentGroup == Groups::Type::GROUP_CD && currentPosition == Groups::Position::POS_2) {
         // State 3: CD_POS2 -> nächste 3: AB_POS2, AB_POS1, CD_POS1
-        display.print(F("Aktiv: C/D | Naechste: -> A/B } { A/B -> C/D }"));
+        display.print(F("->A/B }{A/B->C/D}"));
     }
     else { // currentGroup == Groups::Type::GROUP_AB && currentPosition == Groups::Position::POS_2
         // State 4: AB_POS2 -> nächste 3: AB_POS1, CD_POS1, CD_POS2
-        display.print(F("Aktiv: A/B | Naechste: } { A/B -> C/D } { C/D"));
+        display.print(F("}{A/B->C/D}{C/D"));
     }
 }
