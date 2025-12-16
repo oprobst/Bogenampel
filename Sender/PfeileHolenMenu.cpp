@@ -274,7 +274,7 @@ void PfeileHolenMenu::drawHelp() {
     // Hilfetext unten
     display.setTextSize(1);
     display.setTextColor(Display::COLOR_GRAY);
-    display.setCursor(10, display.height() - 30);
+    display.setCursor(10, display.height() - 15);
     display.print(F("L/R: Auswaehlen, OK: Bestaetigen"));
 }
 
@@ -346,9 +346,6 @@ void PfeileHolenMenu::updateConnectionStatus(bool isConnected) {
     if (connectionOk != isConnected) {
         connectionOk = isConnected;
         needsUpdate = true;
-
-        DEBUG_PRINT(F("PfeileHolenMenu: Verbindungsstatus -> "));
-        DEBUG_PRINTLN(isConnected ? F("OK") : F("NO"));
     }
 }
 
@@ -356,14 +353,7 @@ void PfeileHolenMenu::setTournamentConfig(uint8_t shooters, Groups::Type group, 
     shooterCount = shooters;
     currentGroup = group;
     currentPosition = position;
-    needsUpdate = true;
-
-    DEBUG_PRINT(F("PfeileHolenMenu: Config -> "));
-    DEBUG_PRINT(shooters);
-    DEBUG_PRINT(F(" Schützen, Gruppe: "));
-    DEBUG_PRINT(group == Groups::Type::GROUP_AB ? F("A/B") : F("C/D"));
-    DEBUG_PRINT(F(", Position: "));
-    DEBUG_PRINTLN(static_cast<int>(position));
+    needsUpdate = true;  
 }
 
 void PfeileHolenMenu::drawShooterGroupInfo() {
@@ -371,45 +361,59 @@ void PfeileHolenMenu::drawShooterGroupInfo() {
     if (shooterCount != 4) return;
 
     // Position: Unter dem "Neustart" Button
-    const uint16_t infoY = display.height() - 50;
+    const uint16_t infoY = display.height() - 65;
     const uint16_t infoX = 10;
-    const uint16_t lineHeight = 18; // Zeilenhöhe für Textgröße 2
+    const uint16_t lineHeight = 20; // Zeilenhöhe für Textgröße 2
 
-    // Bereich löschen (größer für 2 Zeilen mit Textgröße 2)
+    // Bereich löschen
     display.fillRect(0, infoY, display.width(), 40, ST77XX_BLACK);
 
-    // 4-Sequenz anzeigen basierend auf aktuellem Zustand
-    // Zyklus: AB_POS1 -> CD_POS1 -> CD_POS2 -> AB_POS2 -> AB_POS1
-    // Format: Pfeile (->) für Gruppenwechsel in gleicher Passe
-    //         Geschweifte Klammern (} {) für Passenwechsel
-
-    display.setTextSize(2);
-    display.setTextColor(ST77XX_CYAN);
-
-    // Zeile 1: "Aktiv: X/Y"
-    const char* currentGroupStr = (currentGroup == Groups::Type::GROUP_AB) ? "A/B" : "C/D";
+    // Zeile 1: "Nächste: A/B" oder "Nächste: C/D"
     display.setCursor(infoX, infoY);
-    display.print(F("Aktiv: "));
-    display.print(currentGroupStr);
+    display.setTextSize(2);
+    display.setTextColor(ST77XX_WHITE);
+    display.print(F("Naechste: "));
+    display.setTextColor(ST77XX_YELLOW);
+    display.println(currentGroup == Groups::Type::GROUP_AB ? F("A/B") : F("C/D"));
 
-    // Zeile 2: "Dann: ..." (zeigt nächste 3 Zustände)
+    // Zeile 2: Statischer String mit Hervorhebung
     display.setCursor(infoX, infoY + lineHeight);
-    display.print(F("Dann: "));
+    display.setTextSize(2);
 
-    if (currentGroup == Groups::Type::GROUP_AB && currentPosition == Groups::Position::POS_1) {
-        // State 1: AB_POS1 -> nächste 3: CD_POS1, CD_POS2, AB_POS2
-        display.print(F("->C/D }{C/D->A/B}"));
-    }
-    else if (currentGroup == Groups::Type::GROUP_CD && currentPosition == Groups::Position::POS_1) {
-        // State 2: CD_POS1 -> nächste 3: CD_POS2, AB_POS2, AB_POS1
-        display.print(F("}{C/D->A/B}{A/B"));
-    }
-    else if (currentGroup == Groups::Type::GROUP_CD && currentPosition == Groups::Position::POS_2) {
-        // State 3: CD_POS2 -> nächste 3: AB_POS2, AB_POS1, CD_POS1
-        display.print(F("->A/B }{A/B->C/D}"));
-    }
-    else { // currentGroup == Groups::Type::GROUP_AB && currentPosition == Groups::Position::POS_2
-        // State 4: AB_POS2 -> nächste 3: AB_POS1, CD_POS1, CD_POS2
-        display.print(F("}{A/B->C/D}{C/D"));
-    }
+    // "{A/B -> C/D} {C/D -> A/B}"
+    // Teile: "{A/B", " -> ", "C/D}", " ", "{C/D", " -> ", "A/B}"
+
+    // Bestimme welcher Teil gelb sein soll
+    bool highlightAB1 = (currentGroup == Groups::Type::GROUP_AB && currentPosition == Groups::Position::POS_1);
+    bool highlightCD1 = (currentGroup == Groups::Type::GROUP_CD && currentPosition == Groups::Position::POS_1);
+    bool highlightCD2 = (currentGroup == Groups::Type::GROUP_CD && currentPosition == Groups::Position::POS_2);
+    bool highlightAB2 = (currentGroup == Groups::Type::GROUP_AB && currentPosition == Groups::Position::POS_2);
+
+    // "{A/B"
+    display.setTextColor(highlightAB1 ? ST77XX_YELLOW : Display::COLOR_GRAY);
+    display.print(F("{A/B"));
+
+    // " -> "
+    display.setTextColor(Display::COLOR_GRAY);
+    display.print(F(" -> "));
+
+    // "C/D}"
+    display.setTextColor(highlightCD1 ? ST77XX_YELLOW : Display::COLOR_GRAY);
+    display.print(F("C/D}"));
+
+    // " "
+    display.setTextColor(Display::COLOR_GRAY);
+    display.print(F(" "));
+
+    // "{C/D"
+    display.setTextColor(highlightCD2 ? ST77XX_YELLOW : Display::COLOR_GRAY);
+    display.print(F("{C/D"));
+
+    // " -> "
+    display.setTextColor(Display::COLOR_GRAY);
+    display.print(F(" -> "));
+
+    // "A/B}"
+    display.setTextColor(highlightAB2 ? ST77XX_YELLOW : Display::COLOR_GRAY);
+    display.print(F("A/B}"));
 }

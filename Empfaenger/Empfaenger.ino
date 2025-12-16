@@ -22,12 +22,16 @@ RF24 radio(Pins::NRF_CE, Pins::NRF_CSN);
 // State-Variablen
 bool systemInitialized = false;   // Wurde CMD_INIT empfangen?
 uint32_t lastBlinkTime = 0;        // Für LED-Blink-Timer
+uint8_t lastButtonReading = HIGH;  // Letzter gelesener Pin-Zustand
+uint8_t buttonState = HIGH;        // Stabiler Button-Zustand nach Debouncing
+uint32_t lastDebounceTime = 0;     // Zeitpunkt der letzten Button-Änderung
 
 //=============================================================================
 // Setup
 //=============================================================================
 
 void setup() {
+    delay(1000);
     // Serial für Debugging
     #if DEBUG_ENABLED
     Serial.begin(System::SERIAL_BAUD);
@@ -45,6 +49,7 @@ void setup() {
 
     // SPI-Bus initialisieren
     SPI.begin();
+    delay(100);  // NRF24L01 benötigt Zeit zum Power-Up nach SPI-Init
     DEBUG_PRINTLN(F("SPI-Bus initialisiert"));
 
     // Pins initialisieren
@@ -83,25 +88,23 @@ void loop() {
         RadioPacket packet;
         radio.read(&packet, sizeof(RadioPacket));
 
-        DEBUG_PRINT(F("Paket empfangen: 0x"));
-        DEBUG_PRINT(packet.command, HEX);
-        DEBUG_PRINT(F(" (Checksum: 0x"));
-        DEBUG_PRINT(packet.checksum, HEX);
-        DEBUG_PRINTLN(F(")"));
+        DEBUG_PRINT(F("RX:"));
+        DEBUG_PRINTLN(packet.command, HEX);
 
         // Validiere Checksum
         if (validateChecksum(&packet)) {
-            DEBUG_PRINTLN(F("Checksum OK"));
-
             // Gelbe LED blinken lassen (Empfangsbestätigung)
             blinkYellowLED();
 
             // Kommando verarbeiten
             handleCommand(static_cast<RadioCommand>(packet.command));
         } else {
-            DEBUG_PRINTLN(F("FEHLER: Ungültige Checksum!"));
+            DEBUG_PRINTLN(F("BAD CRC"));
         }
     }
+
+    // Prüfe Debug-Button
+    checkButton();
 
     // Kleine Pause um CPU zu entlasten
     delay(10);
@@ -125,6 +128,10 @@ void initializePins() {
     digitalWrite(Pins::LED_YELLOW, LOW);
     digitalWrite(Pins::LED_RED, LOW);
 
+    // Buzzer als Ausgang (initial aus)
+    pinMode(Pins::BUZZER, OUTPUT);
+    digitalWrite(Pins::BUZZER, LOW);
+
     // Debug-Taster als Eingang mit Pull-Up
     pinMode(Pins::BTN_DEBUG, INPUT_PULLUP);
 
@@ -139,8 +146,35 @@ void initializePins() {
  * @return true wenn erfolgreich, false bei Fehler
  */
 bool initializeRadio() {
-    // Radio starten (SPI muss bereits initialisiert sein!)
-    if (!radio.begin()) {
+    // Radio starten mit mehreren Versuchen (SPI muss bereits initialisiert sein!)
+    const uint8_t MAX_RETRIES = 3;
+    bool radioOk = false;
+
+    // CSN Pin auf HIGH setzen (deselect) VOR radio.begin()
+    pinMode(Pins::NRF_CSN, OUTPUT);
+    digitalWrite(Pins::NRF_CSN, HIGH);
+    pinMode(Pins::NRF_CE, OUTPUT);
+    digitalWrite(Pins::NRF_CE, LOW);
+    delay(10);
+
+    for (uint8_t attempt = 1; attempt <= MAX_RETRIES && !radioOk; attempt++) {
+        delay(10);  // Kurze Pause vor jedem Versuch
+
+        // Radio initialisieren
+        if (!radio.begin()) {
+            continue;
+        }
+
+        // Chip-Verbindung prüfen (robuster als nur radio.begin())
+        delay(5);  // Kurze Pause nach begin()
+        if (!radio.isChipConnected()) {
+            continue;
+        }
+
+        radioOk = true;
+    }
+
+    if (!radioOk) {
         return false;  // Hardware nicht gefunden
     }
 
@@ -148,17 +182,26 @@ bool initializeRadio() {
     uint8_t pipeAddr[5];
     memcpy_P(pipeAddr, RF::PIPE_ADDRESS, 5);
 
+    // Pipe-Adresse ausgeben (Debug)
+    #if DEBUG_ENABLED
+    DEBUG_PRINT(F("Pipe: "));
+    for (uint8_t i = 0; i < 5; i++) {
+        DEBUG_PRINT((char)pipeAddr[i]);
+    }
+    DEBUG_PRINTLN();
+    #endif
+
     // Radio konfigurieren
     radio.setPALevel(RF::POWER_LEVEL);
     radio.setDataRate(RF::DATA_RATE);
     radio.setChannel(RF::CHANNEL);
     radio.setPayloadSize(sizeof(RadioPacket));
 
-    // Auto-ACK aktivieren
-    radio.setAutoAck(RF::AUTO_ACK_ENABLED);
+    // Auto-ACK DEAKTIVIERT (Kommunikation funktioniert ohne ACK)
+    radio.setAutoAck(false);
 
-    // Pipe für Lesen öffnen (Pipe 0)
-    radio.openReadingPipe(0, pipeAddr);
+    // Pipe für Lesen öffnen (Pipe 1 statt 0 - Pipe 0 wird oft für ACK verwendet)
+    radio.openReadingPipe(1, pipeAddr);
 
     // RX-Modus aktivieren (Empfangsmodus)
     radio.startListening();
@@ -188,6 +231,15 @@ bool initializeRadio() {
     DEBUG_PRINT(F("  Listening: "));
     DEBUG_PRINTLN(radio.isChipConnected() ? F("Chip OK") : F("Chip FEHLER!"));
     DEBUG_PRINTLN(F(""));
+
+    // Komplette Radio-Details ausgeben
+    DEBUG_PRINTLN(F("=== Radio Details ==="));
+    Serial.flush();
+    delay(100);
+    radio.printDetails();
+    delay(100);
+    Serial.flush();
+    DEBUG_PRINTLN(F("====================="));
     #endif
 
     return true;
@@ -234,22 +286,105 @@ void blinkYellowLED() {
 }
 
 /**
+ * @brief Lässt den Buzzer einen kurzen Piepton ausgeben
+ */
+void buzzerBeep() {
+    tone(Pins::BUZZER, Timing::BUZZER_FREQUENCY_HZ);
+    delay(Timing::BUZZER_BEEP_DURATION_MS);
+    noTone(Pins::BUZZER);
+}
+
+/**
+ * @brief Prüft Debug-Button mit Debouncing und löst Buzzer aus
+ */
+void checkButton() {
+    // Aktuellen Button-Zustand lesen (LOW = gedrückt, wegen Pull-Up)
+    uint8_t reading = digitalRead(Pins::BTN_DEBUG);
+
+    // Wenn sich der gelesene Zustand geändert hat, Debounce-Timer zurücksetzen
+    if (reading != lastButtonReading) {
+        lastDebounceTime = millis();
+    }
+
+    // Letzten gelesenen Zustand speichern
+    lastButtonReading = reading;
+
+    // Wenn genug Zeit vergangen ist (Debounce-Zeit), Zustand akzeptieren
+    if ((millis() - lastDebounceTime) > Timing::DEBOUNCE_MS) {
+        // Wenn sich der stabile Zustand geändert hat
+        if (reading != buttonState) {
+            buttonState = reading;
+
+            // Wenn Button gedrückt wurde (neuer stabiler Zustand = LOW)
+            if (buttonState == LOW) {
+                DEBUG_PRINTLN(F("Button gedrückt - Buzzer aktiv"));
+
+                // Buzzer-Signal ausgeben
+                buzzerBeep();
+            }
+        }
+    }
+}
+
+/**
+ * @brief Sendet PONG-Antwort zurück an Sender
+ */
+void sendPong() {
+    // Pipe-Adresse aus PROGMEM laden
+    uint8_t pipeAddr[5];
+    memcpy_P(pipeAddr, RF::PIPE_ADDRESS, 5);
+
+    // Wechsle in TX-Modus
+    radio.stopListening();
+    delay(5);  // Radio braucht Zeit
+
+    // Writing Pipe öffnen
+    radio.openWritingPipe(pipeAddr);
+
+    // RadioPacket erstellen
+    RadioPacket packet;
+    packet.command = CMD_PONG;
+    packet.checksum = calculateChecksum(packet.command);
+
+    // PONG senden
+    radio.write(&packet, sizeof(RadioPacket));
+
+    // Zurück in RX-Modus
+    delay(5);  // Radio braucht Zeit
+    radio.startListening();
+}
+
+/**
  * @brief Verarbeitet empfangenes Kommando
  * @param cmd RadioCommand
  */
 void handleCommand(RadioCommand cmd) {
-    DEBUG_PRINT(F("Verarbeite Kommando: "));
-    DEBUG_PRINTLN(commandToString(cmd));
-
     switch (cmd) {
+        case CMD_PING:
+            // Sender fragt: Bist du da?
+            DEBUG_PRINTLN(F("PING->PONG"));
+            sendPong();  // Antworte mit PONG
+            break;
+
         case CMD_INIT:
             // System initialisieren
-            DEBUG_PRINTLN(F("→ System initialisiert"));
+            DEBUG_PRINTLN(F("INIT"));
             systemInitialized = true;
 
-            // Grüne LED an (Bereit)
+            // Alle LEDs 3x blinken lassen (Bestätigung)
+            for (int i = 0; i < 3; i++) {
+                digitalWrite(Pins::LED_GREEN, HIGH);
+                digitalWrite(Pins::LED_YELLOW, HIGH);
+                digitalWrite(Pins::LED_RED, HIGH);
+                delay(150);
+                digitalWrite(Pins::LED_GREEN, LOW);
+                digitalWrite(Pins::LED_YELLOW, LOW);
+                digitalWrite(Pins::LED_RED, LOW);
+                delay(150);
+            }
+
+            // Grüne LED bleibt an (Bereit)
             digitalWrite(Pins::LED_GREEN, HIGH);
-            digitalWrite(Pins::LED_RED, LOW);
             break;
 
         case CMD_START_120:

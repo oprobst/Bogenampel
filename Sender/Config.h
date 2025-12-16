@@ -110,7 +110,8 @@ namespace RF {
     constexpr uint8_t CHANNEL = 76;  // 2.476 GHz
 
     // RF-Datenrate (verwende RF24-Library Enums direkt)
-    constexpr rf24_datarate_e DATA_RATE = RF24_1MBPS;
+    // RF24_250KBPS = robuster bei schlechten Verbindungen/langen Kabeln!
+    constexpr rf24_datarate_e DATA_RATE = RF24_250KBPS;
 
     // RF-Power Level (verwende RF24-Library Enums direkt)
     constexpr rf24_pa_dbm_e POWER_LEVEL = RF24_PA_MAX;
@@ -167,7 +168,7 @@ namespace Timing {
     constexpr uint8_t DEBOUNCE_MS = 50;  // 50ms Entprellzeit
 
     // Alarm Detection
-    constexpr uint16_t ALARM_THRESHOLD_MS = 3000;  // 3 Sekunden OK-Button halten für Alarm
+    constexpr uint16_t ALARM_THRESHOLD_MS = 2000;  // 2 Sekunden OK-Button halten für Alarm
 
     // Display-Aktualisierung
     constexpr uint16_t DISPLAY_UPDATE_MS = 100;  // 100ms (10 fps)

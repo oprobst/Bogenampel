@@ -69,14 +69,11 @@ void ConfigMenu::update() {
             // Toggle zwischen 120 und 240
             shootingTime = (shootingTime == 120) ? 240 : 120;
             needsUpdate = true;
-            DEBUG_PRINT(F("ConfigMenu: Zeit -> "));
-            DEBUG_PRINT(shootingTime);
-            DEBUG_PRINTLN(F("s"));
         }
         else if (buttons.wasPressed(Button::OK)) {
             cursorLine = 1;
             needsUpdate = true;
-            DEBUG_PRINTLN(F("ConfigMenu: Cursor -> Zeile 1 (Schuetzen)"));
+            
         }
     }
     else if (cursorLine == 1) {
@@ -84,14 +81,11 @@ void ConfigMenu::update() {
         if (buttons.wasPressed(Button::LEFT) || buttons.wasPressed(Button::RIGHT)) {
             // Toggle zwischen 2 und 4
             shooterCount = (shooterCount == 2) ? 4 : 2;
-            needsUpdate = true;
-            DEBUG_PRINT(F("ConfigMenu: Schuetzen -> "));
-            DEBUG_PRINTLN(shooterCount == 2 ? F("1-2") : F("3-4"));
+            needsUpdate = true;           
         }
         else if (buttons.wasPressed(Button::OK)) {
             cursorLine = 2;
             needsUpdate = true;
-            DEBUG_PRINTLN(F("ConfigMenu: Cursor -> Zeile 2 (Buttons)"));
         }
     }
     else if (cursorLine == 2) {
@@ -109,16 +103,11 @@ void ConfigMenu::update() {
                 cursorLine = 0;
                 changeRequested = true;
                 needsUpdate = true;
-                DEBUG_PRINTLN(F("ConfigMenu: Aendern -> zurueck zu Zeile 0"));
+                
             }
             else {
                 // "Start" → Menü abschließen
-                complete = true;
-                DEBUG_PRINTLN(F("ConfigMenu: Start bestaetigt"));
-                DEBUG_PRINT(F("  Finale Config - Zeit: "));
-                DEBUG_PRINT(shootingTime);
-                DEBUG_PRINT(F("s, Schuetzen: "));
-                DEBUG_PRINTLN(shooterCount == 2 ? F("1-2") : F("3-4"));
+                complete = true;               
             }
         }
     }
@@ -141,7 +130,6 @@ void ConfigMenu::draw() {
         lastSelectedButton = selectedButton;
         firstDraw = false;
 
-        DEBUG_PRINTLN(F("ConfigMenu: Initial draw"));
     }
     else {
         // Selective Redraw: Nur geänderte Bereiche neu zeichnen
@@ -360,6 +348,6 @@ void ConfigMenu::drawHelp() {
     // Hilfetext unten
     display.setTextSize(1);
     display.setTextColor(Display::COLOR_GRAY);
-    display.setCursor(10, display.height() - 30);
+    display.setCursor(10, display.height() - 15);
     display.print(F("L/R: Aendern, OK: Weiter"));
 }

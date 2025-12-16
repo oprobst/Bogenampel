@@ -48,6 +48,11 @@ namespace Pins {
     constexpr uint8_t LED_RED    = A4;  // D3: Rote LED (Stop/Alarm)
 
     //-------------------------------------------------------------------------
+    // Ausgänge: Signalgeber
+    //-------------------------------------------------------------------------
+    constexpr uint8_t BUZZER     = 4;   // D6: KY-006 Passiver Piezo Buzzer
+
+    //-------------------------------------------------------------------------
     // Eingänge: Taster (mit internem Pull-Up, aktiv LOW)
     //-------------------------------------------------------------------------
     constexpr uint8_t BTN_DEBUG  = 5;   // J1: Debug-Taster
@@ -64,7 +69,8 @@ namespace RF {
     constexpr uint8_t CHANNEL = 76;  // 2.476 GHz
 
     // RF-Datenrate (verwende RF24-Library Enums direkt)
-    constexpr rf24_datarate_e DATA_RATE = RF24_1MBPS;
+    // RF24_250KBPS = robuster bei schlechten Verbindungen/langen Kabeln!
+    constexpr rf24_datarate_e DATA_RATE = RF24_250KBPS;
 
     // RF-Power Level (verwende RF24-Library Enums direkt)
     constexpr rf24_pa_dbm_e POWER_LEVEL = RF24_PA_MAX;
@@ -92,6 +98,10 @@ namespace Timing {
     // Button Debouncing
     constexpr uint8_t DEBOUNCE_MS = 50;  // 50ms Entprellzeit
 
+    // Buzzer-Feedback
+    constexpr uint16_t BUZZER_BEEP_DURATION_MS = 1000;  // Dauer eines Pieptons
+    constexpr uint16_t BUZZER_FREQUENCY_HZ = 2700;     // Frequenz des Piezo-Tons (2kHz)
+
 } // namespace Timing
 
 //=============================================================================
@@ -106,7 +116,7 @@ namespace System {
     const char BUILD_TIME[] PROGMEM = __TIME__;
 
     // Serial Baud Rate (für Debugging)
-    constexpr uint32_t SERIAL_BAUD = 115200;
+    constexpr uint32_t SERIAL_BAUD = 57600;
 
     // Debugging aktivieren/deaktivieren
     #define DEBUG_ENABLED 1  // 1 = Debug-Ausgaben an, 0 = aus

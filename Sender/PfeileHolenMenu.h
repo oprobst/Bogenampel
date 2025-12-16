@@ -92,6 +92,14 @@ public:
      */
     void updateConnectionStatus(bool isConnected);
 
+    /**
+     * @brief Setzt die Turnierkonfiguration
+     * @param shooters Anzahl Schützen (2 oder 4)
+     * @param group Aktuelle Gruppe (GROUP_AB oder GROUP_CD)
+     * @param position Aktuelle Position (POS_1 oder POS_2)
+     */
+    void setTournamentConfig(uint8_t shooters, Groups::Type group, Groups::Position position);
+
 private:
     Adafruit_ST7789& display;
     ButtonManager& buttons;
@@ -111,9 +119,15 @@ private:
     bool connectionOk;
     bool lastConnectionOk;
 
+    // Turnierkonfiguration
+    uint8_t shooterCount;           // 2 (1-2 Schützen) oder 4 (3-4 Schützen)
+    Groups::Type currentGroup;      // Aktuelle Gruppe (GROUP_AB oder GROUP_CD)
+    Groups::Position currentPosition; // Aktuelle Position (POS_1 oder POS_2)
+
     // Hilfsfunktionen für selective drawing
     void drawHeader();
     void drawOptions();
     void drawHelp();
     void drawConnectionIcon();
+    void drawShooterGroupInfo();  // Zeigt Schützengruppen bei 3-4 Schützen
 };

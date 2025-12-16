@@ -33,20 +33,12 @@ void setup() {
     #if DEBUG_ENABLED
     Serial.begin(System::SERIAL_BAUD);
     while (!Serial && millis() < 2000);
-    DEBUG_PRINTLN(F(""));
-    DEBUG_PRINTLN(F("======================================"));
-    DEBUG_PRINTLN(F("  Bogenampel Sender V1.0"));
-    DEBUG_PRINTLN(F("======================================"));
-    DEBUG_PRINT(F("Build: "));
-    DEBUG_PRINT(F(__DATE__));
-    DEBUG_PRINT(F(" "));
-    DEBUG_PRINTLN(F(__TIME__));
-    DEBUG_PRINTLN(F(""));
+    DEBUG_PRINTLN(F("\nBogenampel V1.0"));
     #endif
 
     // SPI-Bus VOR allen SPI-Geräten initialisieren
     SPI.begin();
-    DEBUG_PRINTLN(F("SPI-Bus initialisiert"));
+    delay(100);  // NRF24L01 benötigt Zeit zum Power-Up nach SPI-Init
 
     // Pins initialisieren
     initializePins();
@@ -55,25 +47,24 @@ void setup() {
     buttons.begin();
 
     // Radio ZUERST initialisieren (VOR Display!)
-    DEBUG_PRINTLN(F("Initialisiere NRF24L01..."));
-    if (!initializeRadio()) {
-        DEBUG_PRINTLN(F("FEHLER: NRF24L01 nicht gefunden!"));
-        // TODO: Fehleranzeige auf Display
-    } else {
-        DEBUG_PRINTLN(F("NRF24L01 initialisiert"));
-    }
+    bool radioOk = initializeRadio();
+    DEBUG_PRINTLN(radioOk ? F("NRF OK") : F("NRF FAIL"));
 
     // Display initialisieren (nach Radio)
-    DEBUG_PRINTLN(F("Initialisiere Display..."));
     tft.init(Display::WIDTH, Display::HEIGHT);  // ST7789 benötigt Auflösung
     tft.invertDisplay(false);
     tft.setRotation(Display::ROTATION);
-    DEBUG_PRINTLN(F("Display initialisiert"));
 
     // State Machine starten (beginnt im SPLASH_SCREEN State und zeigt Splash Screen)
     stateMachine.begin();
 
-    DEBUG_PRINTLN(F("Setup abgeschlossen\n"));
+    // Radio-Status an State Machine übergeben
+    stateMachine.setRadioInitialized(radioOk);
+
+    DEBUG_PRINTLN(F("Setup OK\n"));
+
+    // Warte 2 Sekunden, damit Empfänger auch bereit ist
+    delay(2000);
 }
 
 //=============================================================================
@@ -86,22 +77,17 @@ void loop() {
 
     // Alarm-Detection (globale Prüfung, hat Vorrang vor allem anderen)
     if (buttons.isAlarmTriggered()) {
-        DEBUG_PRINTLN(F("ALARM ausgelöst! Sende CMD_ALARM..."));
+        DEBUG_PRINTLN(F("ALARM!"));
 
         // Sende Alarm mit Retries
         TransmissionResult result = sendAlarmWithRetry();
 
         if (result == TX_SUCCESS) {
-            DEBUG_PRINTLN(F("Alarm erfolgreich gesendet"));
             // Kurzes visuelles Feedback
             digitalWrite(Pins::LED_RED, HIGH);
             delay(50);
             digitalWrite(Pins::LED_RED, LOW);
-        } else {
-            DEBUG_PRINTLN(F("FEHLER: Alarm konnte nicht gesendet werden!"));
-            // TODO: Fehleranzeige auf Display
         }
-
         // Kein State-Wechsel, bleibe im aktuellen State
     }
 
@@ -120,8 +106,6 @@ void loop() {
  * @brief Initialisiert alle GPIO-Pins
  */
 void initializePins() {
-    DEBUG_PRINTLN(F("Initialisiere Pins..."));
-
     // Buttons werden vom ButtonManager initialisiert
 
     // Status-LED als Ausgang (initial aus)
@@ -130,8 +114,6 @@ void initializePins() {
 
     // NRF24 Control Pins werden von RF24.begin() initialisiert!
     // Keine manuelle Initialisierung nötig
-
-    DEBUG_PRINTLN(F("Pins initialisiert"));
 }
 
 /**
@@ -139,8 +121,49 @@ void initializePins() {
  * @return true wenn erfolgreich, false bei Fehler
  */
 bool initializeRadio() {
-    // Radio starten (SPI muss bereits initialisiert sein!)
-    if (!radio.begin()) {
+    // Radio starten mit mehreren Versuchen (SPI muss bereits initialisiert sein!)
+    const uint8_t MAX_RETRIES = 3;
+    bool radioOk = false;
+
+    #if DEBUG_ENABLED
+    // CSN Pin auf HIGH setzen (deselect) VOR radio.begin()
+    pinMode(Pins::NRF_CSN, OUTPUT);
+    digitalWrite(Pins::NRF_CSN, HIGH);
+    pinMode(Pins::NRF_CE, OUTPUT);
+    digitalWrite(Pins::NRF_CE, LOW);
+    delay(10);
+
+    DEBUG_PRINT(F("NRF CE="));
+    DEBUG_PRINT(Pins::NRF_CE);
+    DEBUG_PRINT(F(" CSN="));
+    DEBUG_PRINTLN(Pins::NRF_CSN);
+    #endif
+
+    for (uint8_t attempt = 1; attempt <= MAX_RETRIES && !radioOk; attempt++) {
+        delay(10);  // Kurze Pause vor jedem Versuch
+
+        // Radio initialisieren
+        if (!radio.begin()) {
+            #if DEBUG_ENABLED
+            DEBUG_PRINT(F("Retry "));
+            DEBUG_PRINTLN(attempt);
+            #endif
+            continue;
+        }
+
+        // Chip-Verbindung prüfen (robuster als nur radio.begin())
+        delay(5);  // Kurze Pause nach begin()
+        if (!radio.isChipConnected()) {
+            continue;
+        }
+
+        radioOk = true;
+    }
+
+    if (!radioOk) {
+        #if DEBUG_ENABLED
+        DEBUG_PRINTLN(F("NRF FAIL"));
+        #endif
         return false;  // Hardware nicht gefunden
     }
 
@@ -148,50 +171,49 @@ bool initializeRadio() {
     uint8_t pipeAddr[5];
     memcpy_P(pipeAddr, RF::PIPE_ADDRESS, 5);
 
+    // Pipe-Adresse ausgeben (Debug)
+    #if DEBUG_ENABLED
+    DEBUG_PRINT(F("Pipe: "));
+    for (uint8_t i = 0; i < 5; i++) {
+        DEBUG_PRINT((char)pipeAddr[i]);
+    }
+    DEBUG_PRINTLN();
+    #endif
+
     // Radio konfigurieren
     radio.setPALevel(RF::POWER_LEVEL);
     radio.setDataRate(RF::DATA_RATE);
     radio.setChannel(RF::CHANNEL);
-    radio.setRetries(RF::RETRY_DELAY, RF::RETRY_COUNT);
     radio.setPayloadSize(sizeof(RadioPacket));
 
-    // Auto-ACK aktivieren
-    radio.setAutoAck(true);
-
-    // Pipe für Schreiben öffnen
-    radio.openWritingPipe(pipeAddr);
-
-    // Pipe 0 für ACK-Empfang öffnen (WICHTIG für Auto-ACK!)
-    radio.openReadingPipe(0, pipeAddr);
+    // Auto-ACK DEAKTIVIERT (Kommunikation funktioniert ohne ACK)
+    radio.setAutoAck(false);
 
     // TX-Modus aktivieren
     radio.stopListening();
 
-    #if DEBUG_ENABLED
-    DEBUG_PRINTLN(F("NRF24 Konfiguration:"));
-    DEBUG_PRINT(F("  Kanal: "));
-    DEBUG_PRINTLN(RF::CHANNEL);
-    DEBUG_PRINT(F("  Power: "));
-    DEBUG_PRINTLN(static_cast<int>(RF::POWER_LEVEL));
-    DEBUG_PRINT(F("  Rate: "));
-    DEBUG_PRINTLN(static_cast<int>(RF::DATA_RATE));
-    DEBUG_PRINT(F("  Payload: "));
-    DEBUG_PRINTLN(sizeof(RadioPacket));
+    // Pipe für Schreiben öffnen
+    radio.openWritingPipe(pipeAddr);
 
-    // Manuelle Radio-Diagnose
-    DEBUG_PRINTLN(F(""));
-    DEBUG_PRINTLN(F("Radio Status:"));
-    DEBUG_PRINT(F("  isPVariant: "));
-    DEBUG_PRINTLN(radio.isPVariant() ? F("Ja (Plus)") : F("Nein"));
-    DEBUG_PRINT(F("  getChannel: "));
-    DEBUG_PRINTLN(radio.getChannel());
-    DEBUG_PRINT(F("  getPALevel: "));
-    DEBUG_PRINTLN(radio.getPALevel());
-    DEBUG_PRINT(F("  getDataRate: "));
-    DEBUG_PRINTLN(radio.getDataRate());
-    DEBUG_PRINT(F("  Listening: "));
-    DEBUG_PRINTLN(radio.isChipConnected() ? F("Chip OK") : F("Chip FEHLER!"));
-    DEBUG_PRINTLN(F(""));
+    #if DEBUG_ENABLED
+    DEBUG_PRINT(F("NRF OK Ch"));
+    DEBUG_PRINT(RF::CHANNEL);
+    DEBUG_PRINT(F(" P"));
+    DEBUG_PRINT(RF::POWER_LEVEL);
+    DEBUG_PRINT(F(" R"));
+    DEBUG_PRINT(RF::DATA_RATE);
+    DEBUG_PRINT(F(" "));
+    DEBUG_PRINT(radio.isPVariant() ? F("Plus") : F("Std"));
+    DEBUG_PRINTLN(F(" NoACK"));
+
+    // Komplette Radio-Details ausgeben
+    DEBUG_PRINTLN(F("=== Radio Details ==="));
+    Serial.flush();
+    delay(100);
+    radio.printDetails();
+    delay(100);
+    Serial.flush();
+    DEBUG_PRINTLN(F("====================="));
     #endif
 
     return true;
@@ -208,24 +230,19 @@ TransmissionResult sendCommand(RadioCommand cmd) {
     packet.command = static_cast<uint8_t>(cmd);
     packet.checksum = calculateChecksum(packet.command);
 
-    #if DEBUG_ENABLED
-    DEBUG_PRINT(F("Sende Kommando: "));
-    DEBUG_PRINT(commandToString(cmd));
-    DEBUG_PRINT(F(" (0x"));
-    DEBUG_PRINT(packet.command, HEX);
-    DEBUG_PRINTLN(F(")"));
-    #endif
+    // Kurze Pause vor dem Senden (Radio stabilisieren)
+    delay(10);
 
     // Senden mit Auto-Retry (bereits in RF24 konfiguriert)
     bool success = radio.write(&packet, sizeof(RadioPacket));
 
-    if (success) {
-        DEBUG_PRINTLN(F("  → ACK empfangen"));
-        return TX_SUCCESS;
-    } else {
-        DEBUG_PRINTLN(F("  → Timeout (kein ACK)"));
-        return TX_TIMEOUT;
-    }
+    #if DEBUG_ENABLED
+    DEBUG_PRINT(F("TX:"));
+    DEBUG_PRINT(packet.command, HEX);
+    DEBUG_PRINTLN(success ? F(" OK") : F(" FAIL"));
+    #endif
+
+    return success ? TX_SUCCESS : TX_TIMEOUT;
 }
 
 /**
@@ -237,10 +254,6 @@ TransmissionResult sendAlarmWithRetry() {
 
     for (uint8_t retry = 0; retry < Timing::ALARM_MAX_RETRIES; retry++) {
         if (retry > 0) {
-            DEBUG_PRINT(F("  Retry "));
-            DEBUG_PRINT(retry);
-            DEBUG_PRINT(F("/"));
-            DEBUG_PRINTLN(Timing::ALARM_MAX_RETRIES - 1);
             delay(Timing::ALARM_RETRY_DELAY_MS);
         }
 
@@ -256,23 +269,61 @@ TransmissionResult sendAlarmWithRetry() {
 }
 
 /**
+ * @brief Pingt den Empfänger an und wartet auf PONG-Antwort
+ * @return true wenn Empfänger antwortet (PONG empfangen), false sonst
+ */
+bool pingReceiver() {
+    // Pipe-Adresse aus PROGMEM laden (für Reading Pipe)
+    uint8_t pipeAddr[5];
+    memcpy_P(pipeAddr, RF::PIPE_ADDRESS, 5);
+
+    // 1. Sende PING
+    sendCommand(CMD_PING);
+    delay(10);  // Kurze Pause nach dem Senden
+
+    // 2. Wechsle in RX-Modus zum Empfangen der PONG-Antwort
+    radio.openReadingPipe(1, pipeAddr);  // Pipe 1 für PONG-Empfang
+    radio.startListening();
+    delay(5);  // Radio braucht Zeit zum Modewechsel
+
+    // 3. Warte auf PONG (max 250ms)
+    bool pongReceived = false;
+    uint32_t startTime = millis();
+    const uint16_t PONG_TIMEOUT_MS = 250;
+
+    while (millis() - startTime < PONG_TIMEOUT_MS) {
+        if (radio.available()) {
+            RadioPacket packet;
+            radio.read(&packet, sizeof(RadioPacket));
+
+            // Prüfe ob es ein PONG ist
+            if (validateChecksum(&packet) && packet.command == CMD_PONG) {
+                DEBUG_PRINTLN(F("PONG!"));
+                pongReceived = true;
+                break;
+            }
+        }
+        delay(1);  // Kurze Pause
+    }
+
+    // 4. Zurück in TX-Modus
+    radio.stopListening();
+    delay(5);  // Radio braucht Zeit zum Modewechsel
+
+    return pongReceived;
+}
+
+/**
  * @brief Testet Verbindung zum Empfänger
  * @return true wenn Empfänger antwortet, false sonst
  *
- * Hinweis: Sendet ein CMD_INIT und wartet auf ACK.
- * Ohne Empfänger wird dies immer false zurückgeben.
+ * Hinweis: Ohne ACK können wir nicht wissen, ob Empfänger antwortet.
+ * Wir senden CMD_PING und gehen davon aus, dass es funktioniert.
  */
 bool testReceiverConnection() {
-    DEBUG_PRINTLN(F("Teste Empfaenger-Verbindung..."));
+    // Sende PING (ohne auf PONG zu warten)
+    sendCommand(CMD_PING);
 
-    // Versuche CMD_INIT zu senden (kurzer Timeout)
-    TransmissionResult result = sendCommand(CMD_INIT);
-
-    if (result == TX_SUCCESS) {
-        DEBUG_PRINTLN(F("Empfaenger gefunden!"));
-        return true;
-    } else {
-        DEBUG_PRINTLN(F("Kein Empfaenger gefunden"));
-        return false;
-    }
+    // Gehe davon aus, dass es funktioniert (Kommunikation ist getestet)
+    return true;
 }

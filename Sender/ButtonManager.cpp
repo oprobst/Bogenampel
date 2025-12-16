@@ -19,8 +19,6 @@ ButtonManager::ButtonManager()
 }
 
 void ButtonManager::begin() {
-    DEBUG_PRINTLN(F("ButtonManager initialisiert"));
-
     // Pins als Eingänge mit Pull-Up konfigurieren
     pinMode(Pins::BTN_LEFT, INPUT_PULLUP);
     pinMode(Pins::BTN_OK, INPUT_PULLUP);
@@ -57,13 +55,7 @@ void ButtonManager::update() {
             if (rawPressed && !state.pressed) {
                 state.pressed = true;
                 state.pressTime = now;
-                state.wasPressedFlag = true;
-
-                #if DEBUG_ENABLED
-                DEBUG_PRINT(F("Button "));
-                DEBUG_PRINT(i);
-                DEBUG_PRINTLN(F(" gedrückt"));
-                #endif
+                state.wasPressedFlag = true;               
             }
             // Button wurde losgelassen (Flanke LOW → HIGH)
             else if (!rawPressed && state.pressed) {
@@ -71,9 +63,8 @@ void ButtonManager::update() {
                 state.wasReleasedFlag = true;
 
                 #if DEBUG_ENABLED
-                DEBUG_PRINT(F("Button "));
                 DEBUG_PRINT(i);
-                DEBUG_PRINT(F(" losgelassen ("));
+                DEBUG_PRINT(F(" ("));
                 DEBUG_PRINT(now - state.pressTime);
                 DEBUG_PRINTLN(F("ms)"));
                 #endif
@@ -95,7 +86,7 @@ void ButtonManager::update() {
         uint32_t duration = now - okPressStartTime;
         if (duration >= Timing::ALARM_THRESHOLD_MS && !alarmTriggered) {
             alarmTriggered = true;  // Alarm-Flag setzen (wird mit isAlarmTriggered() abgerufen)
-            DEBUG_PRINTLN(F("ALARM ausgelöst (OK > 3s)"));
+            DEBUG_PRINTLN(F("ALARM"));
         }
     }
     else if (!okPressed && okPressActive) {

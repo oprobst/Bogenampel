@@ -51,6 +51,12 @@ public:
     void update();
 
     /**
+     * @brief Setzt den Radio-Initialisierungsstatus
+     * @param initialized true wenn NRF24L01 Modul gefunden wurde
+     */
+    void setRadioInitialized(bool initialized);
+
+    /**
      * @brief Aktuellen Zustand abfragen
      */
     State getCurrentState() const { return currentState; }
@@ -89,6 +95,7 @@ private:
     //-------------------------------------------------------------------------
     // State Variables: SPLASH
     //-------------------------------------------------------------------------
+    bool radioInitialized;      // NRF24L01 Modul gefunden?
     bool connectionTested;      // Verbindungstest durchgeführt?
     bool connectionSuccessful;  // Empfänger gefunden?
 
@@ -96,6 +103,18 @@ private:
     // State Variables: PFEILE_HOLEN
     //-------------------------------------------------------------------------
     uint32_t lastConnectionCheck;  // Zeitpunkt der letzten Verbindungsprüfung
+
+    //-------------------------------------------------------------------------
+    // Schützengruppen-Tracking (für 3-4 Schützen Modus)
+    //-------------------------------------------------------------------------
+    Groups::Type currentGroup;      // Aktuelle Gruppe (GROUP_AB oder GROUP_CD)
+    Groups::Position currentPosition; // Aktuelle Position (POS_1 oder POS_2)
+
+    //-------------------------------------------------------------------------
+    // State Variables: SCHIESS_BETRIEB
+    //-------------------------------------------------------------------------
+    uint32_t shootingStartTime;     // Zeitpunkt des Schießbetrieb-Starts (millis)
+    uint32_t shootingDurationMs;    // Dauer in Millisekunden (120000 oder 240000)
 
     //-------------------------------------------------------------------------
     // State Handlers
@@ -121,6 +140,7 @@ private:
     // Display Functions
     //-------------------------------------------------------------------------
     void drawSchiessBetrieb();
+    void updateSchiessBetriebTimer();  // Nur Timer aktualisieren (kein Flackern)
 
     //-------------------------------------------------------------------------
     // Hilfsfunktionen
@@ -130,4 +150,10 @@ private:
      * @brief Prüft ob genug Zeit im aktuellen State vergangen ist
      */
     bool timeInState(uint32_t milliseconds) const;
+
+    /**
+     * @brief Wechselt zur nächsten Schützengruppe im 4er-Zyklus
+     * AB_POS1 -> CD_POS1 -> CD_POS2 -> AB_POS2 -> AB_POS1
+     */
+    void advanceToNextGroup();
 };
