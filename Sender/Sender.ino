@@ -125,19 +125,12 @@ bool initializeRadio() {
     const uint8_t MAX_RETRIES = 3;
     bool radioOk = false;
 
-    #if DEBUG_ENABLED
     // CSN Pin auf HIGH setzen (deselect) VOR radio.begin()
     pinMode(Pins::NRF_CSN, OUTPUT);
     digitalWrite(Pins::NRF_CSN, HIGH);
     pinMode(Pins::NRF_CE, OUTPUT);
     digitalWrite(Pins::NRF_CE, LOW);
     delay(10);
-
-    DEBUG_PRINT(F("NRF CE="));
-    DEBUG_PRINT(Pins::NRF_CE);
-    DEBUG_PRINT(F(" CSN="));
-    DEBUG_PRINTLN(Pins::NRF_CSN);
-    #endif
 
     for (uint8_t attempt = 1; attempt <= MAX_RETRIES && !radioOk; attempt++) {
         delay(10);  // Kurze Pause vor jedem Versuch
@@ -171,23 +164,15 @@ bool initializeRadio() {
     uint8_t pipeAddr[5];
     memcpy_P(pipeAddr, RF::PIPE_ADDRESS, 5);
 
-    // Pipe-Adresse ausgeben (Debug)
-    #if DEBUG_ENABLED
-    DEBUG_PRINT(F("Pipe: "));
-    for (uint8_t i = 0; i < 5; i++) {
-        DEBUG_PRINT((char)pipeAddr[i]);
-    }
-    DEBUG_PRINTLN();
-    #endif
-
     // Radio konfigurieren
     radio.setPALevel(RF::POWER_LEVEL);
     radio.setDataRate(RF::DATA_RATE);
     radio.setChannel(RF::CHANNEL);
     radio.setPayloadSize(sizeof(RadioPacket));
 
-    // Auto-ACK DEAKTIVIERT (Kommunikation funktioniert ohne ACK)
-    radio.setAutoAck(false);
+    // Auto-ACK AKTIVIERT für Verbindungskontrolle
+    radio.setAutoAck(RF::AUTO_ACK_ENABLED);
+    radio.setRetries(RF::RETRY_DELAY, RF::RETRY_COUNT);
 
     // TX-Modus aktivieren
     radio.stopListening();
@@ -196,24 +181,10 @@ bool initializeRadio() {
     radio.openWritingPipe(pipeAddr);
 
     #if DEBUG_ENABLED
-    DEBUG_PRINT(F("NRF OK Ch"));
+    DEBUG_PRINT(F("NRF Ch"));
     DEBUG_PRINT(RF::CHANNEL);
-    DEBUG_PRINT(F(" P"));
-    DEBUG_PRINT(RF::POWER_LEVEL);
-    DEBUG_PRINT(F(" R"));
-    DEBUG_PRINT(RF::DATA_RATE);
-    DEBUG_PRINT(F(" "));
-    DEBUG_PRINT(radio.isPVariant() ? F("Plus") : F("Std"));
-    DEBUG_PRINTLN(F(" NoACK"));
-
-    // Komplette Radio-Details ausgeben
-    DEBUG_PRINTLN(F("=== Radio Details ==="));
-    Serial.flush();
-    delay(100);
-    radio.printDetails();
-    delay(100);
-    Serial.flush();
-    DEBUG_PRINTLN(F("====================="));
+    DEBUG_PRINT(F(" ACK"));
+    DEBUG_PRINTLN(radio.isPVariant() ? F("+") : F(""));
     #endif
 
     return true;
@@ -233,15 +204,16 @@ TransmissionResult sendCommand(RadioCommand cmd) {
     // Kurze Pause vor dem Senden (Radio stabilisieren)
     delay(10);
 
-    // Senden mit Auto-Retry (bereits in RF24 konfiguriert)
+    // Senden mit Auto-Retry und ACK-Prüfung
     bool success = radio.write(&packet, sizeof(RadioPacket));
 
     #if DEBUG_ENABLED
     DEBUG_PRINT(F("TX:"));
-    DEBUG_PRINT(packet.command, HEX);
-    DEBUG_PRINTLN(success ? F(" OK") : F(" FAIL"));
+    DEBUG_PRINTLN(success ? F("OK") : F("FAIL"));
     #endif
 
+    // success == true bedeutet: ACK empfangen
+    // success == false bedeutet: Kein ACK nach allen Retries
     return success ? TX_SUCCESS : TX_TIMEOUT;
 }
 
@@ -269,61 +241,50 @@ TransmissionResult sendAlarmWithRetry() {
 }
 
 /**
- * @brief Pingt den Empfänger an und wartet auf PONG-Antwort
- * @return true wenn Empfänger antwortet (PONG empfangen), false sonst
+ * @brief Testet Verbindung zum Empfänger mit einem einzelnen PING
+ * @return true wenn ACK empfangen wurde, false sonst
  */
-bool pingReceiver() {
-    // Pipe-Adresse aus PROGMEM laden (für Reading Pipe)
-    uint8_t pipeAddr[5];
-    memcpy_P(pipeAddr, RF::PIPE_ADDRESS, 5);
-
-    // 1. Sende PING
-    sendCommand(CMD_PING);
-    delay(10);  // Kurze Pause nach dem Senden
-
-    // 2. Wechsle in RX-Modus zum Empfangen der PONG-Antwort
-    radio.openReadingPipe(1, pipeAddr);  // Pipe 1 für PONG-Empfang
-    radio.startListening();
-    delay(5);  // Radio braucht Zeit zum Modewechsel
-
-    // 3. Warte auf PONG (max 250ms)
-    bool pongReceived = false;
-    uint32_t startTime = millis();
-    const uint16_t PONG_TIMEOUT_MS = 250;
-
-    while (millis() - startTime < PONG_TIMEOUT_MS) {
-        if (radio.available()) {
-            RadioPacket packet;
-            radio.read(&packet, sizeof(RadioPacket));
-
-            // Prüfe ob es ein PONG ist
-            if (validateChecksum(&packet) && packet.command == CMD_PONG) {
-                DEBUG_PRINTLN(F("PONG!"));
-                pongReceived = true;
-                break;
-            }
-        }
-        delay(1);  // Kurze Pause
-    }
-
-    // 4. Zurück in TX-Modus
-    radio.stopListening();
-    delay(5);  // Radio braucht Zeit zum Modewechsel
-
-    return pongReceived;
+bool testReceiverConnection() {
+    TransmissionResult result = sendCommand(CMD_PING);
+    return (result == TX_SUCCESS);
 }
 
 /**
- * @brief Testet Verbindung zum Empfänger
- * @return true wenn Empfänger antwortet, false sonst
+ * @brief Testet Verbindungsqualität mit 10 Pings in 5 Sekunden
+ * @return Erfolgsrate in Prozent (0-100)
  *
- * Hinweis: Ohne ACK können wir nicht wissen, ob Empfänger antwortet.
- * Wir senden CMD_PING und gehen davon aus, dass es funktioniert.
+ * Sendet 10 PING-Kommandos im Abstand von 500ms und zählt erfolgreiche ACKs.
+ * Die Rückgabe ist die Erfolgsrate in Prozent (0% = alle fehlgeschlagen, 100% = alle erfolgreich).
  */
-bool testReceiverConnection() {
-    // Sende PING (ohne auf PONG zu warten)
-    sendCommand(CMD_PING);
+uint8_t testConnectionQuality() {
+    uint8_t successCount = 0;
+    const uint8_t totalPings = RF::QUALITY_TEST_PINGS;
 
-    // Gehe davon aus, dass es funktioniert (Kommunikation ist getestet)
-    return true;
+    DEBUG_PRINTLN(F("QTest"));
+
+    for (uint8_t i = 0; i < totalPings; i++) {
+        // Sende PING und prüfe ACK
+        TransmissionResult result = sendCommand(CMD_PING);
+
+        if (result == TX_SUCCESS) {
+            successCount++;
+        }
+
+        // Warte 500ms bis zum nächsten Ping (außer beim letzten)
+        if (i < totalPings - 1) {
+            delay(RF::QUALITY_TEST_INTERVAL_MS);
+        }
+    }
+
+    // Erfolgsrate berechnen (0-100%)
+    uint8_t qualityPercent = (successCount * 100) / totalPings;
+
+    DEBUG_PRINT(successCount);
+    DEBUG_PRINT(F("/"));
+    DEBUG_PRINT(totalPings);
+    DEBUG_PRINT(F("="));
+    DEBUG_PRINT(qualityPercent);
+    DEBUG_PRINTLN(F("%"));
+
+    return qualityPercent;
 }

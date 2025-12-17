@@ -26,6 +26,12 @@ public:
      */
     void updateConnectionStatus(const char* status);
 
+    /**
+     * @brief Zeigt Verbindungsqualität an
+     * @param qualityPercent Qualität in Prozent (0-100)
+     */
+    void showConnectionQuality(uint8_t qualityPercent);
+
 private:
     Adafruit_ST7789& display;
 

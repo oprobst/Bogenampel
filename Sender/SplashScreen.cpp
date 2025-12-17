@@ -25,11 +25,11 @@ void SplashScreen::draw() {
     int16_t x1, y1;
     uint16_t w, h;
     display.getTextBounds("BOGENAMPEL", 0, 0, &x1, &y1, &w, &h);
-    display.setCursor(centerX - w/2, centerY - 60 - h/2);
+    display.setCursor(centerX - w/2, centerY - 75 - h/2);  // 15 Pixel nach oben verschoben
     display.print("BOGENAMPEL");
 
     // Rahmen um Logo
-    display.drawRect(centerX - 140, centerY - 80, 280, 60, ST77XX_GREEN);
+    display.drawRect(centerX - 140, centerY - 95, 280, 60, ST77XX_GREEN);  // 15 Pixel nach oben verschoben
 
     // Versions-Text
     display.setTextColor(ST77XX_WHITE);
@@ -97,4 +97,73 @@ void SplashScreen::updateConnectionStatus(const char* status) {
     display.getTextBounds(status, 0, 0, &x1, &y1, &w, &h);
     display.setCursor(centerX - w/2, STATUS_Y);
     display.print(status);
+}
+
+void SplashScreen::showConnectionQuality(uint8_t qualityPercent) {
+    const int16_t centerX = display.width() / 2;
+    const int16_t centerY = display.height() / 2;
+
+    // Bereich für Qualitätsanzeige löschen (Mitte des Displays)
+    display.fillRect(0, centerY - 30, display.width(), 70, ST77XX_BLACK);
+
+    // Überschrift "Verbindung"
+    display.setTextSize(1);
+    display.setTextColor(ST77XX_WHITE);
+    int16_t x1, y1;
+    uint16_t w, h;
+    display.getTextBounds("Verbindung", 0, 0, &x1, &y1, &w, &h);
+    display.setCursor(centerX - w/2, centerY - 25);
+    display.print("Verbindung");
+
+    // Prozentanzeige (mittel)
+    display.setTextSize(3);
+    char percentText[8];
+    snprintf(percentText, sizeof(percentText), "%d%%", qualityPercent);
+
+    // Farbe abhängig von Qualität
+    uint16_t color;
+    if (qualityPercent >= 80) {
+        color = ST77XX_GREEN;      // Sehr gut (80-100%)
+    } else if (qualityPercent >= 50) {
+        color = Display::COLOR_ORANGE;  // Mittel (50-79%)
+    } else {
+        color = ST77XX_RED;        // Schlecht (0-49%)
+    }
+
+    display.setTextColor(color);
+    display.getTextBounds(percentText, 0, 0, &x1, &y1, &w, &h);
+    display.setCursor(centerX - w/2, centerY - 5);
+    display.print(percentText);
+
+    // Balken-Anzeige (unter Prozentanzeige)
+    const int16_t barWidth = 160;
+    const int16_t barHeight = 12;
+    const int16_t barX = centerX - barWidth/2;
+    const int16_t barY = centerY + 20;
+
+    // Rahmen
+    display.drawRect(barX, barY, barWidth, barHeight, ST77XX_WHITE);
+
+    // Gefüllter Balken (abhängig von Qualität)
+    int16_t fillWidth = (barWidth - 4) * qualityPercent / 100;
+    if (fillWidth > 0) {
+        display.fillRect(barX + 2, barY + 2, fillWidth, barHeight - 4, color);
+    }
+
+    // Text darunter (optional entfernen für noch mehr Platz)
+    display.setTextSize(1);
+    display.setTextColor(Display::COLOR_GRAY);
+    const char* qualityText;
+    if (qualityPercent >= 80) {
+        qualityText = "Sehr gut";
+    } else if (qualityPercent >= 50) {
+        qualityText = "Mittel";
+    } else if (qualityPercent > 0) {
+        qualityText = "Schlecht";
+    } else {
+        qualityText = "Keine Verbindung";
+    }
+    display.getTextBounds(qualityText, 0, 0, &x1, &y1, &w, &h);
+    display.setCursor(centerX - w/2, barY + barHeight + 5);
+    display.print(qualityText);
 }

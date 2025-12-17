@@ -9,6 +9,7 @@
 // Forward-Deklarationen für Radio-Funktionen (implementiert in Sender.ino)
 extern TransmissionResult sendCommand(RadioCommand cmd);
 extern bool testReceiverConnection();
+extern uint8_t testConnectionQuality();
 extern bool initializeRadio();
 
 StateMachine::StateMachine(Adafruit_ST7789& tft, ButtonManager& btnMgr)
@@ -25,6 +26,9 @@ StateMachine::StateMachine(Adafruit_ST7789& tft, ButtonManager& btnMgr)
     , radioInitialized(false)
     , connectionTested(false)
     , connectionSuccessful(false)
+    , qualityTestDone(false)
+    , connectionQuality(0)
+    , qualityDisplayStartTime(0)
     , currentGroup(Groups::Type::GROUP_AB)     // Start mit A/B
     , currentPosition(Groups::Position::POS_1) { // Start mit Position 1
 }
@@ -92,6 +96,9 @@ void StateMachine::enterSplash() {
     // Verbindungstest-Variablen zurücksetzen
     connectionTested = false;
     connectionSuccessful = false;
+    qualityTestDone = false;
+    connectionQuality = 0;
+    qualityDisplayStartTime = 0;
     lastConnectionCheck = 0;  // Sofort testen
 
     // Splash Screen zeichnen (zeigt initial "Suche Empfaengermodul..." an)
@@ -99,11 +106,17 @@ void StateMachine::enterSplash() {
 
     // Status je nach Radio-Initialisierung aktualisieren
     if (!radioInitialized) {
-        splashScreen.updateConnectionStatus("Funkmodul nicht installiert");
+        splashScreen.updateConnectionStatus("Suche Funkmodul");
     }
 }
 
 void StateMachine::handleSplash() {
+    // Taste zum Überspringen prüfen (jederzeit möglich)
+    if (buttons.isAnyPressed()) {
+        setState(State::STATE_CONFIG_MENU);
+        return;
+    }
+
     // Fall 1: Radio-Modul nicht initialisiert
     // -> Versuche alle Sekunde das Modul zu initialisieren
     if (!radioInitialized) {
@@ -111,47 +124,35 @@ void StateMachine::handleSplash() {
             radioInitialized = initializeRadio();
             lastConnectionCheck = millis();
 
-            if (radioInitialized) {
-                splashScreen.updateConnectionStatus("Suche Empfaenger...");
-                // Jetzt mit Empfängersuche fortfahren
-                connectionTested = false;
-                connectionSuccessful = false;
-            } else {
-                splashScreen.updateConnectionStatus("Funkmodul nicht installiert");
+            if (!radioInitialized) {
+                splashScreen.updateConnectionStatus("Suche Funkmodul");
             }
         }
         // Splash Screen bleibt solange bestehen, bis Modul gefunden wird
         return;
     }
 
-    // Fall 2: Radio-Modul initialisiert
-    // -> Sende kontinuierlich PINGs zum Testen (alle 2 Sekunden)
-    if (millis() - lastConnectionCheck >= 2000) {
-        // PING senden
-        sendCommand(CMD_PING);
+    // Fall 2: Radio initialisiert, aber Quality Test noch nicht durchgeführt
+    if (!qualityTestDone) {
+        // Status anzeigen
+        splashScreen.updateConnectionStatus("Teste Verbindung");
 
-        // Zähler für Display
-        static uint8_t pingCount = 0;
-        pingCount++;
-
-        // Status auf Display aktualisieren
-        char statusMsg[32];
-        sprintf(statusMsg, "Sende PING #%d...", pingCount);
-        splashScreen.updateConnectionStatus(statusMsg);
-
-        lastConnectionCheck = millis();
+        // Connection Quality Test durchführen (blockierend, ~5 Sekunden)
+        connectionQuality = testConnectionQuality();
+        qualityTestDone = true;
         connectionTested = true;
+        connectionSuccessful = (connectionQuality > 0);
+        qualityDisplayStartTime = millis();
+
+        // Qualität anzeigen
+        splashScreen.showConnectionQuality(connectionQuality);
+        return;
     }
 
-    // Bedingungen zum Verlassen des Splash Screens:
-    // 1. Mindestens 3 Sekunden vergangen UND mindestens 1 Test durchgeführt
-    // 2. ODER: Taste gedrückt (Skip)
-
-    bool minTimeElapsed = timeInState(Timing::SPLASH_DURATION_MS);
-    bool canExit = minTimeElapsed && connectionTested;
-    bool skipPressed = buttons.isAnyPressed();
-
-    if (canExit || skipPressed) {
+    // Fall 3: Quality Test durchgeführt - zeige Qualität für 5 Sekunden
+    uint32_t qualityDisplayTime = millis() - qualityDisplayStartTime;
+    if (qualityDisplayTime >= Timing::QUALITY_DISPLAY_DURATION_MS) {
+        // 5 Sekunden sind vorbei -> zum Config Menu
         setState(State::STATE_CONFIG_MENU);
     }
 }
@@ -184,12 +185,10 @@ void StateMachine::handleConfigMenu() {
         shootingTime = configMenu.getShootingTime();
         shooterCount = configMenu.getShooterCount();
 
-        // Sende CMD_INIT an Empfänger (wenn bereits verbunden, sonst überspringen)
-        if (connectionSuccessful) {
-            sendCommand(CMD_INIT);
-        }
+        // Sende CMD_INIT an Empfänger
+        sendCommand(CMD_INIT);
 
-        // Gehe zu PFEILE_HOLEN (auch ohne Empfänger, für Entwicklung)
+        // Gehe zu PFEILE_HOLEN
         setState(State::STATE_PFEILE_HOLEN);
     }
 }
@@ -237,17 +236,8 @@ void StateMachine::handlePfeileHolen() {
 
         switch (action) {
             case PfeileHolenAction::NAECHSTE_PASSE: {
-                // Sende CMD_START_120 oder CMD_START_240
-                RadioCommand cmd = (shootingTime == 120) ? CMD_START_120 : CMD_START_240;
-                TransmissionResult result = sendCommand(cmd);
-
-                if (result == TX_SUCCESS) {
-                    setState(State::STATE_SCHIESS_BETRIEB);
-                } else {
-                    // Menü muss neu initialisiert werden
-                    pfeileHolenMenu.begin();
-                    pfeileHolenMenu.draw();
-                }
+                // Wechsel in Schießbetrieb (CMD_START wird in enterSchiessBetrieb() gesendet)
+                setState(State::STATE_SCHIESS_BETRIEB);
                 break;
             }
 
@@ -270,15 +260,59 @@ void StateMachine::exitPfeileHolen() {
 //=============================================================================
 
 void StateMachine::enterSchiessBetrieb() {
-    // Timer initialisieren
-    shootingStartTime = millis();
-    shootingDurationMs = shootingTime * 1000UL;  // Sekunden → Millisekunden
+    // Starte mit Vorbereitungsphase (10 Sekunden, oder 5s im DEBUG)
+    inPreparationPhase = true;
+    preparationStartTime = millis();
+
+    // Schießzeit setzen (normal oder verkürzt für DEBUG)
+    #if DEBUG_SHORT_TIMES
+        // DEBUG: 6s statt 120s, 12s statt 240s
+        shootingDurationMs = (shootingTime == 120) ? 6000UL : 12000UL;
+    #else
+        shootingDurationMs = shootingTime * 1000UL;  // Sekunden → Millisekunden
+    #endif
+
+    // Sende START-Kommando sofort (Empfänger startet eigene 10s Vorbereitungsphase)
+    RadioCommand cmd = (shootingTime == 120) ? CMD_START_120 : CMD_START_240;
+    sendCommand(cmd);
 
     drawSchiessBetrieb();
 }
 
 void StateMachine::handleSchiessBetrieb() {
-    // Verbleibende Zeit berechnen
+    // Fall 1: Vorbereitungsphase (10 Sekunden, orange Countdown)
+    if (inPreparationPhase) {
+        uint32_t prepElapsed = millis() - preparationStartTime;
+
+        // Prüfe ob Vorbereitungsphase vorbei
+        if (prepElapsed >= Timing::PREPARATION_TIME_MS) {
+            // Beende Vorbereitungsphase (Empfänger macht das automatisch auch)
+            inPreparationPhase = false;
+            shootingStartTime = millis();
+        }
+
+        // Timer alle 1000ms aktualisieren
+        static uint32_t lastDisplayUpdate = 0;
+        if (millis() - lastDisplayUpdate >= 1000) {
+            updateSchiessBetriebTimer();
+            lastDisplayUpdate = millis();
+        }
+
+        // Button zum Abbrechen
+        if (buttons.wasPressed(Button::OK)) {
+            // Sende STOP
+            sendCommand(CMD_STOP);
+            // Sende Gruppeninformation
+            RadioCommand groupCmd = (currentGroup == Groups::Type::GROUP_AB) ? CMD_GROUP_AB : CMD_GROUP_CD;
+            sendCommand(groupCmd);
+
+            advanceToNextGroup();
+            setState(State::STATE_PFEILE_HOLEN);
+        }
+        return;
+    }
+
+    // Fall 2: Eigentliche Schießphase (120/240 Sekunden, grün)
     uint32_t elapsed = millis() - shootingStartTime;
     bool timeExpired = (elapsed >= shootingDurationMs);
 
@@ -291,7 +325,12 @@ void StateMachine::handleSchiessBetrieb() {
 
     // Automatisches Ende bei Zeitablauf
     if (timeExpired) {
+        // Sende STOP
         sendCommand(CMD_STOP);
+        // Sende Gruppeninformation
+        RadioCommand groupCmd = (currentGroup == Groups::Type::GROUP_AB) ? CMD_GROUP_AB : CMD_GROUP_CD;
+        sendCommand(groupCmd);
+
         advanceToNextGroup();
         setState(State::STATE_PFEILE_HOLEN);
         return;
@@ -299,7 +338,12 @@ void StateMachine::handleSchiessBetrieb() {
 
     // Manuelles Ende durch Button
     if (buttons.wasPressed(Button::OK)) {
+        // Sende STOP
         sendCommand(CMD_STOP);
+        // Sende Gruppeninformation
+        RadioCommand groupCmd = (currentGroup == Groups::Type::GROUP_AB) ? CMD_GROUP_AB : CMD_GROUP_CD;
+        sendCommand(groupCmd);
+
         advanceToNextGroup();
         setState(State::STATE_PFEILE_HOLEN);
     }
@@ -405,11 +449,11 @@ void StateMachine::drawSchiessBetrieb() {
     // Grauer Hintergrund (wie bei anderen Buttons)
     display.fillRect(margin, btnY, btnW, btnH, Display::COLOR_DARKGRAY);
 
-    // Roter Rahmen
-    display.drawRect(margin, btnY, btnW, btnH, ST77XX_RED);
+    // Oranger Rahmen
+    display.drawRect(margin, btnY, btnW, btnH, Display::COLOR_ORANGE);
 
     display.setTextSize(2);
-    display.setTextColor(ST77XX_RED);
+    display.setTextColor(Display::COLOR_ORANGE);
 
     // Variablen x1, y1, w, h bereits oben deklariert - wiederverwenden
     display.getTextBounds("Passe beenden", 0, 0, &x1, &y1, &w, &h);
@@ -428,10 +472,23 @@ void StateMachine::updateSchiessBetriebTimer() {
     const uint16_t timerY = (shooterCount == 4) ? 112 : 65;
     const uint16_t timerH = 32;   // Höhe für Textgröße 4
 
-    // Verbleibende Zeit berechnen
-    uint32_t elapsed = millis() - shootingStartTime;
-    uint32_t remainingMs = (elapsed < shootingDurationMs) ? (shootingDurationMs - elapsed) : 0;
-    uint16_t remainingSec = (remainingMs + 999) / 1000;  // Aufrunden
+    uint16_t remainingSec;
+    uint16_t timerColor;
+
+    if (inPreparationPhase) {
+        // Vorbereitungsphase: Orange Countdown (10s)
+        uint32_t prepElapsed = millis() - preparationStartTime;
+        uint32_t prepRemainingMs = (prepElapsed < Timing::PREPARATION_TIME_MS)
+            ? (Timing::PREPARATION_TIME_MS - prepElapsed) : 0;
+        remainingSec = (prepRemainingMs + 999) / 1000;  // Aufrunden
+        timerColor = Display::COLOR_ORANGE;
+    } else {
+        // Schießphase: Grüner Countdown (120/240s)
+        uint32_t elapsed = millis() - shootingStartTime;
+        uint32_t remainingMs = (elapsed < shootingDurationMs) ? (shootingDurationMs - elapsed) : 0;
+        remainingSec = (remainingMs + 999) / 1000;  // Aufrunden
+        timerColor = ST77XX_GREEN;
+    }
 
     // Timer horizontal zentrieren
     display.setTextSize(4);
@@ -446,7 +503,7 @@ void StateMachine::updateSchiessBetriebTimer() {
     display.fillRect(0, timerY, display.width(), timerH, ST77XX_BLACK);
 
     // Timer neu zeichnen
-    display.setTextColor(ST77XX_GREEN);
+    display.setTextColor(timerColor);
     display.setCursor(timerX, timerY);
     display.print(remainingSec);
     display.print(F("s"));

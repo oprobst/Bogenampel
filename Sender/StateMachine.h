@@ -98,6 +98,9 @@ private:
     bool radioInitialized;      // NRF24L01 Modul gefunden?
     bool connectionTested;      // Verbindungstest durchgeführt?
     bool connectionSuccessful;  // Empfänger gefunden?
+    bool qualityTestDone;       // Connection Quality Test durchgeführt?
+    uint8_t connectionQuality;  // Verbindungsqualität in Prozent (0-100)
+    uint32_t qualityDisplayStartTime; // Zeitpunkt wann Qualitätsanzeige gestartet wurde
 
     //-------------------------------------------------------------------------
     // State Variables: PFEILE_HOLEN
@@ -115,6 +118,8 @@ private:
     //-------------------------------------------------------------------------
     uint32_t shootingStartTime;     // Zeitpunkt des Schießbetrieb-Starts (millis)
     uint32_t shootingDurationMs;    // Dauer in Millisekunden (120000 oder 240000)
+    bool inPreparationPhase;        // Sind wir in der Vorbereitungsphase? (10s)
+    uint32_t preparationStartTime;  // Start der Vorbereitungsphase
 
     //-------------------------------------------------------------------------
     // State Handlers

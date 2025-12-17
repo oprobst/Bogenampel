@@ -22,6 +22,16 @@
 #include <RF24.h>  // Für rf24_pa_dbm_e und rf24_datarate_e
 
 //=============================================================================
+// DEBUG-KONFIGURATION (muss VOR allen anderen Definitionen stehen!)
+//=============================================================================
+
+// Debugging aktivieren/deaktivieren
+#define DEBUG_ENABLED 1  // 1 = Debug-Ausgaben an, 0 = aus
+
+// Verkürzte Zeiten für Tests (nur wenn DEBUG_ENABLED = 1)
+#define DEBUG_SHORT_TIMES 1  // 1 = Verkürzte Zeiten, 0 = Normale Zeiten
+
+//=============================================================================
 // HARDWARE PIN-DEFINITIONEN
 //=============================================================================
 
@@ -114,18 +124,28 @@ namespace RF {
     constexpr rf24_datarate_e DATA_RATE = RF24_250KBPS;
 
     // RF-Power Level (verwende RF24-Library Enums direkt)
-    constexpr rf24_pa_dbm_e POWER_LEVEL = RF24_PA_MAX;
+    // RF24_PA_MAX = 0dBm (höchste Leistung, ~50m Reichweite)
+    // WICHTIG: Benötigt externe 3.3V Versorgung (AMS1117) + 100µF Kondensator!
+    constexpr rf24_pa_dbm_e POWER_LEVEL = RF24_PA_MIN;
 
     // Pipe-Adressen (5 Bytes)
     // Sender schreibt an Pipe 0, Empfänger liest von Pipe 0
-    const uint8_t PIPE_ADDRESS[5] PROGMEM = {'B', 'A', 'M', 'P', 'L'};  // "BAMPL" = Bogenampel
+    const uint8_t PIPE_ADDRESS[5] PROGMEM = {'B', '4', 'M', 'P', 'L'};  // "BAMPL" = Bogenampel
 
-    // Retry-Einstellungen
+    // Auto-ACK Einstellungen
+    constexpr bool AUTO_ACK_ENABLED = true;  // ACK aktivieren für Verbindungskontrolle
+
+    // Retry-Einstellungen (für ACK-Retransmission)
     constexpr uint8_t RETRY_DELAY = 5;    // Delay: (delay + 1) * 250µs = 1.5ms
     constexpr uint8_t RETRY_COUNT = 15;   // Max 15 Retries
 
     // Payload-Größe
     constexpr uint8_t PAYLOAD_SIZE = 2;   // 2 Bytes (Command + Checksum)
+
+    // Connection Quality Test
+    constexpr uint8_t QUALITY_TEST_PINGS = 10;        // Anzahl Pings für Qualitätstest
+    constexpr uint16_t QUALITY_TEST_DURATION_MS = 5000;  // 5 Sekunden für Test
+    constexpr uint16_t QUALITY_TEST_INTERVAL_MS = 500;   // 500ms zwischen Pings (10 in 5s)
 
 } // namespace RF
 
@@ -163,9 +183,17 @@ namespace Timing {
 
     // Splash Screen
     constexpr uint16_t SPLASH_DURATION_MS = 15000;  // 15 Sekunden
+    constexpr uint16_t QUALITY_DISPLAY_DURATION_MS = 5000;  // 5 Sekunden Qualitätsanzeige
 
     // Button Debouncing
     constexpr uint8_t DEBOUNCE_MS = 50;  // 50ms Entprellzeit
+
+    // Schießbetrieb
+    #if DEBUG_SHORT_TIMES
+        constexpr uint16_t PREPARATION_TIME_MS = 5000;   // 5 Sekunden (DEBUG)
+    #else
+        constexpr uint16_t PREPARATION_TIME_MS = 10000;  // 10 Sekunden Vorbereitungsphase
+    #endif
 
     // Alarm Detection
     constexpr uint16_t ALARM_THRESHOLD_MS = 2000;  // 2 Sekunden OK-Button halten für Alarm
@@ -203,9 +231,6 @@ namespace System {
 
     // Serial Baud Rate (für Debugging)
     constexpr uint32_t SERIAL_BAUD = 115200;
-
-    // Debugging aktivieren/deaktivieren
-    #define DEBUG_ENABLED 1  // 1 = Debug-Ausgaben an, 0 = aus
 
     #if DEBUG_ENABLED
         #define DEBUG_PRINT(...)   Serial.print(__VA_ARGS__)

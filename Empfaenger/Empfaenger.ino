@@ -26,6 +26,17 @@ uint8_t lastButtonReading = HIGH;  // Letzter gelesener Pin-Zustand
 uint8_t buttonState = HIGH;        // Stabiler Button-Zustand nach Debouncing
 uint32_t lastDebounceTime = 0;     // Zeitpunkt der letzten Button-Änderung
 
+// Timer-Variablen
+bool timerRunning = false;         // Läuft der Timer?
+uint32_t timerStartTime = 0;       // Startzeitpunkt (millis)
+uint32_t timerDurationMs = 0;      // Timer-Dauer in Millisekunden
+uint8_t currentGroup = 0;          // Aktuelle Gruppe (0=AB, 1=CD)
+
+// Vorbereitungsphase
+bool inPreparationPhase = false;   // Läuft die Vorbereitungsphase?
+uint32_t preparationStartTime = 0; // Start der Vorbereitungsphase
+uint32_t preparationDurationMs = 0; // Dauer der Vorbereitungsphase
+
 //=============================================================================
 // Setup
 //=============================================================================
@@ -102,6 +113,12 @@ void loop() {
             DEBUG_PRINTLN(F("BAD CRC"));
         }
     }
+
+    // Prüfe Vorbereitungsphase
+    updatePreparation();
+
+    // Prüfe Timer und aktualisiere LEDs
+    updateTimer();
 
     // Prüfe Debug-Button
     checkButton();
@@ -182,64 +199,26 @@ bool initializeRadio() {
     uint8_t pipeAddr[5];
     memcpy_P(pipeAddr, RF::PIPE_ADDRESS, 5);
 
-    // Pipe-Adresse ausgeben (Debug)
-    #if DEBUG_ENABLED
-    DEBUG_PRINT(F("Pipe: "));
-    for (uint8_t i = 0; i < 5; i++) {
-        DEBUG_PRINT((char)pipeAddr[i]);
-    }
-    DEBUG_PRINTLN();
-    #endif
-
     // Radio konfigurieren
     radio.setPALevel(RF::POWER_LEVEL);
     radio.setDataRate(RF::DATA_RATE);
     radio.setChannel(RF::CHANNEL);
     radio.setPayloadSize(sizeof(RadioPacket));
 
-    // Auto-ACK DEAKTIVIERT (Kommunikation funktioniert ohne ACK)
-    radio.setAutoAck(false);
+    // Auto-ACK AKTIVIERT (Empfänger sendet automatisch ACK an Sender)
+    radio.setAutoAck(RF::AUTO_ACK_ENABLED);
+    radio.setRetries(RF::RETRY_DELAY, RF::RETRY_COUNT);
 
-    // Pipe für Lesen öffnen (Pipe 1 statt 0 - Pipe 0 wird oft für ACK verwendet)
+    // Pipe für Lesen öffnen (Pipe 1)
     radio.openReadingPipe(1, pipeAddr);
 
     // RX-Modus aktivieren (Empfangsmodus)
     radio.startListening();
 
     #if DEBUG_ENABLED
-    DEBUG_PRINTLN(F("NRF24 Konfiguration:"));
-    DEBUG_PRINT(F("  Kanal: "));
-    DEBUG_PRINTLN(RF::CHANNEL);
-    DEBUG_PRINT(F("  Power: "));
-    DEBUG_PRINTLN(static_cast<int>(RF::POWER_LEVEL));
-    DEBUG_PRINT(F("  Rate: "));
-    DEBUG_PRINTLN(static_cast<int>(RF::DATA_RATE));
-    DEBUG_PRINT(F("  Payload: "));
-    DEBUG_PRINTLN(sizeof(RadioPacket));
-
-    // Manuelle Radio-Diagnose
-    DEBUG_PRINTLN(F(""));
-    DEBUG_PRINTLN(F("Radio Status:"));
-    DEBUG_PRINT(F("  isPVariant: "));
-    DEBUG_PRINTLN(radio.isPVariant() ? F("Ja (Plus)") : F("Nein"));
-    DEBUG_PRINT(F("  getChannel: "));
-    DEBUG_PRINTLN(radio.getChannel());
-    DEBUG_PRINT(F("  getPALevel: "));
-    DEBUG_PRINTLN(radio.getPALevel());
-    DEBUG_PRINT(F("  getDataRate: "));
-    DEBUG_PRINTLN(radio.getDataRate());
-    DEBUG_PRINT(F("  Listening: "));
-    DEBUG_PRINTLN(radio.isChipConnected() ? F("Chip OK") : F("Chip FEHLER!"));
-    DEBUG_PRINTLN(F(""));
-
-    // Komplette Radio-Details ausgeben
-    DEBUG_PRINTLN(F("=== Radio Details ==="));
-    Serial.flush();
-    delay(100);
-    radio.printDetails();
-    delay(100);
-    Serial.flush();
-    DEBUG_PRINTLN(F("====================="));
+    DEBUG_PRINT(F("NRF Ch"));
+    DEBUG_PRINT(RF::CHANNEL);
+    DEBUG_PRINTLN(F(" RX"));
     #endif
 
     return true;
@@ -286,12 +265,31 @@ void blinkYellowLED() {
 }
 
 /**
- * @brief Lässt den Buzzer einen kurzen Piepton ausgeben
+ * @brief Lässt den Buzzer einen kurzen Piepton ausgeben (1 Sekunde)
  */
 void buzzerBeep() {
     tone(Pins::BUZZER, Timing::BUZZER_FREQUENCY_HZ);
-    delay(Timing::BUZZER_BEEP_DURATION_MS);
+    delay(1000);  // 1 Sekunde
     noTone(Pins::BUZZER);
+}
+
+/**
+ * @brief Lässt den Buzzer mehrfach piepen
+ * @param count Anzahl der Pieptöne
+ *
+ * Jeder Pieperton: 500ms Ton, 500ms Pause
+ */
+void buzzerBeepMultiple(uint8_t count) {
+    for (uint8_t i = 0; i < count; i++) {
+        tone(Pins::BUZZER, Timing::BUZZER_FREQUENCY_HZ);
+        delay(500);  // 500ms Ton
+        noTone(Pins::BUZZER);
+
+        // Pause zwischen Tönen (außer beim letzten)
+        if (i < count - 1) {
+            delay(500);  // 500ms Pause
+        }
+    }
 }
 
 /**
@@ -327,31 +325,77 @@ void checkButton() {
 }
 
 /**
- * @brief Sendet PONG-Antwort zurück an Sender
+ * @brief Aktualisiert Timer und LED-Status
  */
-void sendPong() {
-    // Pipe-Adresse aus PROGMEM laden
-    uint8_t pipeAddr[5];
-    memcpy_P(pipeAddr, RF::PIPE_ADDRESS, 5);
+void updateTimer() {
+    if (!timerRunning) return;
 
-    // Wechsle in TX-Modus
-    radio.stopListening();
-    delay(5);  // Radio braucht Zeit
+    // Verbleibende Zeit berechnen
+    uint32_t elapsed = millis() - timerStartTime;
 
-    // Writing Pipe öffnen
-    radio.openWritingPipe(pipeAddr);
+    if (elapsed >= timerDurationMs) {
+        // Timer abgelaufen
+        timerRunning = false;
 
-    // RadioPacket erstellen
-    RadioPacket packet;
-    packet.command = CMD_PONG;
-    packet.checksum = calculateChecksum(packet.command);
+        // Rote LED an (Stop)
+        digitalWrite(Pins::LED_GREEN, LOW);
+        digitalWrite(Pins::LED_YELLOW, LOW);
+        digitalWrite(Pins::LED_RED, HIGH);
 
-    // PONG senden
-    radio.write(&packet, sizeof(RadioPacket));
+        DEBUG_PRINTLN(F("Timer END"));
+        DEBUG_PRINTLN(F("Beep 3x"));
 
-    // Zurück in RX-Modus
-    delay(5);  // Radio braucht Zeit
-    radio.startListening();
+        // Akustisches Signal: 3x Piepen (Zeit abgelaufen)
+        buzzerBeepMultiple(3);
+    } else {
+        // Verbleibende Zeit in Sekunden
+        uint32_t remainingMs = timerDurationMs - elapsed;
+        uint32_t remainingSec = remainingMs / 1000;
+
+        // Gelbe LED bei letzten 30 Sekunden
+        static uint32_t lastDebugSec = 0;
+        if (remainingSec <= 30) {
+            digitalWrite(Pins::LED_YELLOW, HIGH);
+
+            // Debug-Ausgabe nur einmal pro Sekunde
+            if (remainingSec != lastDebugSec) {
+                DEBUG_PRINT(F("T:"));
+                DEBUG_PRINTLN(remainingSec);
+                lastDebugSec = remainingSec;
+            }
+        } else {
+            digitalWrite(Pins::LED_YELLOW, LOW);
+            lastDebugSec = 0;
+        }
+    }
+}
+
+/**
+ * @brief Aktualisiert Vorbereitungsphase und wechselt automatisch in Schießphase
+ */
+void updatePreparation() {
+    if (!inPreparationPhase) return;
+
+    // Prüfe ob Vorbereitungsphase vorbei
+    uint32_t elapsed = millis() - preparationStartTime;
+    if (elapsed >= preparationDurationMs) {
+        // Beende Vorbereitungsphase
+        inPreparationPhase = false;
+
+        DEBUG_PRINTLN(F("Prep END"));
+
+        // Starte Timer
+        timerRunning = true;
+        timerStartTime = millis();
+
+        // Grüne LED an, Rest aus
+        digitalWrite(Pins::LED_GREEN, HIGH);
+        digitalWrite(Pins::LED_YELLOW, LOW);
+        digitalWrite(Pins::LED_RED, LOW);
+
+        // Akustisches Signal: 1x Piepen (Ampel wird grün)
+        buzzerBeepMultiple(1);
+    }
 }
 
 /**
@@ -361,13 +405,12 @@ void sendPong() {
 void handleCommand(RadioCommand cmd) {
     switch (cmd) {
         case CMD_PING:
-            // Sender fragt: Bist du da?
-            DEBUG_PRINTLN(F("PING->PONG"));
-            sendPong();  // Antworte mit PONG
+            // Sender testet Verbindungsqualität
+            // ACK wird automatisch vom NRF24L01 gesendet
+            DEBUG_PRINTLN(F("PING"));
             break;
 
         case CMD_INIT:
-            // System initialisieren
             DEBUG_PRINTLN(F("INIT"));
             systemInitialized = true;
 
@@ -383,42 +426,85 @@ void handleCommand(RadioCommand cmd) {
                 delay(150);
             }
 
-            // Grüne LED bleibt an (Bereit)
-            digitalWrite(Pins::LED_GREEN, HIGH);
+            // Rote LED bleibt an (Stop/Pfeile Holen)
+            digitalWrite(Pins::LED_RED, HIGH);
             break;
 
         case CMD_START_120:
         case CMD_START_240:
-            // Timer starten
             if (systemInitialized) {
-                DEBUG_PRINT(F("→ Timer gestartet: "));
-                DEBUG_PRINT(cmd == CMD_START_120 ? 120 : 240);
-                DEBUG_PRINTLN(F("s"));
+                DEBUG_PRINTLN(F("START"));
 
-                // Grüne LED an (Aktiv)
-                digitalWrite(Pins::LED_GREEN, HIGH);
-                digitalWrite(Pins::LED_RED, LOW);
+                // Starte Vorbereitungsphase (10s oder 5s im DEBUG)
+                inPreparationPhase = true;
+                preparationStartTime = millis();
+                #if DEBUG_SHORT_TIMES
+                    preparationDurationMs = 5000UL;  // 5 Sekunden (DEBUG)
+                #else
+                    preparationDurationMs = 10000UL; // 10 Sekunden
+                #endif
 
-                // TODO: Timer-Logik implementieren
-            } else {
-                DEBUG_PRINTLN(F("Warnung: System nicht initialisiert!"));
+                // Timer-Dauer setzen (wird nach Vorbereitungsphase gestartet)
+                #if DEBUG_SHORT_TIMES
+                    timerDurationMs = (cmd == CMD_START_120) ? 6000UL : 12000UL;
+                #else
+                    timerDurationMs = (cmd == CMD_START_120) ? 120000UL : 240000UL;
+                #endif
+
+                // Ampel bleibt rot (keine LED-Änderung)
+                // Akustisches Signal: 2x Piepen (Vorbereitungsphase startet)
+                buzzerBeepMultiple(2);
             }
             break;
 
         case CMD_STOP:
-            // Timer stoppen
-            DEBUG_PRINTLN(F("→ Timer gestoppt"));
+            DEBUG_PRINTLN(F("STOP"));
+
+            // Wenn Timer noch läuft: 3x Piepen (vorzeitiges Ende)
+            if (timerRunning) {
+                buzzerBeepMultiple(3);
+            }
+
+            // Timer und Vorbereitung stoppen
+            timerRunning = false;
+            inPreparationPhase = false;
+
+            // Rote LED an, Rest aus
+            digitalWrite(Pins::LED_GREEN, LOW);
+            digitalWrite(Pins::LED_YELLOW, LOW);
+            digitalWrite(Pins::LED_RED, HIGH);
+            break;
+
+        case CMD_GROUP_AB:
+            DEBUG_PRINTLN(F("GRP_AB"));
+            currentGroup = 0;  // Gruppe A/B
+
+            // Timer und Vorbereitung stoppen
+            timerRunning = false;
+            inPreparationPhase = false;
 
             // Rote LED an (Stop)
             digitalWrite(Pins::LED_GREEN, LOW);
+            digitalWrite(Pins::LED_YELLOW, LOW);
             digitalWrite(Pins::LED_RED, HIGH);
+            break;
 
-            // TODO: Timer-Logik stoppen
+        case CMD_GROUP_CD:
+            DEBUG_PRINTLN(F("GRP_CD"));
+            currentGroup = 1;  // Gruppe C/D
+
+            // Timer und Vorbereitung stoppen
+            timerRunning = false;
+            inPreparationPhase = false;
+
+            // Rote LED an (Stop)
+            digitalWrite(Pins::LED_GREEN, LOW);
+            digitalWrite(Pins::LED_YELLOW, LOW);
+            digitalWrite(Pins::LED_RED, HIGH);
             break;
 
         case CMD_ALARM:
-            // Alarm auslösen
-            DEBUG_PRINTLN(F("→ ALARM ausgelöst!"));
+            DEBUG_PRINTLN(F("ALARM"));
 
             // Alle LEDs blinken schnell
             for (int i = 0; i < 5; i++) {
@@ -434,10 +520,13 @@ void handleCommand(RadioCommand cmd) {
 
             // Rote LED bleibt an
             digitalWrite(Pins::LED_RED, HIGH);
+
+            // Akustisches Signal: 8x Piepen (Alarm)
+            buzzerBeepMultiple(8);
             break;
 
         default:
-            DEBUG_PRINTLN(F("Warnung: Unbekanntes Kommando!"));
+            DEBUG_PRINTLN(F("UNK"));
             break;
     }
 }

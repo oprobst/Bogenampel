@@ -18,16 +18,17 @@
 #include <Arduino.h>
 
 /**
- * @brief Radio-Kommando-Codes (7 Kommandos für Benutzerführung)
+ * @brief Radio-Kommando-Codes (8 Kommandos für Benutzerführung)
  */
 enum RadioCommand : uint8_t {
     CMD_STOP = 0x01,       // Timer stoppen, rote Ampel
-    CMD_START_120 = 0x02,  // Timer starten: 120 Sekunden
-    CMD_START_240 = 0x03,  // Timer starten: 240 Sekunden
+    CMD_START_120 = 0x02,  // Timer starten: 120 Sekunden (inkl. 10s Vorbereitung)
+    CMD_START_240 = 0x03,  // Timer starten: 240 Sekunden (inkl. 10s Vorbereitung)
     CMD_INIT = 0x04,       // Empfänger initialisieren (Turnier-Start)
     CMD_ALARM = 0x05,      // Not-Alarm auslösen
-    CMD_PING = 0x06,       // Sender → Empfänger: Bist du da?
-    CMD_PONG = 0x07        // Empfänger → Sender: Ja, ich bin da!
+    CMD_PING = 0x06,       // Connection Quality Test (ACK-basiert)
+    CMD_GROUP_AB = 0x08,   // Gruppe A/B aktiv (+ Stop/Rot)
+    CMD_GROUP_CD = 0x09    // Gruppe C/D aktiv (+ Stop/Rot)
 };
 
 /**
@@ -74,7 +75,8 @@ inline const __FlashStringHelper* commandToString(RadioCommand cmd) {
         case CMD_INIT:      return F("INIT");
         case CMD_ALARM:     return F("ALARM");
         case CMD_PING:      return F("PING");
-        case CMD_PONG:      return F("PONG");
+        case CMD_GROUP_AB:  return F("GROUP_AB");
+        case CMD_GROUP_CD:  return F("GROUP_CD");
         default:            return F("UNKNOWN");
     }
 }

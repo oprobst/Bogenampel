@@ -73,13 +73,19 @@ namespace RF {
     constexpr rf24_datarate_e DATA_RATE = RF24_250KBPS;
 
     // RF-Power Level (verwende RF24-Library Enums direkt)
-    constexpr rf24_pa_dbm_e POWER_LEVEL = RF24_PA_MAX;
+    // RF24_PA_MAX = 0dBm (höchste Leistung, ~50m Reichweite)
+    // WICHTIG: Benötigt externe 3.3V Versorgung (AMS1117) + 100µF Kondensator!
+    constexpr rf24_pa_dbm_e POWER_LEVEL = RF24_PA_MIN;
 
     // Pipe-Adressen (5 Bytes) - MUSS IDENTISCH MIT SENDER SEIN!
-    const uint8_t PIPE_ADDRESS[5] PROGMEM = {'B', 'A', 'M', 'P', 'L'};  // "BAMPL" = Bogenampel
+    const uint8_t PIPE_ADDRESS[5] PROGMEM = {'B', '4', 'M', 'P', 'L'};  // "BAMPL" = Bogenampel
 
-    // Auto-ACK aktiviert (Empfänger sendet automatisch ACK)
+    // Auto-ACK aktiviert (Empfänger sendet automatisch ACK zurück an Sender)
     constexpr bool AUTO_ACK_ENABLED = true;
+
+    // Retry-Einstellungen (muss mit Sender übereinstimmen)
+    constexpr uint8_t RETRY_DELAY = 5;    // Delay: (delay + 1) * 250µs = 1.5ms
+    constexpr uint8_t RETRY_COUNT = 15;   // Max 15 Retries
 
     // Payload-Größe
     constexpr uint8_t PAYLOAD_SIZE = 2;   // 2 Bytes (Command + Checksum)
@@ -120,6 +126,9 @@ namespace System {
 
     // Debugging aktivieren/deaktivieren
     #define DEBUG_ENABLED 1  // 1 = Debug-Ausgaben an, 0 = aus
+
+    // Verkürzte Zeiten für Tests (nur wenn DEBUG_ENABLED = 1)
+    #define DEBUG_SHORT_TIMES 1  // 1 = Verkürzte Zeiten, 0 = Normale Zeiten
 
     #if DEBUG_ENABLED
         #define DEBUG_PRINT(...)   Serial.print(__VA_ARGS__)
