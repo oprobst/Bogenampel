@@ -9,6 +9,8 @@
 
 #include "Config.h"
 #include "Commands.h"
+#include "DisplayManager.h"
+#include "BuzzerManager.h"
 
 #include <SPI.h>
 #include <RF24.h>
@@ -24,31 +26,51 @@ RF24 radio(Pins::NRF_CE, Pins::NRF_CSN);
 CRGB leds[LEDStrip::TOTAL_LEDS];
 bool debugMode = false;  // Debug-Modus aktiv (5% Helligkeit)
 
+// Display Manager
+DisplayManager display(leds);
+
+// Buzzer Manager
+BuzzerManager buzzer(Pins::BUZZER, Timing::BUZZER_FREQUENCY_HZ);
+
 // Forward-Deklarationen
 void showRainbowEffect();
 void setTrafficLightColor(CRGB color);
-void setGroupAB(CRGB color);
-void setGroupCD(CRGB color);
-void displayNumber(uint16_t number, CRGB color, bool showLeadingZeros = false);
-void displayDigit(uint8_t digitStartIndex, uint8_t digit, CRGB color);
 
 // State-Variablen
-bool systemInitialized = false;   // Wurde CMD_INIT empfangen?
 uint32_t lastBlinkTime = 0;        // Für LED-Blink-Timer
 uint8_t lastButtonReading = HIGH;  // Letzter gelesener Pin-Zustand
 uint8_t buttonState = HIGH;        // Stabiler Button-Zustand nach Debouncing
 uint32_t lastDebounceTime = 0;     // Zeitpunkt der letzten Button-Änderung
 
-// Timer-Variablen
+// Timer-Variablen (Interrupt-basiert)
+volatile bool secondTickOccurred = false;  // Flag: Sekunden-Tick passiert (wird von ISR gesetzt)
 bool timerRunning = false;         // Läuft der Timer?
-uint32_t timerStartTime = 0;       // Startzeitpunkt (millis)
-uint32_t timerDurationMs = 0;      // Timer-Dauer in Millisekunden
-uint8_t currentGroup = 0;          // Aktuelle Gruppe (0=AB, 1=CD)
+uint32_t timerRemainingSeconds = 0;  // Verbleibende Sekunden (wird jede Sekunde dekrementiert)
+uint32_t timerDurationMs = 0;      // Timer-Dauer in Millisekunden (für Kompatibilität)
+Groups::Type currentGroup = Groups::Type::GROUP_AB;      // Aktuelle Gruppe (AB oder CD)
+Groups::Position currentPosition = Groups::Position::POS_1;  // Aktuelle Position (1 oder 2)
+bool groupsEnabled = true;         // Sind Gruppen aktiv? (false = 1-2 Schützen Modus)
 
 // Vorbereitungsphase
 bool inPreparationPhase = false;   // Läuft die Vorbereitungsphase?
-uint32_t preparationStartTime = 0; // Start der Vorbereitungsphase
-uint32_t preparationDurationMs = 0; // Dauer der Vorbereitungsphase
+uint32_t preparationRemainingSeconds = 0;  // Verbleibende Sekunden Vorbereitungsphase
+uint32_t preparationDurationMs = 0; // Dauer der Vorbereitungsphase (für Kompatibilität)
+
+
+//=============================================================================
+// Timer1 Interrupt Service Routine (ISR)
+//=============================================================================
+
+/**
+ * @brief Timer1 Compare Match A Interrupt - wird jede Sekunde ausgelöst
+ *
+ * Diese ISR wird exakt jede Sekunde aufgerufen und setzt ein Flag,
+ * das in der loop() verarbeitet wird. Dadurch ist die Zeitbasis
+ * unabhängig von blocking delays (z.B. Buzzer).
+ */
+ISR(TIMER1_COMPA_vect) {
+    secondTickOccurred = true;
+}
 
 //=============================================================================
 // Setup
@@ -78,6 +100,9 @@ void setup() {
 
     // Pins initialisieren
     initializePins();
+
+    // Timer1 für exakte Sekunden-Ticks konfigurieren
+    setupTimer1();
 
     // Debug-Jumper lesen
     debugMode = (digitalRead(Pins::DEBUG_JUMPER) == LOW);
@@ -144,13 +169,21 @@ void loop() {
         }
     }
 
-    // Prüfe Vorbereitungsphase
-    updatePreparation();
+    // Prüfe ob eine Sekunde vergangen ist (Interrupt-Flag)
+    if (secondTickOccurred) {
+        secondTickOccurred = false;  // Flag zurücksetzen
 
-    // Prüfe Timer und aktualisiere LEDs
-    updateTimer();
+        // Prüfe Vorbereitungsphase
+        updatePreparation();
 
-    // Prüfe Debug-Button
+        // Prüfe Timer und aktualisiere LEDs
+        updateTimer();
+    }
+
+    // Aktualisiere Buzzer-Zustand (nicht-blockierend, muss jede Iteration laufen)
+    buzzer.update();
+
+    // Prüfe Debug-Button (nicht zeitkritisch)
     checkButton();
 
     // Kleine Pause um CPU zu entlasten
@@ -176,7 +209,7 @@ void initializePins() {
     digitalWrite(Pins::LED_RED, LOW);
 
     // Buzzer als Ausgang (initial aus)
-    pinMode(Pins::BUZZER, OUTPUT);
+    buzzer.begin();
     digitalWrite(Pins::BUZZER, LOW);
 
     // Debug-Taster als Eingang mit Pull-Up
@@ -189,6 +222,43 @@ void initializePins() {
     // Keine manuelle Initialisierung nötig
 
     DEBUG_PRINTLN(F("Pins initialisiert"));
+}
+
+/**
+ * @brief Konfiguriert Timer1 für exakte 1-Sekunden-Interrupts
+ *
+ * Timer1 ist ein 16-Bit-Timer auf dem ATmega328P.
+ * Mit Prescaler 256 und einem Compare-Wert von 62499:
+ * - F_CPU = 16 MHz
+ * - Prescaler = 256
+ * - Timer-Takt = 16 MHz / 256 = 62.5 kHz
+ * - Für 1 Hz: 62.5 kHz / 62500 = 1 Hz (exakt 1 Sekunde)
+ */
+void setupTimer1() {
+    cli();  // Interrupts temporär deaktivieren
+
+    // Timer1 zurücksetzen
+    TCCR1A = 0;
+    TCCR1B = 0;
+    TCNT1 = 0;
+
+    // Compare-Wert setzen für 1 Hz (1 Sekunde)
+    // OCR1A = (F_CPU / (Prescaler * gewünschte Frequenz)) - 1
+    // OCR1A = (16000000 / (256 * 1)) - 1 = 62499
+    OCR1A = 62499;
+
+    // CTC-Modus (Clear Timer on Compare Match)
+    TCCR1B |= (1 << WGM12);
+
+    // Prescaler 256
+    TCCR1B |= (1 << CS12);
+
+    // Timer1 Compare Match A Interrupt aktivieren
+    TIMSK1 |= (1 << OCIE1A);
+
+    sei();  // Interrupts wieder aktivieren
+
+    DEBUG_PRINTLN(F("Timer1 konfiguriert (1s Ticks)"));
 }
 
 /**
@@ -298,37 +368,10 @@ void blinkYellowLED() {
 }
 
 /**
- * @brief Lässt den Buzzer einen kurzen Piepton ausgeben (1 Sekunde)
+ * @brief Lässt den Buzzer einen kurzen Piepton ausgeben (nicht-blockierend)
  */
 void buzzerBeep() {
-    tone(Pins::BUZZER, Timing::BUZZER_FREQUENCY_HZ);
-    delay(1000);  // 1 Sekunde
-    noTone(Pins::BUZZER);
-    digitalWrite(Pins::BUZZER, LOW);  // Explizit Pin auf LOW setzen
-}
-
-/**
- * @brief Lässt den Buzzer mehrfach piepen
- * @param count Anzahl der Pieptöne
- *
- * Jeder Pieperton: 500ms Ton, 500ms Pause
- */
-void buzzerBeepMultiple(uint8_t count) {
-    for (uint8_t i = 0; i < count; i++) {
-        tone(Pins::BUZZER, Timing::BUZZER_FREQUENCY_HZ);
-        delay(500);  // 500ms Ton
-        noTone(Pins::BUZZER);
-        digitalWrite(Pins::BUZZER, LOW);  // Explizit Pin auf LOW setzen
-
-        // Pause zwischen Tönen (außer beim letzten)
-        if (i < count - 1) {
-            delay(500);  // 500ms Pause
-        }
-    }
-
-    // Sicherstellen, dass Buzzer am Ende definitiv aus ist
-    noTone(Pins::BUZZER);
-    digitalWrite(Pins::BUZZER, LOW);
+    buzzer.beep(1);
 }
 
 /**
@@ -364,15 +407,20 @@ void checkButton() {
 }
 
 /**
- * @brief Aktualisiert Timer und LED-Status mit 7-Segment-Anzeige
+ * @brief Aktualisiert Timer und LED-Status mit 7-Segment-Anzeige (Interrupt-basiert)
+ *
+ * Diese Funktion wird genau einmal pro Sekunde aufgerufen (durch Timer1-Interrupt).
+ * Dadurch ist die Zeitbasis unabhängig von blocking delays (z.B. Buzzer).
  */
 void updateTimer() {
     if (!timerRunning) return;
 
-    // Verbleibende Zeit berechnen
-    uint32_t elapsed = millis() - timerStartTime;
+    // Dekrementiere verbleibende Zeit
+    if (timerRemainingSeconds > 0) {
+        timerRemainingSeconds--;
+    }
 
-    if (elapsed >= timerDurationMs) {
+    if (timerRemainingSeconds == 0) {
         // Timer abgelaufen
         timerRunning = false;
 
@@ -382,40 +430,32 @@ void updateTimer() {
         digitalWrite(Pins::LED_RED, HIGH);
 
         // Zeige "000" in ROT auf 7-Segment-Anzeige
-        displayNumber(0, CRGB::Red, true);
+        display.displayTimer(0, CRGB::Red, true);
 
-        // Behalte aktuelle Gruppe sichtbar in ROT (gleiche Farbe wie "000")
-        if (currentGroup == 0) {
-            setGroupAB(CRGB::Red);
+        // Behalte aktuelle Gruppe sichtbar in ROT (falls vorhanden)
+        if (!groupsEnabled) {
+            // Keine Gruppe (1-2 Schützen Modus) - beide aus
+            display.setGroup(0, CRGB::Black);
+            display.setGroup(1, CRGB::Black);
+        } else if (currentGroup == Groups::Type::GROUP_AB) {
+            display.setGroup(0, CRGB::Red);
         } else {
-            setGroupCD(CRGB::Red);
+            display.setGroup(1, CRGB::Red);
         }
 
         DEBUG_PRINTLN(F("Timer END"));
 
-        // Kurze Pause damit Display sichtbar auf ROT umschaltet
-        delay(100);
-
-        DEBUG_PRINTLN(F("Beep 3x"));
-
-        // Akustisches Signal: 3x Piepen (Zeit abgelaufen)
-        buzzerBeepMultiple(3);
+        // KEINE 3 Pieptöne hier! Diese werden nur bei CMD_STOP gesendet
+        // (wichtig für 3-4 Schützen: nur am Ende BEIDER Gruppen piepen)
     } else {
-        // Verbleibende Zeit in Sekunden
-        uint32_t remainingMs = timerDurationMs - elapsed;
-        uint32_t remainingSec = (remainingMs / 1000) + 1;  // +1 für aufrunden (zeige immer noch verbleibende volle Sekunde)
-
         // Begrenze auf 999 Sekunden (7-Segment-Display Maximum)
-        if (remainingSec > 999) {
-            remainingSec = 999;
-        }
+        uint32_t displaySec = (timerRemainingSeconds > 999) ? 999 : timerRemainingSeconds;
 
         // Farbe basierend auf verbleibender Zeit
         CRGB displayColor;
         static bool yellowPhaseActive = false;
-        static uint32_t lastDisplayedSec = 0;
 
-        if (remainingSec <= 30) {
+        if (timerRemainingSeconds <= 30) {
             // Orange-Gelbe Phase (letzte 30 Sekunden)
             digitalWrite(Pins::LED_GREEN, LOW);
             digitalWrite(Pins::LED_YELLOW, HIGH);
@@ -424,7 +464,7 @@ void updateTimer() {
 
             if (!yellowPhaseActive) {
                 yellowPhaseActive = true;
-                DEBUG_PRINTLN(F("Yellow phase"));
+                DEBUG_PRINTLN(F("Orange phase"));
             }
         } else {
             // Grüne Phase
@@ -435,86 +475,79 @@ void updateTimer() {
             yellowPhaseActive = false;
         }
 
-        // Aktualisiere Display nur wenn sich die Sekunde geändert hat
-        if (remainingSec != lastDisplayedSec) {
-            // Zeige verbleibende Zeit auf 7-Segment-Anzeige
-            displayNumber(remainingSec, displayColor);
+        // Zeige verbleibende Zeit auf 7-Segment-Anzeige
+        display.displayTimer(displaySec, displayColor);
 
-            // Behalte aktuelle Gruppe sichtbar in gleicher Farbe wie die Ziffern
-            if (currentGroup == 0) {
-                setGroupAB(displayColor);
-            } else {
-                setGroupCD(displayColor);
-            }
-
-            DEBUG_PRINT(F("T:"));
-            DEBUG_PRINTLN(remainingSec);
-            lastDisplayedSec = remainingSec;
+        // Behalte aktuelle Gruppe sichtbar in gleicher Farbe wie die Ziffern
+        if (currentGroup == Groups::Type::GROUP_AB) {
+            display.setGroup(0, displayColor);
+        } else {
+            display.setGroup(1, displayColor);
         }
+
+        DEBUG_PRINT(F("T:"));
+        DEBUG_PRINTLN(timerRemainingSeconds);
     }
 }
 
 /**
- * @brief Aktualisiert Vorbereitungsphase mit Countdown und wechselt automatisch in Schießphase
+ * @brief Aktualisiert Vorbereitungsphase mit Countdown und wechselt automatisch in Schießphase (Interrupt-basiert)
+ *
+ * Diese Funktion wird genau einmal pro Sekunde aufgerufen (durch Timer1-Interrupt).
  */
 void updatePreparation() {
     if (!inPreparationPhase) return;
 
-    // Verbleibende Zeit berechnen
-    uint32_t elapsed = millis() - preparationStartTime;
+    // Dekrementiere verbleibende Zeit
+    if (preparationRemainingSeconds > 0) {
+        preparationRemainingSeconds--;
+    }
 
-    if (elapsed >= preparationDurationMs) {
+    if (preparationRemainingSeconds == 0) {
         // Beende Vorbereitungsphase
         inPreparationPhase = false;
 
         DEBUG_PRINTLN(F("Prep END"));
 
+        // 1 Signalton: Schießphase beginnt
+        buzzer.beep(1);
+
         // Starte Timer
         timerRunning = true;
-        timerStartTime = millis();
+        timerRemainingSeconds = timerDurationMs / 1000;  // Konvertiere zu Sekunden
 
         // Grüne LED an, Rest aus
         digitalWrite(Pins::LED_GREEN, HIGH);
         digitalWrite(Pins::LED_YELLOW, LOW);
         digitalWrite(Pins::LED_RED, LOW);
 
-        // Zeige Start-Zeit in GRÜN (wird von updateTimer() übernommen)
-        uint32_t startTimeSec = timerDurationMs / 1000;
-        if (startTimeSec > 999) startTimeSec = 999;
-        displayNumber(startTimeSec, CRGB::Green);
+        // Zeige Start-Zeit in GRÜN
+        uint32_t startTimeSec = (timerRemainingSeconds > 999) ? 999 : timerRemainingSeconds;
+        display.displayTimer(startTimeSec, CRGB::Green);
 
         // Behalte aktuelle Gruppe sichtbar in GRÜN (gleiche Farbe wie Ziffern)
-        if (currentGroup == 0) {
-            setGroupAB(CRGB::Green);
+        if (currentGroup == Groups::Type::GROUP_AB) {
+            display.setGroup(0, CRGB::Green);
         } else {
-            setGroupCD(CRGB::Green);
+            display.setGroup(1, CRGB::Green);
         }
 
         // Akustisches Signal: 1x Piepen (Ampel wird grün)
-        buzzerBeepMultiple(1);
+        buzzer.beep(1);
     } else {
-        // Zeige verbleibende Vorbereitungszeit
-        uint32_t remainingMs = preparationDurationMs - elapsed;
-        uint32_t remainingSec = (remainingMs / 1000) + 1;  // +1 für aufrunden
+        // Zeige verbleibende Vorbereitungszeit in ROT
+        display.displayTimer(preparationRemainingSeconds, CRGB::Red);
 
-        static uint32_t lastDisplayedPrepSec = 0;
+        // Behalte aktuelle Gruppe sichtbar in ROT (gleiche Farbe wie Ziffern)
+        if (currentGroup == Groups::Type::GROUP_AB) {
+            display.setGroup(0, CRGB::Red);
+        } else {
+            display.setGroup(1, CRGB::Red);
 
-        // Aktualisiere Display nur wenn sich die Sekunde geändert hat
-        if (remainingSec != lastDisplayedPrepSec) {
-            // Zeige verbleibende Vorbereitungszeit in ROT
-            displayNumber(remainingSec, CRGB::Red);
-
-            // Behalte aktuelle Gruppe sichtbar in ROT (gleiche Farbe wie Ziffern)
-            if (currentGroup == 0) {
-                setGroupAB(CRGB::Red);
-            } else {
-                setGroupCD(CRGB::Red);
-            }
-
-            DEBUG_PRINT(F("Prep:"));
-            DEBUG_PRINTLN(remainingSec);
-            lastDisplayedPrepSec = remainingSec;
         }
+
+        DEBUG_PRINT(F("Prep:"));
+        DEBUG_PRINTLN(preparationRemainingSeconds);
     }
 }
 
@@ -595,127 +628,6 @@ void showRainbowEffect() {
 }
 
 /**
- * @brief Setzt die LEDs für Gruppe A/B auf die angegebene Farbe
- * @param color Farbe (z.B. CRGB::Red, CRGB::Green, CRGB::Blue)
- *
- * Steuert LED 1-16 (Array-Index 0-15) an.
- */
-void setGroupAB(CRGB color) {
-    fill_solid(leds + LEDStrip::GROUP_AB_START, LEDStrip::GROUP_AB_LEDS, color);
-    FastLED.show();
-}
-
-/**
- * @brief Setzt die LEDs für Gruppe C/D auf die angegebene Farbe
- * @param color Farbe (z.B. CRGB::Red, CRGB::Green, CRGB::Blue)
- *
- * Steuert LED 17-32 (Array-Index 16-31) an.
- */
-void setGroupCD(CRGB color) {
-    fill_solid(leds + LEDStrip::GROUP_CD_START, LEDStrip::GROUP_CD_LEDS, color);
-    FastLED.show();
-}
-
-/**
- * @brief Zeigt eine einzelne Ziffer auf einem 7-Segment-Display an
- * @param digitStartIndex Start-Index der Ziffer im LED-Array
- * @param digit Ziffer (0-9)
- * @param color Farbe der Ziffer
- *
- * Hardware-Anordnung der Segmente (in Reihenfolge im LED-Strip):
- * Index 0-5:   Segment B (rechts oben, senkrecht)
- * Index 6-11:  Segment A (oben, horizontal)
- * Index 12-17: Segment F (links oben, senkrecht)
- * Index 18-23: Segment G (mitte, horizontal)
- * Index 24-29: Segment C (rechts unten, senkrecht)
- * Index 30-35: Segment D (unten, horizontal)
- * Index 36-41: Segment E (links unten, senkrecht)
- *
- *    AAAAAA
- *   F      B
- *   F      B
- *    GGGGGG
- *   E      C
- *   E      C
- *    DDDDDD
- */
-void displayDigit(uint8_t digitStartIndex, uint8_t digit, CRGB color) {
-    // 7-Segment-Mapping für Ziffern 0-9
-    // Jedes Bit repräsentiert ein Segment in der Reihenfolge: B, A, F, G, C, D, E
-    const uint8_t segmentMap[10] = {
-        0b1110111,  // 0: B, A, F, C, D, E (kein G)
-        0b1000100,  // 1: B, C
-        0b1101011,  // 2: B, A, G, D, E
-        0b1101110,  // 3: B, A, G, C, D
-        0b1011100,  // 4: B, F, G, C
-        0b0111110,  // 5: A, F, G, C, D
-        0b0111111,  // 6: A, F, G, C, D, E
-        0b1100100,  // 7: B, A, C
-        0b1111111,  // 8: B, A, F, G, C, D, E (alle)
-        0b1111110   // 9: B, A, F, G, C, D
-    };
-
-    if (digit > 9) {
-        digit = 0;  // Fallback auf 0 bei ungültiger Ziffer
-    }
-
-    uint8_t pattern = segmentMap[digit];
-
-    // Segment-Reihenfolge: B, A, F, G, C, D, E
-    for (uint8_t seg = 0; seg < LEDStrip::SEGMENTS_PER_DIGIT; seg++) {
-        bool segmentOn = (pattern >> (LEDStrip::SEGMENTS_PER_DIGIT - 1 - seg)) & 0x01;
-        CRGB segmentColor = segmentOn ? color : CRGB::Black;
-
-        // Setze alle 6 LEDs dieses Segments
-        uint8_t segmentStart = digitStartIndex + (seg * LEDStrip::LEDS_PER_SEGMENT);
-        fill_solid(leds + segmentStart, LEDStrip::LEDS_PER_SEGMENT, segmentColor);
-    }
-}
-
-/**
- * @brief Zeigt eine Zahl von 0-999 auf den 7-Segment-Displays an
- * @param number Zahl (0-999, wird bei >999 auf 999 begrenzt)
- * @param color Farbe der Anzeige
- * @param showLeadingZeros true = führende Nullen anzeigen, false = ausblenden (Standard)
- *
- * Zeigt die Zahl auf den drei 7-Segment-Displays an:
- * - 100er-Stelle (LED 117-158, Index 116-157)
- * - 10er-Stelle  (LED 75-116, Index 74-115)
- * - 1er-Stelle   (LED 33-74, Index 32-73)
- */
-void displayNumber(uint16_t number, CRGB color, bool showLeadingZeros = false) {
-    // Begrenze auf 0-999
-    if (number > 999) {
-        number = 999;
-    }
-
-    // Extrahiere einzelne Ziffern
-    uint8_t digit100 = number / 100;
-    uint8_t digit10 = (number / 10) % 10;
-    uint8_t digit1 = number % 10;
-
-    // Zeige Ziffern an
-    // 100er-Stelle
-    if (showLeadingZeros || number >= 100) {
-        displayDigit(LEDStrip::DIGIT_100_START, digit100, color);
-    } else {
-        displayDigit(LEDStrip::DIGIT_100_START, 0, CRGB::Black);  // Ausschalten
-    }
-
-    // 10er-Stelle
-    if (showLeadingZeros || number >= 10) {
-        displayDigit(LEDStrip::DIGIT_10_START, digit10, color);
-    } else {
-        displayDigit(LEDStrip::DIGIT_10_START, 0, CRGB::Black);  // Ausschalten
-    }
-
-    // 1er-Stelle: Immer anzeigen
-    displayDigit(LEDStrip::DIGIT_1_START, digit1, color);
-
-    FastLED.show();
-}
-
-/**
  * @brief Verarbeitet empfangenes Kommando
  * @param cmd RadioCommand
  */
@@ -729,12 +641,11 @@ void handleCommand(RadioCommand cmd) {
 
         case CMD_INIT:
             DEBUG_PRINTLN(F("INIT"));
-            systemInitialized = true;
 
-            // Alle Segmente 3x rot blinken lassen
+            // Alle Segmente 3x blau blinken lassen
             for (int i = 0; i < 3; i++) {
                 // Alle LEDs rot
-                fill_solid(leds, LEDStrip::TOTAL_LEDS, CRGB::Red);
+                fill_solid(leds, LEDStrip::TOTAL_LEDS, CRGB::Blue);
                 FastLED.show();
                 delay(200);
 
@@ -745,9 +656,10 @@ void handleCommand(RadioCommand cmd) {
             }
 
             // Zeige "000" und Gruppe A/B
-            displayNumber(0, CRGB::Red, true);  // "000" in grün mit führenden Nullen
-            setGroupAB(CRGB::Red);                // Gruppe A/B in rot
-            currentGroup = 0;                     // Setze aktuelle Gruppe auf A/B
+            display.displayTimer(0, CRGB::Red, true);
+            display.setGroup(0, CRGB::Red);                // Gruppe A/B in rot
+            currentGroup = Groups::Type::GROUP_AB;         // Setze aktuelle Gruppe auf A/B
+            currentPosition = Groups::Position::POS_1;     // Position 1 (ganze Passe)
 
             // Status-LEDs: Rote LED an (Stop/Pfeile Holen)
             digitalWrite(Pins::LED_GREEN, LOW);
@@ -757,53 +669,49 @@ void handleCommand(RadioCommand cmd) {
 
         case CMD_START_120:
         case CMD_START_240:
-            if (systemInitialized) {
-                DEBUG_PRINTLN(F("START"));
+            DEBUG_PRINTLN(F("START"));
 
-                // Starte Vorbereitungsphase (10s oder 5s im DEBUG)
-                inPreparationPhase = true;
-                preparationStartTime = millis();
-                #if DEBUG_SHORT_TIMES
-                    preparationDurationMs = 5000UL;  // 5 Sekunden (DEBUG)
-                #else
-                    preparationDurationMs = 10000UL; // 10 Sekunden
-                #endif
+            // Timer stoppen (falls noch von vorheriger Gruppe aktiv)
+            timerRunning = false;
 
-                // Timer-Dauer setzen (wird nach Vorbereitungsphase gestartet)
-                #if DEBUG_SHORT_TIMES
-                    timerDurationMs = (cmd == CMD_START_120) ? 6000UL : 12000UL;
-                #else
-                    timerDurationMs = (cmd == CMD_START_120) ? 120000UL : 240000UL;
-                #endif
+            // Starte Vorbereitungsphase (10s oder 5s im DEBUG)
+            inPreparationPhase = true;
+            #if DEBUG_SHORT_TIMES
+                preparationDurationMs = 5000UL;  // 5 Sekunden (DEBUG)
+                preparationRemainingSeconds = 5;  // 5 Sekunden
+            #else
+                preparationDurationMs = 10000UL; // 10 Sekunden
+                preparationRemainingSeconds = 10;  // 10 Sekunden
+            #endif
 
-                // Rote LED bleibt an (Vorbereitungsphase)
-                digitalWrite(Pins::LED_GREEN, LOW);
-                digitalWrite(Pins::LED_YELLOW, LOW);
-                digitalWrite(Pins::LED_RED, HIGH);
+            // Timer-Dauer setzen (wird nach Vorbereitungsphase gestartet)
+            #if DEBUG_SHORT_TIMES
+                timerDurationMs = (cmd == CMD_START_120) ? 6000UL : 12000UL;
+            #else
+                timerDurationMs = (cmd == CMD_START_120) ? 120000UL : 240000UL;
+            #endif
 
-                // Zeige initiale Vorbereitungszeit in ROT (z.B. "10" oder "5")
-                uint32_t prepTimeSec = preparationDurationMs / 1000;
-                displayNumber(prepTimeSec, CRGB::Red);
+            // Rote LED bleibt an (Vorbereitungsphase)
+            digitalWrite(Pins::LED_GREEN, LOW);
+            digitalWrite(Pins::LED_YELLOW, LOW);
+            digitalWrite(Pins::LED_RED, HIGH);
 
-                // Behalte aktuelle Gruppe sichtbar
-                if (currentGroup == 0) {
-                    setGroupAB(CRGB::Red);
-                } else {
-                    setGroupCD(CRGB::Red);
-                }
+            // Zeige initiale Vorbereitungszeit in ROT (z.B. "10" oder "5")
+            display.displayTimer(preparationRemainingSeconds, CRGB::Red);
 
-                // Akustisches Signal: 2x Piepen (Vorbereitungsphase startet)
-                buzzerBeepMultiple(2);
+            // Behalte aktuelle Gruppe sichtbar
+            if (currentGroup == Groups::Type::GROUP_AB) {
+                display.setGroup(0, CRGB::Red);
+            } else {
+                display.setGroup(1, CRGB::Red);
             }
+
+            // Akustisches Signal: 2x Piepen (Vorbereitungsphase startet)
+            buzzer.beep(2);
             break;
 
         case CMD_STOP:
             DEBUG_PRINTLN(F("STOP"));
-
-            // Wenn Timer noch läuft: 3x Piepen (vorzeitiges Ende)
-            if (timerRunning) {
-                buzzerBeepMultiple(3);
-            }
 
             // Timer und Vorbereitung stoppen
             timerRunning = false;
@@ -815,19 +723,27 @@ void handleCommand(RadioCommand cmd) {
             digitalWrite(Pins::LED_RED, HIGH);
 
             // Zeige "000" in ROT
-            displayNumber(0, CRGB::Red, true);
+            display.displayTimer(0, CRGB::Red, true);
 
-            // Behalte aktuelle Gruppe sichtbar
-            if (currentGroup == 0) {
-                setGroupAB(CRGB::Red);
+            // Behalte aktuelle Gruppe sichtbar (falls vorhanden)
+            if (!groupsEnabled) {
+                // Keine Gruppe (1-2 Schützen Modus) - beide aus
+                display.setGroup(0, CRGB::Black);
+                display.setGroup(1, CRGB::Black);
+            } else if (currentGroup == Groups::Type::GROUP_AB) {
+                display.setGroup(0, CRGB::Red);
             } else {
-                setGroupCD(CRGB::Red);
+                display.setGroup(1, CRGB::Red);
             }
+
+            buzzer.beep(3); 
             break;
 
         case CMD_GROUP_AB:
             DEBUG_PRINTLN(F("GRP_AB"));
-            currentGroup = 0;  // Gruppe A/B
+            currentGroup = Groups::Type::GROUP_AB;      // Gruppe A/B
+            currentPosition = Groups::Position::POS_1;  // Position 1 (ganze Passe)
+            groupsEnabled = true;
 
             // Timer und Vorbereitung stoppen
             timerRunning = false;
@@ -839,16 +755,17 @@ void handleCommand(RadioCommand cmd) {
             digitalWrite(Pins::LED_RED, HIGH);
 
             // Zeige "000" in ROT
-            displayNumber(0, CRGB::Red, true);
+            display.displayTimer(0, CRGB::Red, true);
 
-            // Gruppe A/B LEDs auf ROT setzen, C/D ausschalten
-            setGroupAB(CRGB::Red);
-            setGroupCD(CRGB::Black);
+            // Gruppe A/B LEDs auf ROT setzen (C/D wird automatisch ausgeschaltet)
+            display.setGroup(0, CRGB::Red);
             break;
 
         case CMD_GROUP_CD:
             DEBUG_PRINTLN(F("GRP_CD"));
-            currentGroup = 1;  // Gruppe C/D
+            currentGroup = Groups::Type::GROUP_CD;      // Gruppe C/D
+            currentPosition = Groups::Position::POS_1;  // Position 1 (ganze Passe)
+            groupsEnabled = true;
 
             // Timer und Vorbereitung stoppen
             timerRunning = false;
@@ -860,11 +777,75 @@ void handleCommand(RadioCommand cmd) {
             digitalWrite(Pins::LED_RED, HIGH);
 
             // Zeige "000" in ROT
-            displayNumber(0, CRGB::Red, true);
+            display.displayTimer(0, CRGB::Red, true);
 
-            // Gruppe C/D LEDs auf ROT setzen, A/B ausschalten
-            setGroupCD(CRGB::Red);
-            setGroupAB(CRGB::Black);
+            // Gruppe C/D LEDs auf ROT setzen (A/B wird automatisch ausgeschaltet)
+            display.setGroup(1, CRGB::Red);
+            break;
+
+        case CMD_GROUP_NONE:
+            DEBUG_PRINTLN(F("GRP_NONE"));
+            groupsEnabled = false;  // Keine Gruppen (1-2 Schützen Modus)
+
+            // Timer und Vorbereitung stoppen
+            timerRunning = false;
+            inPreparationPhase = false;
+
+            // Rote LED an (Stop)
+            digitalWrite(Pins::LED_GREEN, LOW);
+            digitalWrite(Pins::LED_YELLOW, LOW);
+            digitalWrite(Pins::LED_RED, HIGH);
+
+            // Zeige "000" in ROT
+            display.displayTimer(0, CRGB::Red, true);
+
+            // BEIDE Gruppen ausschalten (1-2 Schützen Modus)
+            display.setGroup(0, CRGB::Black);
+            display.setGroup(1, CRGB::Black);
+            break;
+
+        case CMD_GROUP_FINISH_AB:
+            DEBUG_PRINTLN(F("GRP_FINISH_AB"));
+            currentGroup = Groups::Type::GROUP_AB;      // Gruppe A/B
+            currentPosition = Groups::Position::POS_2;  // Position 2 (zweite Hälfte der Passe)
+            groupsEnabled = true;
+
+            // Timer und Vorbereitung stoppen
+            timerRunning = false;
+            inPreparationPhase = false;
+
+            // Rote LED an (Stop)
+            digitalWrite(Pins::LED_GREEN, LOW);
+            digitalWrite(Pins::LED_YELLOW, LOW);
+            digitalWrite(Pins::LED_RED, HIGH);
+
+            // Zeige "000" in ROT
+            display.displayTimer(0, CRGB::Red, true);
+
+            // Gruppe A/B LEDs auf ROT setzen
+            display.setGroup(0, CRGB::Red);
+            break;
+
+        case CMD_GROUP_FINISH_CD:
+            DEBUG_PRINTLN(F("GRP_FINISH_CD"));
+            currentGroup = Groups::Type::GROUP_CD;      // Gruppe C/D
+            currentPosition = Groups::Position::POS_2;  // Position 2 (zweite Hälfte der Passe)
+            groupsEnabled = true;
+
+            // Timer und Vorbereitung stoppen
+            timerRunning = false;
+            inPreparationPhase = false;
+
+            // Rote LED an (Stop)
+            digitalWrite(Pins::LED_GREEN, LOW);
+            digitalWrite(Pins::LED_YELLOW, LOW);
+            digitalWrite(Pins::LED_RED, HIGH);
+
+            // Zeige "000" in ROT
+            display.displayTimer(0, CRGB::Red, true);
+
+            // Gruppe C/D LEDs auf ROT setzen (A/B wird automatisch ausgeschaltet)
+            display.setGroup(1, CRGB::Red);
             break;
 
         case CMD_ALARM:
@@ -886,7 +867,7 @@ void handleCommand(RadioCommand cmd) {
             digitalWrite(Pins::LED_RED, HIGH);
 
             // Akustisches Signal: 8x Piepen (Alarm)
-            buzzerBeepMultiple(8);
+            buzzer.beep(8);
             break;
 
         default:

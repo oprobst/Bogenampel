@@ -19,7 +19,7 @@
  */
 enum class PfeileHolenAction : uint8_t {
     NONE = 0xFF,          // Keine Aktion gewählt
-    NAECHSTE_PASSE = 0,   // Nächste Passe starten
+    NAECHSTE_PASSE = 0,   // Nächste Passe starten (ganz/halb je nach Position)
     REIHENFOLGE = 1,      // Reihenfolge ändern
     NEUSTART = 2          // Zurück zur Konfiguration
 };

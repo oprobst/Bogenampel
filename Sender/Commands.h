@@ -9,8 +9,8 @@
  * - Byte 0: Kommando-Typ (RadioCommand)
  * - Byte 1: XOR-Checksumme (command ^ 0xFF)
  *
- * @date 2025-12-13
- * @version 2.0 - Benutzerführung (5 Kommandos)
+ * @date 2025-12-21
+ * @version 2.1 - Halbe Passe (11 Kommandos)
  */
 
 #pragma once
@@ -18,7 +18,7 @@
 #include <Arduino.h>
 
 /**
- * @brief Radio-Kommando-Codes (8 Kommandos für Benutzerführung)
+ * @brief Radio-Kommando-Codes (11 Kommandos für Benutzerführung)
  */
 enum RadioCommand : uint8_t {
     CMD_STOP = 0x01,       // Timer stoppen, rote Ampel
@@ -27,8 +27,11 @@ enum RadioCommand : uint8_t {
     CMD_INIT = 0x04,       // Empfänger initialisieren (Turnier-Start)
     CMD_ALARM = 0x05,      // Not-Alarm auslösen
     CMD_PING = 0x06,       // Connection Quality Test (ACK-basiert)
-    CMD_GROUP_AB = 0x08,   // Gruppe A/B aktiv (+ Stop/Rot)
-    CMD_GROUP_CD = 0x09    // Gruppe C/D aktiv (+ Stop/Rot)
+    CMD_GROUP_AB = 0x08,   // Gruppe A/B aktiv - Komplette Passe (+ Stop/Rot)
+    CMD_GROUP_CD = 0x09,   // Gruppe C/D aktiv - Komplette Passe (+ Stop/Rot)
+    CMD_GROUP_NONE = 0x0A, // Keine Gruppe aktiv (beide aus, 1-2 Schützen Modus)
+    CMD_GROUP_FINISH_AB = 0x0B,  // Halbe Passe: Start bei zweiter Gruppe nach A/B
+    CMD_GROUP_FINISH_CD = 0x0C   // Halbe Passe: Start bei zweiter Gruppe nach C/D
 };
 
 /**
@@ -69,15 +72,18 @@ inline bool validateChecksum(const RadioPacket* packet) {
  */
 inline const __FlashStringHelper* commandToString(RadioCommand cmd) {
     switch (cmd) {
-        case CMD_STOP:      return F("STOP");
-        case CMD_START_120: return F("START_120");
-        case CMD_START_240: return F("START_240");
-        case CMD_INIT:      return F("INIT");
-        case CMD_ALARM:     return F("ALARM");
-        case CMD_PING:      return F("PING");
-        case CMD_GROUP_AB:  return F("GROUP_AB");
-        case CMD_GROUP_CD:  return F("GROUP_CD");
-        default:            return F("UNKNOWN");
+        case CMD_STOP:       return F("STOP");
+        case CMD_START_120:  return F("START_120");
+        case CMD_START_240:  return F("START_240");
+        case CMD_INIT:       return F("INIT");
+        case CMD_ALARM:      return F("ALARM");
+        case CMD_PING:       return F("PING");
+        case CMD_GROUP_AB:   return F("GROUP_AB");
+        case CMD_GROUP_CD:   return F("GROUP_CD");
+        case CMD_GROUP_NONE: return F("GROUP_NONE");
+        case CMD_GROUP_FINISH_AB: return F("GROUP_FINISH_AB");
+        case CMD_GROUP_FINISH_CD: return F("GROUP_FINISH_CD");
+        default:             return F("UNKNOWN");
     }
 }
 

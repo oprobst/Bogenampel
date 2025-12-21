@@ -11,6 +11,7 @@
 #include "ConfigMenu.h"
 #include "SplashScreen.h"
 #include "PfeileHolenMenu.h"
+#include "SchiessBetriebMenu.h"
 
 /**
  * @brief System-Zustände (Tournament State Machine)
@@ -82,6 +83,7 @@ private:
     SplashScreen splashScreen;      // Splash Screen (nur UI)
     ConfigMenu configMenu;          // Konfigurationsmenü
     PfeileHolenMenu pfeileHolenMenu; // Pfeile-Holen-Menü
+    SchiessBetriebMenu schiessBetriebMenu; // Schießbetrieb-Menü
     State currentState;
     State previousState;
     uint32_t stateStartTime;  // Zeitstempel beim Zustandswechsel
@@ -140,13 +142,8 @@ private:
     void enterPfeileHolen();
     void exitPfeileHolen();
     void enterSchiessBetrieb();
+    void handleShootingPhaseEnd();  // Behandelt Ende der Schießphase (1-2 vs 3-4 Schützen)
     void exitSchiessBetrieb();
-
-    //-------------------------------------------------------------------------
-    // Display Functions
-    //-------------------------------------------------------------------------
-    void drawSchiessBetrieb();
-    void updateSchiessBetriebTimer();  // Nur Timer aktualisieren (kein Flackern)
 
     //-------------------------------------------------------------------------
     // Hilfsfunktionen

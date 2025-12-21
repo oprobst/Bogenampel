@@ -157,6 +157,26 @@ namespace LEDStrip {
 } // namespace LEDStrip
 
 //=============================================================================
+// GRUPPEN-DEFINITIONEN (für 3-4 Schützen Modus)
+//=============================================================================
+
+namespace Groups {
+
+    // Gruppen-Typen
+    enum class Type : uint8_t {
+        GROUP_AB = 0,  // Gruppe A/B
+        GROUP_CD = 1   // Gruppe C/D
+    };
+
+    // Positions-Marker für 4-State Cycle
+    enum class Position : uint8_t {
+        POS_1 = 1,  // Position 1 (erste Hälfte der Passe)
+        POS_2 = 2   // Position 2 (zweite Hälfte der Passe)
+    };
+
+} // namespace Groups
+
+//=============================================================================
 // SYSTEMKONSTANTEN
 //=============================================================================
 

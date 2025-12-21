@@ -507,7 +507,7 @@ void PfeileHolenMenu::drawShooterGroupInfo() {
     display.print(F("A/B"));
     display.setTextColor(Display::COLOR_GRAY);
     display.print(F(" -> "));
-    display.setTextColor(highlightCD1 ? ST77XX_YELLOW : Display::COLOR_GRAY);
+    display.setTextColor(highlightCD2 ? ST77XX_YELLOW : Display::COLOR_GRAY);
     display.print(F("C/D"));
     display.setTextColor(Display::COLOR_GRAY);
     display.print(F("} "));
@@ -515,7 +515,7 @@ void PfeileHolenMenu::drawShooterGroupInfo() {
     // Zweite Gruppe: {C/D -> A/B}
     display.setTextColor(Display::COLOR_GRAY);
     display.print(F("{"));
-    display.setTextColor(highlightCD2 ? ST77XX_YELLOW : Display::COLOR_GRAY);
+    display.setTextColor(highlightCD1 ? ST77XX_YELLOW : Display::COLOR_GRAY);
     display.print(F("C/D"));
     display.setTextColor(Display::COLOR_GRAY);
     display.print(F(" -> "));

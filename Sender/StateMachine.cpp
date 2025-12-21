@@ -22,6 +22,7 @@ StateMachine::StateMachine(Adafruit_ST7789& tft, ButtonManager& btnMgr)
     , splashScreen(tft)
     , configMenu(tft, btnMgr)
     , pfeileHolenMenu(tft, btnMgr)
+    , schiessBetriebMenu(tft, btnMgr)
     , currentState(State::STATE_SPLASH)
     , previousState(State::STATE_SPLASH)
     , stateStartTime(0)
@@ -218,6 +219,24 @@ void StateMachine::enterPfeileHolen() {
 
     pfeileHolenMenu.draw();
 
+    // Gruppen-Signal sofort senden (damit Empfänger die richtige Gruppe anzeigt)
+    // Bei 1-2 Schützen: CMD_GROUP_NONE (beide Gruppen aus)
+    // Bei 3-4 Schützen: Berücksichtige Gruppe UND Position
+    RadioCommand groupCmd;
+    if (shooterCount <= 2) {
+        groupCmd = CMD_GROUP_NONE;  // Keine Gruppen bei 1-2 Schützen
+    } else {
+        // Bei 3-4 Schützen: Prüfe ob erste oder zweite Hälfte der Passe
+        if (currentPosition == Groups::Position::POS_1) {
+            // Erste Hälfte (ganze Passe)
+            groupCmd = (currentGroup == Groups::Type::GROUP_AB) ? CMD_GROUP_AB : CMD_GROUP_CD;
+        } else {
+            // Zweite Hälfte (halbe Passe)
+            groupCmd = (currentGroup == Groups::Type::GROUP_AB) ? CMD_GROUP_FINISH_AB : CMD_GROUP_FINISH_CD;
+        }
+    }
+    sendCommand(groupCmd);
+
     // Verbindungstest-Timer zurücksetzen (sofort testen)
     lastConnectionCheck = 0;
 }
@@ -274,14 +293,45 @@ void StateMachine::handlePfeileHolen() {
 
         switch (action) {
             case PfeileHolenAction::NAECHSTE_PASSE: {
-                // Wechsel in Schießbetrieb (CMD_START wird in enterSchiessBetrieb() gesendet)
-                setState(State::STATE_SCHIESS_BETRIEB);
+                // Auto-Erkennung: Ganze oder halbe Passe basierend auf Position
+                // POS_1: Ganze Passe (beide Gruppen)
+                // POS_2: Halbe Passe (nur zweite Gruppe)
+
+                if (currentPosition == Groups::Position::POS_1) {
+                    // === GANZE PASSE ===
+                    // Wechsel in Schießbetrieb (CMD_START wird in enterSchiessBetrieb() gesendet)
+                    setState(State::STATE_SCHIESS_BETRIEB);
+                } else {
+                    // === HALBE PASSE ===
+                    // Starte zweite Hälfte der Passe (nur die aktuelle Gruppe)
+                    // Gruppenwechsel erfolgt erst NACH der Schießphase in handleShootingPhaseEnd()
+
+                    // Wechsel in Schießbetrieb (CMD_START wird in enterSchiessBetrieb() gesendet)
+                    setState(State::STATE_SCHIESS_BETRIEB);
+                }
                 break;
             }
 
             case PfeileHolenAction::REIHENFOLGE: {
                 // Schützengruppen-Abfolge einen Schritt weiterschalten
                 advanceToNextGroup();
+
+                // Sende GROUP-Kommando an Empfänger (damit Anzeige sofort aktualisiert wird)
+                RadioCommand groupCmd;
+                if (shooterCount <= 2) {
+                    groupCmd = CMD_GROUP_NONE;  // Keine Gruppen bei 1-2 Schützen
+                } else {
+                    // Bei 3-4 Schützen: Prüfe ob erste oder zweite Gruppe in der Passe
+                    if (currentPosition == Groups::Position::POS_1) {
+                        // Erste Gruppe (ganze Passe)
+                        groupCmd = (currentGroup == Groups::Type::GROUP_AB) ? CMD_GROUP_AB : CMD_GROUP_CD;
+                    } else {
+                        // Zweite Gruppe (halbe Passe)
+                        groupCmd = (currentGroup == Groups::Type::GROUP_AB) ? CMD_GROUP_FINISH_AB : CMD_GROUP_FINISH_CD;
+                    }
+                }
+                sendCommand(groupCmd);
+
                 // Neue Gruppe/Position an PfeileHolenMenu übergeben
                 pfeileHolenMenu.setTournamentConfig(shooterCount, currentGroup, currentPosition);
                 break;
@@ -322,7 +372,15 @@ void StateMachine::enterSchiessBetrieb() {
     RadioCommand cmd = (shootingTime == 120) ? CMD_START_120 : CMD_START_240;
     sendCommand(cmd);
 
-    drawSchiessBetrieb();
+    // Menü initialisieren
+    schiessBetriebMenu.begin();
+    schiessBetriebMenu.setTournamentConfig(shootingTime, shooterCount, currentGroup, currentPosition);
+
+    // Vorbereitungsphase setzen
+    schiessBetriebMenu.setPreparationPhase(true, Timing::PREPARATION_TIME_MS);
+
+    // Initial zeichnen
+    schiessBetriebMenu.draw();
 }
 
 void StateMachine::handleSchiessBetrieb() {
@@ -340,21 +398,30 @@ void StateMachine::handleSchiessBetrieb() {
         // Timer alle 1000ms aktualisieren
         static uint32_t lastDisplayUpdate = 0;
         if (millis() - lastDisplayUpdate >= 1000) {
-            updateSchiessBetriebTimer();
+            // Timer aktualisieren
+            uint32_t prepRemaining = (prepElapsed < Timing::PREPARATION_TIME_MS)
+                ? (Timing::PREPARATION_TIME_MS - prepElapsed) : 0;
+            schiessBetriebMenu.setPreparationPhase(true, prepRemaining);
             lastDisplayUpdate = millis();
         }
 
-        // Button zum Abbrechen
-        if (buttons.wasPressed(Button::OK)) {
+        // Menu aktualisieren
+        schiessBetriebMenu.update();
+        if (schiessBetriebMenu.needsRedraw()) {
+            schiessBetriebMenu.draw();
+        }
+
+        // Prüfe ob "Passe beenden" gedrückt wurde
+        if (schiessBetriebMenu.isEndRequested()) {
+            schiessBetriebMenu.resetEndRequest();
+
             // Wechsle zur nächsten Gruppe ZUERST
             advanceToNextGroup();
 
             // Sende STOP
             sendCommand(CMD_STOP);
-            // Sende neue Gruppeninformation
-            RadioCommand groupCmd = (currentGroup == Groups::Type::GROUP_AB) ? CMD_GROUP_AB : CMD_GROUP_CD;
-            sendCommand(groupCmd);
 
+            // Wechsle zu STATE_PFEILE_HOLEN (sendet GROUP-Kommando in enterPfeileHolen)
             setState(State::STATE_PFEILE_HOLEN);
         }
         return;
@@ -367,198 +434,85 @@ void StateMachine::handleSchiessBetrieb() {
     // Nur Timer alle 1000ms aktualisieren (1x pro Sekunde)
     static uint32_t lastDisplayUpdate = 0;
     if (millis() - lastDisplayUpdate >= 1000) {
-        updateSchiessBetriebTimer();
+        // Timer aktualisieren
+        uint32_t remainingMs = (elapsed < shootingDurationMs) ? (shootingDurationMs - elapsed) : 0;
+        schiessBetriebMenu.setShootingPhase(remainingMs);
         lastDisplayUpdate = millis();
+    }
+
+    // Menu aktualisieren
+    schiessBetriebMenu.update();
+    if (schiessBetriebMenu.needsRedraw()) {
+        schiessBetriebMenu.draw();
     }
 
     // Automatisches Ende bei Zeitablauf
     if (timeExpired) {
-        // Wechsle zur nächsten Gruppe ZUERST
-        advanceToNextGroup();
-
-        // Sende STOP
-        sendCommand(CMD_STOP);
-        // Sende neue Gruppeninformation
-        RadioCommand groupCmd = (currentGroup == Groups::Type::GROUP_AB) ? CMD_GROUP_AB : CMD_GROUP_CD;
-        sendCommand(groupCmd);
-
-        setState(State::STATE_PFEILE_HOLEN);
+        handleShootingPhaseEnd();
         return;
     }
 
     // Manuelles Ende durch Button
-    if (buttons.wasPressed(Button::OK)) {
-        // Wechsle zur nächsten Gruppe ZUERST
+    if (schiessBetriebMenu.isEndRequested()) {
+        schiessBetriebMenu.resetEndRequest();
+        handleShootingPhaseEnd();
+    }
+}
+
+/**
+ * @brief Behandelt das Ende der Schießphase (automatisch oder manuell)
+ *
+ * Für 1-2 Schützen: Sende STOP, gehe zu PFEILE_HOLEN
+ * Für 3-4 Schützen:
+ *   - Nach erster Gruppe (A/B): Starte zweite Gruppe (C/D)
+ *   - Nach zweiter Gruppe (C/D): Sende STOP, gehe zu PFEILE_HOLEN
+ */
+void StateMachine::handleShootingPhaseEnd() {
+    if (shooterCount <= 2) {
+        // 1-2 Schützen: Nur eine Gruppe
+        // Sende STOP (3 Pieptöne auf Empfänger)
+        sendCommand(CMD_STOP);
+
+        // Wechsle zur nächsten Gruppe (für nächste Passe)
         advanceToNextGroup();
 
-        // Sende STOP
-        sendCommand(CMD_STOP);
-        // Sende neue Gruppeninformation
-        RadioCommand groupCmd = (currentGroup == Groups::Type::GROUP_AB) ? CMD_GROUP_AB : CMD_GROUP_CD;
-        sendCommand(groupCmd);
-
+        // Gehe zu PFEILE_HOLEN
         setState(State::STATE_PFEILE_HOLEN);
+    } else {
+        // 3-4 Schützen: Zwei Gruppen pro Passe
+        // Prüfe welche Gruppe gerade fertig ist (BEFORE advanceToNextGroup!)
+        if (currentGroup == Groups::Type::GROUP_AB) {
+            // Erste Gruppe (A/B) fertig → Starte zweite Gruppe (C/D)
+            advanceToNextGroup();  // Wechsle zu GROUP_CD
+
+            // Vorbereitung für zweite Gruppe manuell neu starten
+            // (setState würde nicht funktionieren da wir bereits in STATE_SCHIESS_BETRIEB sind)
+            inPreparationPhase = true;
+            preparationStartTime = millis();
+
+            // Sende START-Kommando (Empfänger startet eigene 10s Vorbereitungsphase)
+            RadioCommand startCmd = (shootingTime == 120) ? CMD_START_120 : CMD_START_240;
+            sendCommand(startCmd);
+
+            // Menü für zweite Gruppe aktualisieren
+            schiessBetriebMenu.setTournamentConfig(shootingTime, shooterCount, currentGroup, currentPosition);
+            schiessBetriebMenu.setPreparationPhase(true, Timing::PREPARATION_TIME_MS);
+            schiessBetriebMenu.draw();
+        } else {
+            // Zweite Gruppe (C/D) fertig → Ende der Passe
+            // Sende STOP (3 Pieptöne auf Empfänger)
+            sendCommand(CMD_STOP);
+
+            // Wechsle zur nächsten Gruppe (zurück zu A/B für nächste Passe)
+            advanceToNextGroup();
+
+            // Gehe zu PFEILE_HOLEN
+            setState(State::STATE_PFEILE_HOLEN);
+        }
     }
 }
 
 void StateMachine::exitSchiessBetrieb() {
-}
-
-void StateMachine::drawSchiessBetrieb() {
-    display.fillScreen(ST77XX_BLACK);
-
-    // Überschrift: "Schiessbetrieb" in Orange
-    display.setTextSize(3);
-    display.setTextColor(ST77XX_ORANGE);
-    display.setCursor(10, 10);
-    display.print(F("Schiessbetrieb"));
-
-    // Trennlinie
-    display.drawFastHLine(10, 50, display.width() - 20, Display::COLOR_GRAY);
-
-    // Gruppensequenz anzeigen (nur bei 3-4 Schützen)
-    if (shooterCount == 4) {
-        // Zeile 1: "Aktuell: A/B" oder "Aktuell: C/D"
-        display.setCursor(10, 58);
-        display.setTextSize(2);
-        display.setTextColor(ST77XX_WHITE);
-        display.print(F("Aktuell: "));
-        display.setTextColor(ST77XX_YELLOW);
-        display.println(currentGroup == Groups::Type::GROUP_AB ? F("A/B") : F("C/D"));
-
-        // Zeile 2: Statischer String mit Hervorhebung
-        display.setCursor(10, 82);
-        display.setTextSize(2);
-
-        // "{A/B -> C/D} {C/D -> A/B}"
-        // Teile: "{A/B", " -> ", "C/D}", " ", "{C/D", " -> ", "A/B}"
-
-        // Bestimme welcher Teil gelb sein soll
-        bool highlightAB1 = (currentGroup == Groups::Type::GROUP_AB && currentPosition == Groups::Position::POS_1);
-        bool highlightCD1 = (currentGroup == Groups::Type::GROUP_CD && currentPosition == Groups::Position::POS_1);
-        bool highlightCD2 = (currentGroup == Groups::Type::GROUP_CD && currentPosition == Groups::Position::POS_2);
-        bool highlightAB2 = (currentGroup == Groups::Type::GROUP_AB && currentPosition == Groups::Position::POS_2);
-
-        // "{A/B"
-        display.setTextColor(highlightAB1 ? ST77XX_YELLOW : Display::COLOR_GRAY);
-        display.print(F("{A/B"));
-
-        // " -> "
-        display.setTextColor(Display::COLOR_GRAY);
-        display.print(F(" -> "));
-
-        // "C/D}"
-        display.setTextColor(highlightCD1 ? ST77XX_YELLOW : Display::COLOR_GRAY);
-        display.print(F("C/D}"));
-
-        // " "
-        display.setTextColor(Display::COLOR_GRAY);
-        display.print(F(" "));
-
-        // "{C/D"
-        display.setTextColor(highlightCD2 ? ST77XX_YELLOW : Display::COLOR_GRAY);
-        display.print(F("{C/D"));
-
-        // " -> "
-        display.setTextColor(Display::COLOR_GRAY);
-        display.print(F(" -> "));
-
-        // "A/B}"
-        display.setTextColor(highlightAB2 ? ST77XX_YELLOW : Display::COLOR_GRAY);
-        display.print(F("A/B}"));
-    }
-    // Bei 1-2 Schützen: Keine Gruppenanzeige (nur A/B, keine Rotation)
-
-    // Verbleibende Zeit anzeigen (große Zahlen) - MITTIG ZENTRIERT
-    uint32_t elapsed = millis() - shootingStartTime;
-    uint32_t remainingMs = (elapsed < shootingDurationMs) ? (shootingDurationMs - elapsed) : 0;
-    uint16_t remainingSec = (remainingMs + 999) / 1000;  // Aufrunden
-
-    // Timer-Position: Bei 3-4 Schützen tiefer setzen (wegen Gruppenanzeige)
-    uint16_t timerY = (shooterCount == 4) ? 112 : 65;
-
-    display.setTextSize(4);
-    display.setTextColor(ST77XX_GREEN);
-
-    // Timer horizontal zentrieren
-    char timerText[8];
-    sprintf(timerText, "%ds", remainingSec);
-    int16_t x1, y1;
-    uint16_t w, h;
-    display.getTextBounds(timerText, 0, 0, &x1, &y1, &w, &h);
-    uint16_t timerX = (display.width() - w) / 2;
-
-    display.setCursor(timerX, timerY);
-    display.print(remainingSec);
-    display.print(F("s"));
-
-    // Button "Passe beenden" - knapp über dem grauen Text
-    const uint16_t btnY = 184;  // 8 Pixel höher als vorher
-    const uint16_t btnH = 30;
-    const uint16_t margin = 10;
-    uint16_t btnW = display.width() - 2 * margin;
-
-    // Grauer Hintergrund (wie bei anderen Buttons)
-    display.fillRect(margin, btnY, btnW, btnH, Display::COLOR_DARKGRAY);
-
-    // Oranger Rahmen
-    display.drawRect(margin, btnY, btnW, btnH, Display::COLOR_ORANGE);
-
-    display.setTextSize(2);
-    display.setTextColor(Display::COLOR_ORANGE);
-
-    // Variablen x1, y1, w, h bereits oben deklariert - wiederverwenden
-    display.getTextBounds("Passe beenden", 0, 0, &x1, &y1, &w, &h);
-    display.setCursor(margin + (btnW - w) / 2, btnY + (btnH - h) / 2);
-    display.print(F("Passe beenden"));
-
-    // Hinweis unten
-    display.setTextSize(1);
-    display.setTextColor(Display::COLOR_GRAY);
-    display.setCursor(10, display.height() - 15);
-    display.print(F("OK: Passe beenden"));
-}
-
-void StateMachine::updateSchiessBetriebTimer() {
-    // Timer-Position: Bei 3-4 Schützen tiefer setzen (wegen Gruppenanzeige)
-    const uint16_t timerY = (shooterCount == 4) ? 112 : 65;
-    const uint16_t timerH = 32;   // Höhe für Textgröße 4
-
-    uint16_t remainingSec;
-    uint16_t timerColor;
-
-    if (inPreparationPhase) {
-        // Vorbereitungsphase: Orange Countdown (10s)
-        uint32_t prepElapsed = millis() - preparationStartTime;
-        uint32_t prepRemainingMs = (prepElapsed < Timing::PREPARATION_TIME_MS)
-            ? (Timing::PREPARATION_TIME_MS - prepElapsed) : 0;
-        remainingSec = (prepRemainingMs + 999) / 1000;  // Aufrunden
-        timerColor = Display::COLOR_ORANGE;
-    } else {
-        // Schießphase: Grüner Countdown (120/240s)
-        uint32_t elapsed = millis() - shootingStartTime;
-        uint32_t remainingMs = (elapsed < shootingDurationMs) ? (shootingDurationMs - elapsed) : 0;
-        remainingSec = (remainingMs + 999) / 1000;  // Aufrunden
-        timerColor = ST77XX_GREEN;
-    }
-
-    // Timer horizontal zentrieren
-    display.setTextSize(4);
-    char timerText[8];
-    sprintf(timerText, "%ds", remainingSec);
-    int16_t x1, y1;
-    uint16_t w, h;
-    display.getTextBounds(timerText, 0, 0, &x1, &y1, &w, &h);
-    uint16_t timerX = (display.width() - w) / 2;
-
-    // Timer-Bereich löschen (volle Breite um Flackern zu vermeiden)
-    display.fillRect(0, timerY, display.width(), timerH, ST77XX_BLACK);
-
-    // Timer neu zeichnen
-    display.setTextColor(timerColor);
-    display.setCursor(timerX, timerY);
-    display.print(remainingSec);
-    display.print(F("s"));
 }
 
 //=============================================================================
@@ -574,14 +528,14 @@ void StateMachine::advanceToNextGroup() {
     if (currentGroup == Groups::Type::GROUP_AB && currentPosition == Groups::Position::POS_1) {
         // State 1 -> State 2
         currentGroup = Groups::Type::GROUP_CD;
-        currentPosition = Groups::Position::POS_1;
-    }
-    else if (currentGroup == Groups::Type::GROUP_CD && currentPosition == Groups::Position::POS_1) {
-        // State 2 -> State 3
-        currentGroup = Groups::Type::GROUP_CD;
         currentPosition = Groups::Position::POS_2;
     }
     else if (currentGroup == Groups::Type::GROUP_CD && currentPosition == Groups::Position::POS_2) {
+        // State 2 -> State 3
+        currentGroup = Groups::Type::GROUP_CD;
+        currentPosition = Groups::Position::POS_1;
+    }
+    else if (currentGroup == Groups::Type::GROUP_CD && currentPosition == Groups::Position::POS_1) {
         // State 3 -> State 4
         currentGroup = Groups::Type::GROUP_AB;
         currentPosition = Groups::Position::POS_2;
