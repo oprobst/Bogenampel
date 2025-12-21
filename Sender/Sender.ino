@@ -33,7 +33,6 @@ void setup() {
     #if DEBUG_ENABLED
     Serial.begin(System::SERIAL_BAUD);
     while (!Serial && millis() < 2000);
-    DEBUG_PRINTLN(F("\nBogenampel V1.0"));
     #endif
 
     // SPI-Bus VOR allen SPI-Geräten initialisieren
@@ -45,6 +44,7 @@ void setup() {
 
     // Button Manager initialisieren
     buttons.begin();
+    buttons.initBuzzer();  // Buzzer für Tastentöne initialisieren
 
     // Radio ZUERST initialisieren (VOR Display!)
     bool radioOk = initializeRadio();
@@ -61,8 +61,6 @@ void setup() {
     // Radio-Status an State Machine übergeben
     stateMachine.setRadioInitialized(radioOk);
 
-    DEBUG_PRINTLN(F("Setup OK\n"));
-
     // Warte 2 Sekunden, damit Empfänger auch bereit ist
     delay(2000);
 }
@@ -77,8 +75,6 @@ void loop() {
 
     // Alarm-Detection (globale Prüfung, hat Vorrang vor allem anderen)
     if (buttons.isAlarmTriggered()) {
-        DEBUG_PRINTLN(F("ALARM!"));
-
         // Sende Alarm mit Retries
         TransmissionResult result = sendAlarmWithRetry();
 
@@ -260,8 +256,6 @@ uint8_t testConnectionQuality() {
     uint8_t successCount = 0;
     const uint8_t totalPings = RF::QUALITY_TEST_PINGS;
 
-    DEBUG_PRINTLN(F("QTest"));
-
     for (uint8_t i = 0; i < totalPings; i++) {
         // Sende PING und prüfe ACK
         TransmissionResult result = sendCommand(CMD_PING);
@@ -279,12 +273,32 @@ uint8_t testConnectionQuality() {
     // Erfolgsrate berechnen (0-100%)
     uint8_t qualityPercent = (successCount * 100) / totalPings;
 
-    DEBUG_PRINT(successCount);
-    DEBUG_PRINT(F("/"));
-    DEBUG_PRINT(totalPings);
-    DEBUG_PRINT(F("="));
-    DEBUG_PRINT(qualityPercent);
-    DEBUG_PRINTLN(F("%"));
-
     return qualityPercent;
+}
+
+/**
+ * @brief Misst die Batteriespannung
+ * @return Spannung in Millivolt (z.B. 7200 für 7.2V)
+ */
+uint16_t readBatteryVoltage() {
+    // Einfache ADC-Lesung ohne delays (delay() kann zu Problemen führen)
+    uint16_t adcValue = analogRead(Pins::VOLTAGE_SENSE);
+
+    // ADC-Wert in Spannung umrechnen (ohne Float!)
+    // Vbat_mV = (ADC / 1023) * 5000mV * 2.0 = (ADC * 10000) / 1023
+    uint16_t voltageMillivolts = ((uint32_t)adcValue * 10000UL) / Battery::ADC_MAX;
+
+    return voltageMillivolts;
+}
+
+/**
+ * @brief Prüft ob USB angeschlossen ist
+ * @return true wenn USB angeschlossen, false wenn Batteriebetrieb
+ *
+ * USB wird nur angezeigt, wenn die Eingangsspannung < 6V ist.
+ * Das bedeutet, die externe 9V Batterie ist definitiv nicht angeschlossen.
+ */
+bool isUsbPowered() {
+    uint16_t voltage = readBatteryVoltage();
+    return (voltage < 6000);  // < 6V = USB-Betrieb (externe 9V Batterie nicht angeschlossen)
 }

@@ -12,6 +12,10 @@ extern bool testReceiverConnection();
 extern uint8_t testConnectionQuality();
 extern bool initializeRadio();
 
+// Forward-Deklarationen für Batterie-Funktionen (implementiert in Sender.ino)
+extern uint16_t readBatteryVoltage();
+extern bool isUsbPowered();
+
 StateMachine::StateMachine(Adafruit_ST7789& tft, ButtonManager& btnMgr)
     : display(tft)
     , buttons(btnMgr)
@@ -29,6 +33,8 @@ StateMachine::StateMachine(Adafruit_ST7789& tft, ButtonManager& btnMgr)
     , qualityTestDone(false)
     , connectionQuality(0)
     , qualityDisplayStartTime(0)
+    , lastConnectionCheck(0)
+    , initialPingsDone(false)
     , currentGroup(Groups::Type::GROUP_AB)     // Start mit A/B
     , currentPosition(Groups::Position::POS_1) { // Start mit Position 1
 }
@@ -168,6 +174,9 @@ void StateMachine::enterConfigMenu() {
     // ConfigMenu initialisieren
     configMenu.begin();
     configMenu.draw();
+
+    // Initiale Pings zurücksetzen für nächsten Pfeile-Holen State
+    initialPingsDone = false;
 }
 
 void StateMachine::handleConfigMenu() {
@@ -214,10 +223,39 @@ void StateMachine::enterPfeileHolen() {
 }
 
 void StateMachine::handlePfeileHolen() {
-    // Verbindungstest alle 5 Sekunden durchführen
+    // Beim ersten Aufruf: 4 schnelle Pings durchführen um die Ping-Historie zu füllen
+    if (!initialPingsDone) {
+        // 4 schnelle Pings im Abstand von 200ms
+        for (uint8_t i = 0; i < 4; i++) {
+            bool connected = testReceiverConnection();
+            pfeileHolenMenu.updateConnectionStatus(connected);
+
+            // Warte 200ms bis zum nächsten Ping (außer beim letzten)
+            if (i < 3) {
+                delay(200);
+            }
+        }
+
+        // Initiale Batteriemessung durchführen
+        uint16_t voltage = readBatteryVoltage();
+        bool usbPowered = isUsbPowered();
+        pfeileHolenMenu.updateBatteryStatus(voltage, usbPowered);
+
+        // Flags setzen
+        initialPingsDone = true;
+        lastConnectionCheck = millis();
+    }
+
+    // Verbindungstest alle 5 Sekunden durchführen (nach den initialen Pings)
     if (millis() - lastConnectionCheck >= 5000) {
         bool connected = testReceiverConnection();
         pfeileHolenMenu.updateConnectionStatus(connected);
+
+        // Batteriemessung durchführen
+        uint16_t voltage = readBatteryVoltage();
+        bool usbPowered = isUsbPowered();
+        pfeileHolenMenu.updateBatteryStatus(voltage, usbPowered);
+
         lastConnectionCheck = millis();
     }
 
@@ -238,6 +276,14 @@ void StateMachine::handlePfeileHolen() {
             case PfeileHolenAction::NAECHSTE_PASSE: {
                 // Wechsel in Schießbetrieb (CMD_START wird in enterSchiessBetrieb() gesendet)
                 setState(State::STATE_SCHIESS_BETRIEB);
+                break;
+            }
+
+            case PfeileHolenAction::REIHENFOLGE: {
+                // Schützengruppen-Abfolge einen Schritt weiterschalten
+                advanceToNextGroup();
+                // Neue Gruppe/Position an PfeileHolenMenu übergeben
+                pfeileHolenMenu.setTournamentConfig(shooterCount, currentGroup, currentPosition);
                 break;
             }
 
@@ -300,13 +346,15 @@ void StateMachine::handleSchiessBetrieb() {
 
         // Button zum Abbrechen
         if (buttons.wasPressed(Button::OK)) {
+            // Wechsle zur nächsten Gruppe ZUERST
+            advanceToNextGroup();
+
             // Sende STOP
             sendCommand(CMD_STOP);
-            // Sende Gruppeninformation
+            // Sende neue Gruppeninformation
             RadioCommand groupCmd = (currentGroup == Groups::Type::GROUP_AB) ? CMD_GROUP_AB : CMD_GROUP_CD;
             sendCommand(groupCmd);
 
-            advanceToNextGroup();
             setState(State::STATE_PFEILE_HOLEN);
         }
         return;
@@ -325,26 +373,30 @@ void StateMachine::handleSchiessBetrieb() {
 
     // Automatisches Ende bei Zeitablauf
     if (timeExpired) {
+        // Wechsle zur nächsten Gruppe ZUERST
+        advanceToNextGroup();
+
         // Sende STOP
         sendCommand(CMD_STOP);
-        // Sende Gruppeninformation
+        // Sende neue Gruppeninformation
         RadioCommand groupCmd = (currentGroup == Groups::Type::GROUP_AB) ? CMD_GROUP_AB : CMD_GROUP_CD;
         sendCommand(groupCmd);
 
-        advanceToNextGroup();
         setState(State::STATE_PFEILE_HOLEN);
         return;
     }
 
     // Manuelles Ende durch Button
     if (buttons.wasPressed(Button::OK)) {
+        // Wechsle zur nächsten Gruppe ZUERST
+        advanceToNextGroup();
+
         // Sende STOP
         sendCommand(CMD_STOP);
-        // Sende Gruppeninformation
+        // Sende neue Gruppeninformation
         RadioCommand groupCmd = (currentGroup == Groups::Type::GROUP_AB) ? CMD_GROUP_AB : CMD_GROUP_CD;
         sendCommand(groupCmd);
 
-        advanceToNextGroup();
         setState(State::STATE_PFEILE_HOLEN);
     }
 }

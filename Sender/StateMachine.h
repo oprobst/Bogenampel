@@ -106,6 +106,7 @@ private:
     // State Variables: PFEILE_HOLEN
     //-------------------------------------------------------------------------
     uint32_t lastConnectionCheck;  // Zeitpunkt der letzten Verbindungsprüfung
+    bool initialPingsDone;         // Wurden die 4 initialen schnellen Pings bereits durchgeführt?
 
     //-------------------------------------------------------------------------
     // Schützengruppen-Tracking (für 3-4 Schützen Modus)

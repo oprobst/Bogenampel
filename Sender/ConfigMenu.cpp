@@ -23,8 +23,6 @@ ConfigMenu::ConfigMenu(Adafruit_ST7789& tft, ButtonManager& btnMgr)
 }
 
 void ConfigMenu::begin() {
-    DEBUG_PRINTLN(F("ConfigMenu: Initialisiere..."));
-
     // Setze UI-Variablen zurück
     cursorLine = 0;
     selectedButton = 1;  // Default: "Start"
@@ -38,23 +36,12 @@ void ConfigMenu::begin() {
     lastShooterCount = 0;
     lastCursorLine = 0xFF;
     lastSelectedButton = 0xFF;
-
-    DEBUG_PRINT(F("  Zeit: "));
-    DEBUG_PRINT(shootingTime);
-    DEBUG_PRINTLN(F("s"));
-    DEBUG_PRINT(F("  Schuetzen: "));
-    DEBUG_PRINTLN(shooterCount == 2 ? F("1-2") : F("3-4"));
 }
 
 void ConfigMenu::setConfig(uint8_t time, uint8_t count) {
     shootingTime = time;
     shooterCount = count;
     needsUpdate = true;
-
-    DEBUG_PRINT(F("ConfigMenu: Setze Config - Zeit: "));
-    DEBUG_PRINT(time);
-    DEBUG_PRINT(F("s, Schuetzen: "));
-    DEBUG_PRINTLN(count == 2 ? F("1-2") : F("3-4"));
 }
 
 void ConfigMenu::update() {
@@ -94,8 +81,6 @@ void ConfigMenu::update() {
             // Toggle zwischen Ändern (0) und Start (1)
             selectedButton = (selectedButton == 0) ? 1 : 0;
             needsUpdate = true;
-            DEBUG_PRINT(F("ConfigMenu: Button -> "));
-            DEBUG_PRINTLN(selectedButton == 0 ? F("Aendern") : F("Start"));
         }
         else if (buttons.wasPressed(Button::OK)) {
             if (selectedButton == 0) {
@@ -156,8 +141,6 @@ void ConfigMenu::draw() {
         }
 
         lastCursorLine = cursorLine;
-
-        DEBUG_PRINTLN(F("ConfigMenu: Selective redraw"));
     }
 
     needsUpdate = false;

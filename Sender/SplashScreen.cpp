@@ -52,34 +52,26 @@ void SplashScreen::draw() {
     display.setTextSize(1);
     display.setTextColor(Display::COLOR_GRAY);
 
-    // Zeile 1: Kanal und Data Rate
-    char line1[32];
-    const char* dataRateStr = "";
+    // Zeile 1: Kanal und Data Rate (linksbündig statt zentriert spart Code)
+    display.setCursor(10, STATUS_Y + 25);
+    display.print(F("RF: Ch"));
+    display.print(RF::CHANNEL);
+    display.print(F("  "));
     switch (RF::DATA_RATE) {
-        case RF24_250KBPS: dataRateStr = "250K"; break;
-        case RF24_1MBPS:   dataRateStr = "1M"; break;
-        case RF24_2MBPS:   dataRateStr = "2M"; break;
+        case RF24_250KBPS: display.print(F("250K")); break;
+        case RF24_1MBPS:   display.print(F("1M")); break;
+        case RF24_2MBPS:   display.print(F("2M")); break;
     }
-    snprintf(line1, sizeof(line1), "RF: Ch%d  %s", RF::CHANNEL, dataRateStr);
 
-    display.getTextBounds(line1, 0, 0, &x1, &y1, &w, &h);
-    display.setCursor(centerX - w/2, STATUS_Y + 25);
-    display.print(line1);
-
-    // Zeile 2: Power Level
-    char line2[32];
-    const char* powerStr = "";
+    // Zeile 2: Power Level (linksbündig statt zentriert spart Code)
+    display.setCursor(10, STATUS_Y + 35);
+    display.print(F("Power: "));
     switch (RF::POWER_LEVEL) {
-        case RF24_PA_MIN:  powerStr = "MIN (-18dBm)"; break;
-        case RF24_PA_LOW:  powerStr = "LOW (-12dBm)"; break;
-        case RF24_PA_HIGH: powerStr = "HIGH (-6dBm)"; break;
-        case RF24_PA_MAX:  powerStr = "MAX (0dBm)"; break;
+        case RF24_PA_MIN:  display.print(F("MIN (-18dBm)")); break;
+        case RF24_PA_LOW:  display.print(F("LOW (-12dBm)")); break;
+        case RF24_PA_HIGH: display.print(F("HIGH (-6dBm)")); break;
+        case RF24_PA_MAX:  display.print(F("MAX (0dBm)")); break;
     }
-    snprintf(line2, sizeof(line2), "Power: %s", powerStr);
-
-    display.getTextBounds(line2, 0, 0, &x1, &y1, &w, &h);
-    display.setCursor(centerX - w/2, STATUS_Y + 35);
-    display.print(line2);
 }
 
 void SplashScreen::updateConnectionStatus(const char* status) {
@@ -117,8 +109,6 @@ void SplashScreen::showConnectionQuality(uint8_t qualityPercent) {
 
     // Prozentanzeige (mittel)
     display.setTextSize(3);
-    char percentText[8];
-    snprintf(percentText, sizeof(percentText), "%d%%", qualityPercent);
 
     // Farbe abhängig von Qualität
     uint16_t color;
@@ -130,10 +120,12 @@ void SplashScreen::showConnectionQuality(uint8_t qualityPercent) {
         color = ST77XX_RED;        // Schlecht (0-49%)
     }
 
+    // Zentrier-Position berechnen (nutze "100%" als Worst-Case für Breite)
     display.setTextColor(color);
-    display.getTextBounds(percentText, 0, 0, &x1, &y1, &w, &h);
+    display.getTextBounds("100%", 0, 0, &x1, &y1, &w, &h);
     display.setCursor(centerX - w/2, centerY - 5);
-    display.print(percentText);
+    display.print(qualityPercent);
+    display.print(F("%"));
 
     // Balken-Anzeige (unter Prozentanzeige)
     const int16_t barWidth = 160;

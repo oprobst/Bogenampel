@@ -29,7 +29,7 @@
 #define DEBUG_ENABLED 1  // 1 = Debug-Ausgaben an, 0 = aus
 
 // Verkürzte Zeiten für Tests (nur wenn DEBUG_ENABLED = 1)
-#define DEBUG_SHORT_TIMES 1  // 1 = Verkürzte Zeiten, 0 = Normale Zeiten
+#define DEBUG_SHORT_TIMES 0  // 1 = Verkürzte Zeiten, 0 = Normale Zeiten
 
 //=============================================================================
 // HARDWARE PIN-DEFINITIONEN
@@ -73,9 +73,14 @@ namespace Pins {
     constexpr uint8_t LED_RED = A2;  // D1: Rote LED (Debug/Status)
 
     //-------------------------------------------------------------------------
+    // Ausgänge: Buzzer
+    //-------------------------------------------------------------------------
+    constexpr uint8_t BUZZER = 4;  // D4: KY-006 Passiver Buzzer für Tastenton
+
+    //-------------------------------------------------------------------------
     // Analoge Eingänge
     //-------------------------------------------------------------------------
-    constexpr uint8_t VOLTAGE_SENSE = A7;  // Batteriespannung (1:1 Spannungsteiler)
+    constexpr uint8_t VOLTAGE_SENSE = A5;  // Batteriespannung (1:1 Spannungsteiler)
 
 } // namespace Pins
 
@@ -187,6 +192,10 @@ namespace Timing {
 
     // Button Debouncing
     constexpr uint8_t DEBOUNCE_MS = 50;  // 50ms Entprellzeit
+
+    // Buzzer Click-Ton
+    constexpr uint16_t CLICK_FREQUENCY_HZ = 1600;  // 1,6 kHz für satten Klick
+    constexpr uint8_t CLICK_DURATION_MS = 25;      // 25ms kurzer Klick
 
     // Schießbetrieb
     #if DEBUG_SHORT_TIMES

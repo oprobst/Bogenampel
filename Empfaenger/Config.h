@@ -53,9 +53,15 @@ namespace Pins {
     constexpr uint8_t BUZZER     = 4;   // D6: KY-006 Passiver Piezo Buzzer
 
     //-------------------------------------------------------------------------
+    // Ausgänge: WS2812B LED Strip
+    //-------------------------------------------------------------------------
+    constexpr uint8_t LED_STRIP  = 3;   // D3: WS2812B Data Pin
+
+    //-------------------------------------------------------------------------
     // Eingänge: Taster (mit internem Pull-Up, aktiv LOW)
     //-------------------------------------------------------------------------
-    constexpr uint8_t BTN_DEBUG  = 5;   // J1: Debug-Taster
+    constexpr uint8_t BTN_DEBUG   = 5;   // J1: Debug-Taster
+    constexpr uint8_t DEBUG_JUMPER = 2;  // D2: Debug-Jumper (LOW = Debug-Modus)
 
 } // namespace Pins
 
@@ -111,6 +117,46 @@ namespace Timing {
 } // namespace Timing
 
 //=============================================================================
+// LED STRIP KONFIGURATION (WS2812B)
+//=============================================================================
+
+namespace LEDStrip {
+
+    // LED Strip Konfiguration:
+    // - 16 LEDs für Gruppe A/B (LED 1-16, Array Index 0-15)
+    // - 16 LEDs für Gruppe C/D (LED 17-32, Array Index 16-31)
+    // - 3 Digits × 7 Segmente × 6 LEDs = 126 LEDs (LED 33-158, Array Index 32-157)
+    // Total: 158 LEDs
+
+    constexpr uint8_t GROUP_AB_LEDS = 16;      // LEDs 1-16 (Index 0-15)
+    constexpr uint8_t GROUP_CD_LEDS = 16;      // LEDs 17-32 (Index 16-31)
+    constexpr uint8_t GROUP_AB_START = 0;      // Start-Index für Gruppe A/B
+    constexpr uint8_t GROUP_CD_START = 16;     // Start-Index für Gruppe C/D
+
+    constexpr uint8_t LEDS_PER_SEGMENT = 6;    // 6 LEDs pro 7-Segment-Balken
+    constexpr uint8_t SEGMENTS_PER_DIGIT = 7;  // 7 Segmente pro Ziffer (B, A, F, G, C, D, E)
+    constexpr uint8_t NUM_DIGITS = 3;          // 3 Ziffern (1er, 10er, 100er)
+    constexpr uint8_t DIGIT_START = 32;        // Start-Index der 7-Segment-Anzeigen (nach A/B + C/D)
+
+    constexpr uint8_t LEDS_PER_DIGIT = LEDS_PER_SEGMENT * SEGMENTS_PER_DIGIT;  // 42 LEDs pro Ziffer
+    constexpr uint8_t TOTAL_LEDS = GROUP_AB_LEDS + GROUP_CD_LEDS + (NUM_DIGITS * LEDS_PER_DIGIT);  // 158 LEDs
+
+    // Start-Indizes für die einzelnen Ziffern
+    // Physische Hardware-Anordnung im Strip:
+    // - LED 33-74 (Index 32): Erste Display-Position → 1er-Stelle
+    // - LED 75-116 (Index 74): Zweite Display-Position → 10er-Stelle
+    // - LED 117-158 (Index 116): Dritte Display-Position → 100er-Stelle
+    constexpr uint8_t DIGIT_1_START = DIGIT_START;                              // LED 33 (Index 32): 1er-Stelle (links)
+    constexpr uint8_t DIGIT_10_START = DIGIT_START + LEDS_PER_DIGIT;           // LED 75 (Index 74): 10er-Stelle (mitte)
+    constexpr uint8_t DIGIT_100_START = DIGIT_START + (2 * LEDS_PER_DIGIT);    // LED 117 (Index 116): 100er-Stelle (rechts)
+
+    // Helligkeit (0-255)
+    constexpr uint8_t BRIGHTNESS_NORMAL = 255;  // 100% Helligkeit
+    constexpr uint8_t BRIGHTNESS_DEBUG = 64;    // 25% Helligkeit (255 * 0.25 = 64)
+
+} // namespace LEDStrip
+
+//=============================================================================
 // SYSTEMKONSTANTEN
 //=============================================================================
 
@@ -128,7 +174,7 @@ namespace System {
     #define DEBUG_ENABLED 1  // 1 = Debug-Ausgaben an, 0 = aus
 
     // Verkürzte Zeiten für Tests (nur wenn DEBUG_ENABLED = 1)
-    #define DEBUG_SHORT_TIMES 1  // 1 = Verkürzte Zeiten, 0 = Normale Zeiten
+    #define DEBUG_SHORT_TIMES 0  // 1 = Verkürzte Zeiten, 0 = Normale Zeiten
 
     #if DEBUG_ENABLED
         #define DEBUG_PRINT(...)   Serial.print(__VA_ARGS__)

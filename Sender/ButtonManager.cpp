@@ -31,6 +31,12 @@ void ButtonManager::begin() {
     }
 }
 
+void ButtonManager::initBuzzer() {
+    // Buzzer-Pin als Ausgang konfigurieren
+    pinMode(Pins::BUZZER, OUTPUT);
+    digitalWrite(Pins::BUZZER, LOW);  // Sicherstellen, dass Buzzer aus ist
+}
+
 void ButtonManager::update() {
     uint32_t now = millis();
 
@@ -55,19 +61,13 @@ void ButtonManager::update() {
             if (rawPressed && !state.pressed) {
                 state.pressed = true;
                 state.pressTime = now;
-                state.wasPressedFlag = true;               
+                state.wasPressedFlag = true;
+                playClickSound();  // Klick-Ton abspielen
             }
             // Button wurde losgelassen (Flanke LOW → HIGH)
             else if (!rawPressed && state.pressed) {
                 state.pressed = false;
                 state.wasReleasedFlag = true;
-
-                #if DEBUG_ENABLED
-                DEBUG_PRINT(i);
-                DEBUG_PRINT(F(" ("));
-                DEBUG_PRINT(now - state.pressTime);
-                DEBUG_PRINTLN(F("ms)"));
-                #endif
             }
         }
     }
@@ -86,7 +86,6 @@ void ButtonManager::update() {
         uint32_t duration = now - okPressStartTime;
         if (duration >= Timing::ALARM_THRESHOLD_MS && !alarmTriggered) {
             alarmTriggered = true;  // Alarm-Flag setzen (wird mit isAlarmTriggered() abgerufen)
-            DEBUG_PRINTLN(F("ALARM"));
         }
     }
     else if (!okPressed && okPressActive) {
@@ -167,4 +166,9 @@ uint8_t ButtonManager::getPin(Button btn) const {
 bool ButtonManager::readRawState(Button btn) const {
     // LOW = gedrückt (Pull-Up aktiv), also invertieren
     return digitalRead(getPin(btn)) == LOW;
+}
+
+void ButtonManager::playClickSound() {
+    // Kurzen Klick-Ton erzeugen
+    tone(Pins::BUZZER, Timing::CLICK_FREQUENCY_HZ, Timing::CLICK_DURATION_MS);
 }

@@ -15,14 +15,22 @@ PfeileHolenMenu::PfeileHolenMenu(Adafruit_ST7789& tft, ButtonManager& btnMgr)
     , lastCursorPosition(0xFF)
     , connectionOk(false)
     , lastConnectionOk(false)
+    , pingHistoryIndex(0)
+    , pingHistoryUpdated(false)
+    , batteryVoltage(0)
+    , isUsbPowered(true)
+    , batteryUpdated(false)
     , shooterCount(2)  // Default: 1-2 Schützen
     , currentGroup(Groups::Type::GROUP_AB)
-    , currentPosition(Groups::Position::POS_1) {
+    , currentPosition(Groups::Position::POS_1)
+    , groupConfigChanged(false) {
+    // Ping-Historie mit false initialisieren (keine ACKs)
+    for (uint8_t i = 0; i < 4; i++) {
+        pingHistory[i] = false;
+    }
 }
 
 void PfeileHolenMenu::begin() {
-    DEBUG_PRINTLN(F("PfeileHolenMenu: Initialisiere..."));
-
     cursorPosition = 0;  // Start bei "Nächste Passe"
     selectedAction = PfeileHolenAction::NONE;
     needsUpdate = true;
@@ -30,6 +38,21 @@ void PfeileHolenMenu::begin() {
     lastCursorPosition = 0xFF;
     connectionOk = false;
     lastConnectionOk = false;
+
+    // Ping-Historie zurücksetzen
+    pingHistoryIndex = 0;
+    pingHistoryUpdated = false;
+    for (uint8_t i = 0; i < 4; i++) {
+        pingHistory[i] = false;
+    }
+
+    // Batteriestatus zurücksetzen
+    batteryVoltage = 0;
+    isUsbPowered = true;
+    batteryUpdated = false;
+
+    // Gruppen-Konfiguration zurücksetzen
+    groupConfigChanged = false;
 }
 
 void PfeileHolenMenu::update() {
@@ -48,15 +71,11 @@ void PfeileHolenMenu::update() {
             cursorPosition--;
         }
         needsUpdate = true;
-        DEBUG_PRINT(F("PfeileHolenMenu: Cursor -> "));
-        DEBUG_PRINTLN(cursorPosition);
     }
     // Rechts: Cursor nach rechts (mit Wrapping)
     else if (buttons.wasPressed(Button::RIGHT)) {
         cursorPosition = (cursorPosition + 1) % numButtons;
         needsUpdate = true;
-        DEBUG_PRINT(F("PfeileHolenMenu: Cursor -> "));
-        DEBUG_PRINTLN(cursorPosition);
     }
     // OK: Aktion auswählen
     else if (buttons.wasPressed(Button::OK)) {
@@ -66,8 +85,6 @@ void PfeileHolenMenu::update() {
         } else {
             selectedAction = static_cast<PfeileHolenAction>(cursorPosition);
         }
-        DEBUG_PRINT(F("PfeileHolenMenu: Aktion gewaehlt -> "));
-        DEBUG_PRINTLN(static_cast<int>(selectedAction));
     }
 }
 
@@ -79,13 +96,12 @@ void PfeileHolenMenu::draw() {
         drawOptions();
         drawShooterGroupInfo();  // Schützengruppen-Info (nur bei 3-4 Schützen)
         drawHelp();
-        drawConnectionIcon();
+        drawBatteryIcon();       // Batteriestatus
+        drawConnectionIcon();    // Verbindungsstatus
 
         lastCursorPosition = cursorPosition;
         lastConnectionOk = connectionOk;
         firstDraw = false;
-
-        DEBUG_PRINTLN(F("PfeileHolenMenu: Initial draw"));
     }
     else {
         // Selective Redraw: Nur Optionen neu zeichnen wenn Cursor sich bewegt
@@ -93,14 +109,24 @@ void PfeileHolenMenu::draw() {
             drawOptions();
             drawShooterGroupInfo();  // Schützengruppen-Info aktualisieren
             lastCursorPosition = cursorPosition;
-            DEBUG_PRINTLN(F("PfeileHolenMenu: Selective redraw"));
         }
 
-        // Verbindungsstatus-Icon neu zeichnen wenn Status sich geändert hat
-        if (connectionOk != lastConnectionOk) {
+        // Verbindungsstatus-Icon neu zeichnen wenn Ping-Historie aktualisiert wurde
+        if (pingHistoryUpdated) {
             drawConnectionIcon();
-            lastConnectionOk = connectionOk;
-            DEBUG_PRINTLN(F("PfeileHolenMenu: Connection status changed"));
+            pingHistoryUpdated = false;
+        }
+
+        // Batterie-Icon neu zeichnen wenn Status aktualisiert wurde
+        if (batteryUpdated) {
+            drawBatteryIcon();
+            batteryUpdated = false;
+        }
+
+        // Schützengruppen-Info neu zeichnen wenn Konfiguration geändert wurde
+        if (groupConfigChanged) {
+            drawShooterGroupInfo();
+            groupConfigChanged = false;
         }
     }
 
@@ -299,61 +325,146 @@ void PfeileHolenMenu::drawConnectionIcon() {
     const uint8_t barSpacing = 1;
     const uint8_t barHeights[4] = {2, 4, 6, 8};
 
-    // Anzahl der gefüllten Balken basierend auf Power Level
-    uint8_t activeBars = 0;
-    switch (RF::POWER_LEVEL) {
-        case RF24_PA_MIN:  activeBars = 1; break;
-        case RF24_PA_LOW:  activeBars = 2; break;
-        case RF24_PA_HIGH: activeBars = 3; break;
-        case RF24_PA_MAX:  activeBars = 4; break;
-    }
+    // Farben
+    uint16_t successColor = ST77XX_GREEN;      // Grün für erfolgreichen ACK
+    uint16_t failColor = Display::COLOR_GRAY;  // Grau für fehlgeschlagenen ACK
 
-    // Farbe: Grün wenn verbunden, grau sonst
-    uint16_t activeColor = connectionOk ? ST77XX_GREEN : Display::COLOR_GRAY;
-    uint16_t inactiveColor = Display::COLOR_DARKGRAY;
-
-    // Zeichne alle 4 Balken
+    // Zeichne alle 4 Balken basierend auf Ping-Historie
     for (uint8_t i = 0; i < 4; i++) {
         uint16_t barX = iconX + i * (barWidth + barSpacing);
         uint16_t barY = iconY + (iconHeight - barHeights[i]);
         uint16_t barH = barHeights[i];
 
-        // Balken gefüllt wenn i < activeBars, sonst Rahmen
-        if (connectionOk && i < activeBars) {
-            // Gefüllter Balken (grün)
-            display.fillRect(barX, barY, barWidth, barH, activeColor);
-        } else if (!connectionOk) {
-            // Alle Balken grau wenn nicht verbunden
-            display.fillRect(barX, barY, barWidth, barH, inactiveColor);
-        } else {
-            // Inaktiver Balken (nur Rahmen)
-            display.drawRect(barX, barY, barWidth, barH, inactiveColor);
-        }
+        // Balken grün wenn ACK empfangen wurde, sonst grau
+        uint16_t barColor = pingHistory[i] ? successColor : failColor;
+        display.fillRect(barX, barY, barWidth, barH, barColor);
     }
 
-    // Text zeichnen ("OK" oder "NO")
+    // Zähle erfolgreiche Pings für Text-Anzeige
+    uint8_t successfulPings = 0;
+    for (uint8_t i = 0; i < 4; i++) {
+        if (pingHistory[i]) successfulPings++;
+    }
+
+    // Text zeichnen: Anzahl erfolgreicher Pings von 4 (z.B. "3/4")
     display.setTextSize(1);
     display.setTextColor(Display::COLOR_GRAY);
     display.setCursor(textX, textY);
-    if (connectionOk) {
-        display.print(F("OK"));
+    display.print(successfulPings);
+    display.print(F("/4"));
+}
+
+void PfeileHolenMenu::drawBatteryIcon() {
+    // Icon-Position: Links vom Empfangs-Icon
+    const uint16_t iconX = display.width() - 60;  // 35 Pixel links vom Empfangs-Icon
+    const uint16_t iconY = 10;
+    const uint16_t iconWidth = 20;
+    const uint16_t iconHeight = 10;
+
+    // Text-Position: Unter dem Icon
+    const uint16_t textX = iconX - 5;
+    const uint16_t textY = iconY + iconHeight + 2;
+
+    // Bereich löschen (Icon + Text)
+    display.fillRect(iconX - 7, iconY - 2, iconWidth + 14, iconHeight + 16, ST77XX_BLACK);
+
+    // Batterie-Icon zeichnen
+    const uint16_t bodyWidth = 16;
+    const uint16_t bodyHeight = 8;
+    const uint16_t terminalWidth = 2;
+    const uint16_t terminalHeight = 4;
+
+    // Batterie-Rahmen (Körper)
+    uint16_t frameColor = ST77XX_WHITE;
+    display.drawRect(iconX, iconY, bodyWidth, bodyHeight, frameColor);
+
+    // Batterie-Terminal (Pluspol, rechts)
+    display.fillRect(iconX + bodyWidth, iconY + 2, terminalWidth, terminalHeight, frameColor);
+
+    // Füllstand berechnen und zeichnen
+    if (isUsbPowered) {
+        // USB-Modus: Volle Batterie (grün)
+        display.fillRect(iconX + 2, iconY + 2, bodyWidth - 4, bodyHeight - 4, ST77XX_GREEN);
     } else {
-        display.print(F("NO"));
+        // Batteriemodus: Füllstand basierend auf Spannung
+        // Prozentsatz berechnen
+        uint16_t percent = 0;
+        if (batteryVoltage >= Battery::VOLTAGE_MAX_MV) {
+            percent = 100;
+        } else if (batteryVoltage <= Battery::VOLTAGE_MIN_MV) {
+            percent = 0;
+        } else {
+            percent = ((batteryVoltage - Battery::VOLTAGE_MIN_MV) * 100) /
+                      (Battery::VOLTAGE_MAX_MV - Battery::VOLTAGE_MIN_MV);
+        }
+
+        // Füllbalken-Breite berechnen
+        uint16_t fillWidth = ((bodyWidth - 4) * percent) / 100;
+
+        // Farbe basierend auf Füllstand
+        uint16_t fillColor;
+        if (percent > 50) {
+            fillColor = ST77XX_GREEN;
+        } else if (percent > 20) {
+            fillColor = ST77XX_YELLOW;
+        } else {
+            fillColor = ST77XX_RED;
+        }
+
+        // Füllbalken zeichnen
+        if (fillWidth > 0) {
+            display.fillRect(iconX + 2, iconY + 2, fillWidth, bodyHeight - 4, fillColor);
+        }
+    }
+
+    // Text zeichnen: "USB" oder Spannung
+    display.setTextSize(1);
+    display.setTextColor(Display::COLOR_GRAY);
+    display.setCursor(textX, textY);
+
+    if (isUsbPowered) {
+        display.print(F("USB"));
+    } else {
+        // Spannung in Volt anzeigen (z.B. "7.2V") - ohne Float!
+        display.print(batteryVoltage / 1000);  // Volt-Anteil
+        display.print(F("."));
+        display.print((batteryVoltage % 1000) / 100);  // Erste Dezimalstelle
+        display.print(F("V"));
     }
 }
 
 void PfeileHolenMenu::updateConnectionStatus(bool isConnected) {
-    if (connectionOk != isConnected) {
-        connectionOk = isConnected;
-        needsUpdate = true;
-    }
+    // Neues Ping-Ergebnis im Ring-Buffer speichern
+    pingHistory[pingHistoryIndex] = isConnected;
+    pingHistoryIndex = (pingHistoryIndex + 1) % 4;  // Nächster Index (0-3 mit Wrapping)
+
+    // connectionOk Status aktualisieren (aktuellstes Ping-Ergebnis)
+    connectionOk = isConnected;
+
+    // Flags setzen für Neuzeichnung
+    pingHistoryUpdated = true;
+    needsUpdate = true;
+}
+
+void PfeileHolenMenu::updateBatteryStatus(uint16_t voltageMillivolts, bool usbPowered) {
+    batteryVoltage = voltageMillivolts;
+    isUsbPowered = usbPowered;
+    batteryUpdated = true;
+    needsUpdate = true;
 }
 
 void PfeileHolenMenu::setTournamentConfig(uint8_t shooters, Groups::Type group, Groups::Position position) {
+    // Prüfe ob sich Gruppe oder Position geändert hat
+    bool changed = (currentGroup != group) || (currentPosition != position) || (shooterCount != shooters);
+
     shooterCount = shooters;
     currentGroup = group;
     currentPosition = position;
-    needsUpdate = true;  
+
+    if (changed) {
+        groupConfigChanged = true;
+        needsUpdate = true;
+    }
 }
 
 void PfeileHolenMenu::drawShooterGroupInfo() {
@@ -381,7 +492,7 @@ void PfeileHolenMenu::drawShooterGroupInfo() {
     display.setTextSize(2);
 
     // "{A/B -> C/D} {C/D -> A/B}"
-    // Teile: "{A/B", " -> ", "C/D}", " ", "{C/D", " -> ", "A/B}"
+    // Klammern immer grau, nur Buchstaben/Slashes gelb hervorheben
 
     // Bestimme welcher Teil gelb sein soll
     bool highlightAB1 = (currentGroup == Groups::Type::GROUP_AB && currentPosition == Groups::Position::POS_1);
@@ -389,31 +500,27 @@ void PfeileHolenMenu::drawShooterGroupInfo() {
     bool highlightCD2 = (currentGroup == Groups::Type::GROUP_CD && currentPosition == Groups::Position::POS_2);
     bool highlightAB2 = (currentGroup == Groups::Type::GROUP_AB && currentPosition == Groups::Position::POS_2);
 
-    // "{A/B"
+    // Erste Gruppe: {A/B -> C/D}
+    display.setTextColor(Display::COLOR_GRAY);
+    display.print(F("{"));
     display.setTextColor(highlightAB1 ? ST77XX_YELLOW : Display::COLOR_GRAY);
-    display.print(F("{A/B"));
-
-    // " -> "
+    display.print(F("A/B"));
     display.setTextColor(Display::COLOR_GRAY);
     display.print(F(" -> "));
-
-    // "C/D}"
     display.setTextColor(highlightCD1 ? ST77XX_YELLOW : Display::COLOR_GRAY);
-    display.print(F("C/D}"));
-
-    // " "
+    display.print(F("C/D"));
     display.setTextColor(Display::COLOR_GRAY);
-    display.print(F(" "));
+    display.print(F("} "));
 
-    // "{C/D"
+    // Zweite Gruppe: {C/D -> A/B}
+    display.setTextColor(Display::COLOR_GRAY);
+    display.print(F("{"));
     display.setTextColor(highlightCD2 ? ST77XX_YELLOW : Display::COLOR_GRAY);
-    display.print(F("{C/D"));
-
-    // " -> "
+    display.print(F("C/D"));
     display.setTextColor(Display::COLOR_GRAY);
     display.print(F(" -> "));
-
-    // "A/B}"
     display.setTextColor(highlightAB2 ? ST77XX_YELLOW : Display::COLOR_GRAY);
-    display.print(F("A/B}"));
+    display.print(F("A/B"));
+    display.setTextColor(Display::COLOR_GRAY);
+    display.print(F("}"));
 }

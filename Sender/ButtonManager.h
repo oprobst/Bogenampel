@@ -36,6 +36,11 @@ public:
     void begin();
 
     /**
+     * @brief Initialisiert den Buzzer-Pin
+     */
+    void initBuzzer();
+
+    /**
      * @brief Update-Funktion (in loop() aufrufen)
      */
     void update();
@@ -110,4 +115,9 @@ private:
      * @brief Liest den rohen Button-Zustand (LOW = gedrückt)
      */
     bool readRawState(Button btn) const;
+
+    /**
+     * @brief Spielt einen kurzen Klick-Ton ab
+     */
+    void playClickSound();
 };

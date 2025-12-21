@@ -12,12 +12,25 @@
 
 #include <SPI.h>
 #include <RF24.h>
+#include <FastLED.h>
 
 //=============================================================================
 // Globale Instanzen
 //=============================================================================
 
 RF24 radio(Pins::NRF_CE, Pins::NRF_CSN);
+
+// WS2812B LED Strip
+CRGB leds[LEDStrip::TOTAL_LEDS];
+bool debugMode = false;  // Debug-Modus aktiv (5% Helligkeit)
+
+// Forward-Deklarationen
+void showRainbowEffect();
+void setTrafficLightColor(CRGB color);
+void setGroupAB(CRGB color);
+void setGroupCD(CRGB color);
+void displayNumber(uint16_t number, CRGB color, bool showLeadingZeros = false);
+void displayDigit(uint8_t digitStartIndex, uint8_t digit, CRGB color);
 
 // State-Variablen
 bool systemInitialized = false;   // Wurde CMD_INIT empfangen?
@@ -65,6 +78,23 @@ void setup() {
 
     // Pins initialisieren
     initializePins();
+
+    // Debug-Jumper lesen
+    debugMode = (digitalRead(Pins::DEBUG_JUMPER) == LOW);
+    DEBUG_PRINT(F("Debug-Modus: "));
+    DEBUG_PRINTLN(debugMode ? F("AN (25%)") : F("AUS (100%)"));
+
+    // LED Strip initialisieren (WS2812E - neuere Variante)
+    // WS2812E verwendet oft GRB statt RGB
+    FastLED.addLeds<WS2812, Pins::LED_STRIP, GRB>(leds, LEDStrip::TOTAL_LEDS);
+    FastLED.setBrightness(debugMode ? LEDStrip::BRIGHTNESS_DEBUG : LEDStrip::BRIGHTNESS_NORMAL);
+    FastLED.clear();
+    FastLED.show();
+    delay(50);  // Kurze Pause nach Initialisierung
+    DEBUG_PRINTLN(F("LED Strip initialisiert"));
+
+    // Regenbogen-Effekt beim Start zeigen
+    showRainbowEffect();
 
     // Radio initialisieren
     DEBUG_PRINTLN(F("Initialisiere NRF24L01..."));
@@ -151,6 +181,9 @@ void initializePins() {
 
     // Debug-Taster als Eingang mit Pull-Up
     pinMode(Pins::BTN_DEBUG, INPUT_PULLUP);
+
+    // Debug-Jumper als Eingang mit Pull-Up
+    pinMode(Pins::DEBUG_JUMPER, INPUT_PULLUP);
 
     // NRF24 Control Pins werden von RF24.begin() initialisiert!
     // Keine manuelle Initialisierung nötig
@@ -271,6 +304,7 @@ void buzzerBeep() {
     tone(Pins::BUZZER, Timing::BUZZER_FREQUENCY_HZ);
     delay(1000);  // 1 Sekunde
     noTone(Pins::BUZZER);
+    digitalWrite(Pins::BUZZER, LOW);  // Explizit Pin auf LOW setzen
 }
 
 /**
@@ -284,12 +318,17 @@ void buzzerBeepMultiple(uint8_t count) {
         tone(Pins::BUZZER, Timing::BUZZER_FREQUENCY_HZ);
         delay(500);  // 500ms Ton
         noTone(Pins::BUZZER);
+        digitalWrite(Pins::BUZZER, LOW);  // Explizit Pin auf LOW setzen
 
         // Pause zwischen Tönen (außer beim letzten)
         if (i < count - 1) {
             delay(500);  // 500ms Pause
         }
     }
+
+    // Sicherstellen, dass Buzzer am Ende definitiv aus ist
+    noTone(Pins::BUZZER);
+    digitalWrite(Pins::BUZZER, LOW);
 }
 
 /**
@@ -325,7 +364,7 @@ void checkButton() {
 }
 
 /**
- * @brief Aktualisiert Timer und LED-Status
+ * @brief Aktualisiert Timer und LED-Status mit 7-Segment-Anzeige
  */
 void updateTimer() {
     if (!timerRunning) return;
@@ -342,7 +381,21 @@ void updateTimer() {
         digitalWrite(Pins::LED_YELLOW, LOW);
         digitalWrite(Pins::LED_RED, HIGH);
 
+        // Zeige "000" in ROT auf 7-Segment-Anzeige
+        displayNumber(0, CRGB::Red, true);
+
+        // Behalte aktuelle Gruppe sichtbar in ROT (gleiche Farbe wie "000")
+        if (currentGroup == 0) {
+            setGroupAB(CRGB::Red);
+        } else {
+            setGroupCD(CRGB::Red);
+        }
+
         DEBUG_PRINTLN(F("Timer END"));
+
+        // Kurze Pause damit Display sichtbar auf ROT umschaltet
+        delay(100);
+
         DEBUG_PRINTLN(F("Beep 3x"));
 
         // Akustisches Signal: 3x Piepen (Zeit abgelaufen)
@@ -350,34 +403,66 @@ void updateTimer() {
     } else {
         // Verbleibende Zeit in Sekunden
         uint32_t remainingMs = timerDurationMs - elapsed;
-        uint32_t remainingSec = remainingMs / 1000;
+        uint32_t remainingSec = (remainingMs / 1000) + 1;  // +1 für aufrunden (zeige immer noch verbleibende volle Sekunde)
 
-        // Gelbe LED bei letzten 30 Sekunden
-        static uint32_t lastDebugSec = 0;
+        // Begrenze auf 999 Sekunden (7-Segment-Display Maximum)
+        if (remainingSec > 999) {
+            remainingSec = 999;
+        }
+
+        // Farbe basierend auf verbleibender Zeit
+        CRGB displayColor;
+        static bool yellowPhaseActive = false;
+        static uint32_t lastDisplayedSec = 0;
+
         if (remainingSec <= 30) {
+            // Orange-Gelbe Phase (letzte 30 Sekunden)
+            digitalWrite(Pins::LED_GREEN, LOW);
             digitalWrite(Pins::LED_YELLOW, HIGH);
+            digitalWrite(Pins::LED_RED, LOW);
+            displayColor = CRGB(255, 140, 0);  // Orange (statt reines Gelb)
 
-            // Debug-Ausgabe nur einmal pro Sekunde
-            if (remainingSec != lastDebugSec) {
-                DEBUG_PRINT(F("T:"));
-                DEBUG_PRINTLN(remainingSec);
-                lastDebugSec = remainingSec;
+            if (!yellowPhaseActive) {
+                yellowPhaseActive = true;
+                DEBUG_PRINTLN(F("Yellow phase"));
             }
         } else {
+            // Grüne Phase
+            digitalWrite(Pins::LED_GREEN, HIGH);
             digitalWrite(Pins::LED_YELLOW, LOW);
-            lastDebugSec = 0;
+            digitalWrite(Pins::LED_RED, LOW);
+            displayColor = CRGB::Green;
+            yellowPhaseActive = false;
+        }
+
+        // Aktualisiere Display nur wenn sich die Sekunde geändert hat
+        if (remainingSec != lastDisplayedSec) {
+            // Zeige verbleibende Zeit auf 7-Segment-Anzeige
+            displayNumber(remainingSec, displayColor);
+
+            // Behalte aktuelle Gruppe sichtbar in gleicher Farbe wie die Ziffern
+            if (currentGroup == 0) {
+                setGroupAB(displayColor);
+            } else {
+                setGroupCD(displayColor);
+            }
+
+            DEBUG_PRINT(F("T:"));
+            DEBUG_PRINTLN(remainingSec);
+            lastDisplayedSec = remainingSec;
         }
     }
 }
 
 /**
- * @brief Aktualisiert Vorbereitungsphase und wechselt automatisch in Schießphase
+ * @brief Aktualisiert Vorbereitungsphase mit Countdown und wechselt automatisch in Schießphase
  */
 void updatePreparation() {
     if (!inPreparationPhase) return;
 
-    // Prüfe ob Vorbereitungsphase vorbei
+    // Verbleibende Zeit berechnen
     uint32_t elapsed = millis() - preparationStartTime;
+
     if (elapsed >= preparationDurationMs) {
         // Beende Vorbereitungsphase
         inPreparationPhase = false;
@@ -393,9 +478,241 @@ void updatePreparation() {
         digitalWrite(Pins::LED_YELLOW, LOW);
         digitalWrite(Pins::LED_RED, LOW);
 
+        // Zeige Start-Zeit in GRÜN (wird von updateTimer() übernommen)
+        uint32_t startTimeSec = timerDurationMs / 1000;
+        if (startTimeSec > 999) startTimeSec = 999;
+        displayNumber(startTimeSec, CRGB::Green);
+
+        // Behalte aktuelle Gruppe sichtbar in GRÜN (gleiche Farbe wie Ziffern)
+        if (currentGroup == 0) {
+            setGroupAB(CRGB::Green);
+        } else {
+            setGroupCD(CRGB::Green);
+        }
+
         // Akustisches Signal: 1x Piepen (Ampel wird grün)
         buzzerBeepMultiple(1);
+    } else {
+        // Zeige verbleibende Vorbereitungszeit
+        uint32_t remainingMs = preparationDurationMs - elapsed;
+        uint32_t remainingSec = (remainingMs / 1000) + 1;  // +1 für aufrunden
+
+        static uint32_t lastDisplayedPrepSec = 0;
+
+        // Aktualisiere Display nur wenn sich die Sekunde geändert hat
+        if (remainingSec != lastDisplayedPrepSec) {
+            // Zeige verbleibende Vorbereitungszeit in ROT
+            displayNumber(remainingSec, CRGB::Red);
+
+            // Behalte aktuelle Gruppe sichtbar in ROT (gleiche Farbe wie Ziffern)
+            if (currentGroup == 0) {
+                setGroupAB(CRGB::Red);
+            } else {
+                setGroupCD(CRGB::Red);
+            }
+
+            DEBUG_PRINT(F("Prep:"));
+            DEBUG_PRINTLN(remainingSec);
+            lastDisplayedPrepSec = remainingSec;
+        }
     }
+}
+
+/**
+ * @brief Setzt alle LEDs auf die Ampel-Farbe
+ * @param color Farbe (CRGB::Red, CRGB::Yellow, CRGB::Green)
+ */
+void setTrafficLightColor(CRGB color) {
+    fill_solid(leds, LEDStrip::TOTAL_LEDS, color);
+    FastLED.show();
+}
+
+/**
+ * @brief Zeigt einen Regenbogen-Effekt beim Systemstart
+ *
+ * Aktiviert jedes Segment nacheinander in Regenbogenfarben:
+ * 1. Gruppe A/B (16 LEDs)
+ * 2. Gruppe C/D (16 LEDs)
+ * 3. Alle 21 Segmente der 7-Segment-Displays (3 Ziffern × 7 Segmente)
+ *
+ * Gesamt: 23 Segmente in Regenbogenfarben
+ * Dauer: ca. 5 Sekunden
+ */
+void showRainbowEffect() {
+    DEBUG_PRINTLN(F("Regenbogen-Effekt..."));
+
+    // Alle LEDs ausschalten
+    FastLED.clear();
+    FastLED.show();
+
+    // Anzahl der "Segmente": 2 Gruppen + 21 7-Segment-Balken = 23
+    const uint8_t totalSegments = 2 + (LEDStrip::NUM_DIGITS * LEDStrip::SEGMENTS_PER_DIGIT);
+    uint8_t segmentIndex = 0;
+
+    // 1. Gruppe A/B (Segment 0)
+    uint8_t hue = (segmentIndex * 256) / totalSegments;
+    fill_solid(leds + LEDStrip::GROUP_AB_START, LEDStrip::GROUP_AB_LEDS, CHSV(hue, 255, 255));
+    FastLED.show();
+    delay(200);
+    segmentIndex++;
+
+    // 2. Gruppe C/D (Segment 1)
+    hue = (segmentIndex * 256) / totalSegments;
+    fill_solid(leds + LEDStrip::GROUP_CD_START, LEDStrip::GROUP_CD_LEDS, CHSV(hue, 255, 255));
+    FastLED.show();
+    delay(200);
+    segmentIndex++;
+
+    // 3. Alle 7-Segment-Display-Segmente (3 Ziffern × 7 Segmente = 21 Segmente)
+    // Reihenfolge: 1er-Stelle (B,A,F,G,C,D,E), 10er-Stelle (B,A,F,G,C,D,E), 100er-Stelle (B,A,F,G,C,D,E)
+    for (uint8_t digit = 0; digit < LEDStrip::NUM_DIGITS; digit++) {
+        // Start-Index für diese Ziffer
+        uint8_t digitStart = LEDStrip::DIGIT_START + (digit * LEDStrip::LEDS_PER_DIGIT);
+
+        // Gehe durch alle 7 Segmente dieser Ziffer
+        for (uint8_t seg = 0; seg < LEDStrip::SEGMENTS_PER_DIGIT; seg++) {
+            // Berechne Regenbogenfarbe für dieses Segment
+            hue = (segmentIndex * 256) / totalSegments;
+
+            // Setze alle 6 LEDs dieses Segments auf die Regenbogenfarbe
+            uint8_t segmentStart = digitStart + (seg * LEDStrip::LEDS_PER_SEGMENT);
+            fill_solid(leds + segmentStart, LEDStrip::LEDS_PER_SEGMENT, CHSV(hue, 255, 255));
+
+            // Zeige das Update an
+            FastLED.show();
+            delay(200);
+
+            segmentIndex++;
+        }
+    }
+
+    // Kurze Pause am Ende mit allen Segmenten leuchtend
+    delay(800);
+
+    // Alle LEDs ausschalten
+    FastLED.clear();
+    FastLED.show();
+}
+
+/**
+ * @brief Setzt die LEDs für Gruppe A/B auf die angegebene Farbe
+ * @param color Farbe (z.B. CRGB::Red, CRGB::Green, CRGB::Blue)
+ *
+ * Steuert LED 1-16 (Array-Index 0-15) an.
+ */
+void setGroupAB(CRGB color) {
+    fill_solid(leds + LEDStrip::GROUP_AB_START, LEDStrip::GROUP_AB_LEDS, color);
+    FastLED.show();
+}
+
+/**
+ * @brief Setzt die LEDs für Gruppe C/D auf die angegebene Farbe
+ * @param color Farbe (z.B. CRGB::Red, CRGB::Green, CRGB::Blue)
+ *
+ * Steuert LED 17-32 (Array-Index 16-31) an.
+ */
+void setGroupCD(CRGB color) {
+    fill_solid(leds + LEDStrip::GROUP_CD_START, LEDStrip::GROUP_CD_LEDS, color);
+    FastLED.show();
+}
+
+/**
+ * @brief Zeigt eine einzelne Ziffer auf einem 7-Segment-Display an
+ * @param digitStartIndex Start-Index der Ziffer im LED-Array
+ * @param digit Ziffer (0-9)
+ * @param color Farbe der Ziffer
+ *
+ * Hardware-Anordnung der Segmente (in Reihenfolge im LED-Strip):
+ * Index 0-5:   Segment B (rechts oben, senkrecht)
+ * Index 6-11:  Segment A (oben, horizontal)
+ * Index 12-17: Segment F (links oben, senkrecht)
+ * Index 18-23: Segment G (mitte, horizontal)
+ * Index 24-29: Segment C (rechts unten, senkrecht)
+ * Index 30-35: Segment D (unten, horizontal)
+ * Index 36-41: Segment E (links unten, senkrecht)
+ *
+ *    AAAAAA
+ *   F      B
+ *   F      B
+ *    GGGGGG
+ *   E      C
+ *   E      C
+ *    DDDDDD
+ */
+void displayDigit(uint8_t digitStartIndex, uint8_t digit, CRGB color) {
+    // 7-Segment-Mapping für Ziffern 0-9
+    // Jedes Bit repräsentiert ein Segment in der Reihenfolge: B, A, F, G, C, D, E
+    const uint8_t segmentMap[10] = {
+        0b1110111,  // 0: B, A, F, C, D, E (kein G)
+        0b1000100,  // 1: B, C
+        0b1101011,  // 2: B, A, G, D, E
+        0b1101110,  // 3: B, A, G, C, D
+        0b1011100,  // 4: B, F, G, C
+        0b0111110,  // 5: A, F, G, C, D
+        0b0111111,  // 6: A, F, G, C, D, E
+        0b1100100,  // 7: B, A, C
+        0b1111111,  // 8: B, A, F, G, C, D, E (alle)
+        0b1111110   // 9: B, A, F, G, C, D
+    };
+
+    if (digit > 9) {
+        digit = 0;  // Fallback auf 0 bei ungültiger Ziffer
+    }
+
+    uint8_t pattern = segmentMap[digit];
+
+    // Segment-Reihenfolge: B, A, F, G, C, D, E
+    for (uint8_t seg = 0; seg < LEDStrip::SEGMENTS_PER_DIGIT; seg++) {
+        bool segmentOn = (pattern >> (LEDStrip::SEGMENTS_PER_DIGIT - 1 - seg)) & 0x01;
+        CRGB segmentColor = segmentOn ? color : CRGB::Black;
+
+        // Setze alle 6 LEDs dieses Segments
+        uint8_t segmentStart = digitStartIndex + (seg * LEDStrip::LEDS_PER_SEGMENT);
+        fill_solid(leds + segmentStart, LEDStrip::LEDS_PER_SEGMENT, segmentColor);
+    }
+}
+
+/**
+ * @brief Zeigt eine Zahl von 0-999 auf den 7-Segment-Displays an
+ * @param number Zahl (0-999, wird bei >999 auf 999 begrenzt)
+ * @param color Farbe der Anzeige
+ * @param showLeadingZeros true = führende Nullen anzeigen, false = ausblenden (Standard)
+ *
+ * Zeigt die Zahl auf den drei 7-Segment-Displays an:
+ * - 100er-Stelle (LED 117-158, Index 116-157)
+ * - 10er-Stelle  (LED 75-116, Index 74-115)
+ * - 1er-Stelle   (LED 33-74, Index 32-73)
+ */
+void displayNumber(uint16_t number, CRGB color, bool showLeadingZeros = false) {
+    // Begrenze auf 0-999
+    if (number > 999) {
+        number = 999;
+    }
+
+    // Extrahiere einzelne Ziffern
+    uint8_t digit100 = number / 100;
+    uint8_t digit10 = (number / 10) % 10;
+    uint8_t digit1 = number % 10;
+
+    // Zeige Ziffern an
+    // 100er-Stelle
+    if (showLeadingZeros || number >= 100) {
+        displayDigit(LEDStrip::DIGIT_100_START, digit100, color);
+    } else {
+        displayDigit(LEDStrip::DIGIT_100_START, 0, CRGB::Black);  // Ausschalten
+    }
+
+    // 10er-Stelle
+    if (showLeadingZeros || number >= 10) {
+        displayDigit(LEDStrip::DIGIT_10_START, digit10, color);
+    } else {
+        displayDigit(LEDStrip::DIGIT_10_START, 0, CRGB::Black);  // Ausschalten
+    }
+
+    // 1er-Stelle: Immer anzeigen
+    displayDigit(LEDStrip::DIGIT_1_START, digit1, color);
+
+    FastLED.show();
 }
 
 /**
@@ -414,19 +731,27 @@ void handleCommand(RadioCommand cmd) {
             DEBUG_PRINTLN(F("INIT"));
             systemInitialized = true;
 
-            // Alle LEDs 3x blinken lassen (Bestätigung)
+            // Alle Segmente 3x rot blinken lassen
             for (int i = 0; i < 3; i++) {
-                digitalWrite(Pins::LED_GREEN, HIGH);
-                digitalWrite(Pins::LED_YELLOW, HIGH);
-                digitalWrite(Pins::LED_RED, HIGH);
-                delay(150);
-                digitalWrite(Pins::LED_GREEN, LOW);
-                digitalWrite(Pins::LED_YELLOW, LOW);
-                digitalWrite(Pins::LED_RED, LOW);
-                delay(150);
+                // Alle LEDs rot
+                fill_solid(leds, LEDStrip::TOTAL_LEDS, CRGB::Red);
+                FastLED.show();
+                delay(200);
+
+                // Alle LEDs aus
+                FastLED.clear();
+                FastLED.show();
+                delay(200);
             }
 
-            // Rote LED bleibt an (Stop/Pfeile Holen)
+            // Zeige "000" und Gruppe A/B
+            displayNumber(0, CRGB::Red, true);  // "000" in grün mit führenden Nullen
+            setGroupAB(CRGB::Red);                // Gruppe A/B in rot
+            currentGroup = 0;                     // Setze aktuelle Gruppe auf A/B
+
+            // Status-LEDs: Rote LED an (Stop/Pfeile Holen)
+            digitalWrite(Pins::LED_GREEN, LOW);
+            digitalWrite(Pins::LED_YELLOW, LOW);
             digitalWrite(Pins::LED_RED, HIGH);
             break;
 
@@ -451,7 +776,22 @@ void handleCommand(RadioCommand cmd) {
                     timerDurationMs = (cmd == CMD_START_120) ? 120000UL : 240000UL;
                 #endif
 
-                // Ampel bleibt rot (keine LED-Änderung)
+                // Rote LED bleibt an (Vorbereitungsphase)
+                digitalWrite(Pins::LED_GREEN, LOW);
+                digitalWrite(Pins::LED_YELLOW, LOW);
+                digitalWrite(Pins::LED_RED, HIGH);
+
+                // Zeige initiale Vorbereitungszeit in ROT (z.B. "10" oder "5")
+                uint32_t prepTimeSec = preparationDurationMs / 1000;
+                displayNumber(prepTimeSec, CRGB::Red);
+
+                // Behalte aktuelle Gruppe sichtbar
+                if (currentGroup == 0) {
+                    setGroupAB(CRGB::Red);
+                } else {
+                    setGroupCD(CRGB::Red);
+                }
+
                 // Akustisches Signal: 2x Piepen (Vorbereitungsphase startet)
                 buzzerBeepMultiple(2);
             }
@@ -473,6 +813,16 @@ void handleCommand(RadioCommand cmd) {
             digitalWrite(Pins::LED_GREEN, LOW);
             digitalWrite(Pins::LED_YELLOW, LOW);
             digitalWrite(Pins::LED_RED, HIGH);
+
+            // Zeige "000" in ROT
+            displayNumber(0, CRGB::Red, true);
+
+            // Behalte aktuelle Gruppe sichtbar
+            if (currentGroup == 0) {
+                setGroupAB(CRGB::Red);
+            } else {
+                setGroupCD(CRGB::Red);
+            }
             break;
 
         case CMD_GROUP_AB:
@@ -487,6 +837,13 @@ void handleCommand(RadioCommand cmd) {
             digitalWrite(Pins::LED_GREEN, LOW);
             digitalWrite(Pins::LED_YELLOW, LOW);
             digitalWrite(Pins::LED_RED, HIGH);
+
+            // Zeige "000" in ROT
+            displayNumber(0, CRGB::Red, true);
+
+            // Gruppe A/B LEDs auf ROT setzen, C/D ausschalten
+            setGroupAB(CRGB::Red);
+            setGroupCD(CRGB::Black);
             break;
 
         case CMD_GROUP_CD:
@@ -501,6 +858,13 @@ void handleCommand(RadioCommand cmd) {
             digitalWrite(Pins::LED_GREEN, LOW);
             digitalWrite(Pins::LED_YELLOW, LOW);
             digitalWrite(Pins::LED_RED, HIGH);
+
+            // Zeige "000" in ROT
+            displayNumber(0, CRGB::Red, true);
+
+            // Gruppe C/D LEDs auf ROT setzen, A/B ausschalten
+            setGroupCD(CRGB::Red);
+            setGroupAB(CRGB::Black);
             break;
 
         case CMD_ALARM:

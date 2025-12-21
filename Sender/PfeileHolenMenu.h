@@ -93,6 +93,13 @@ public:
     void updateConnectionStatus(bool isConnected);
 
     /**
+     * @brief Aktualisiert den Batteriestatus
+     * @param voltageMillivolts Batteriespannung in Millivolt
+     * @param usbPowered true wenn USB angeschlossen, false wenn Batteriebetrieb
+     */
+    void updateBatteryStatus(uint16_t voltageMillivolts, bool usbPowered);
+
+    /**
      * @brief Setzt die Turnierkonfiguration
      * @param shooters Anzahl Schützen (2 oder 4)
      * @param group Aktuelle Gruppe (GROUP_AB oder GROUP_CD)
@@ -119,15 +126,27 @@ private:
     bool connectionOk;
     bool lastConnectionOk;
 
+    // Ping-Historie für Empfangsstärke-Anzeige (letzte 4 Pings)
+    bool pingHistory[4];      // true = ACK empfangen, false = kein ACK
+    uint8_t pingHistoryIndex; // Ring-Buffer Index (0-3)
+    bool pingHistoryUpdated;  // Flag: Ping-Historie wurde aktualisiert
+
+    // Batteriestatus
+    uint16_t batteryVoltage;  // Spannung in Millivolt
+    bool isUsbPowered;        // true wenn USB, false wenn Batterie
+    bool batteryUpdated;      // Flag: Batteriestatus wurde aktualisiert
+
     // Turnierkonfiguration
     uint8_t shooterCount;           // 2 (1-2 Schützen) oder 4 (3-4 Schützen)
     Groups::Type currentGroup;      // Aktuelle Gruppe (GROUP_AB oder GROUP_CD)
     Groups::Position currentPosition; // Aktuelle Position (POS_1 oder POS_2)
+    bool groupConfigChanged;        // Flag: Gruppe/Position wurde geändert
 
     // Hilfsfunktionen für selective drawing
     void drawHeader();
     void drawOptions();
     void drawHelp();
     void drawConnectionIcon();
+    void drawBatteryIcon();       // Zeigt Batteriestatus
     void drawShooterGroupInfo();  // Zeigt Schützengruppen bei 3-4 Schützen
 };
