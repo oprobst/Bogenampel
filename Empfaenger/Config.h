@@ -188,13 +188,13 @@ namespace System {
     const char BUILD_TIME[] PROGMEM = __TIME__;
 
     // Serial Baud Rate (für Debugging)
-    constexpr uint32_t SERIAL_BAUD = 57600;
+    constexpr uint32_t SERIAL_BAUD = 115200;
 
     // Debugging aktivieren/deaktivieren
     #define DEBUG_ENABLED 1  // 1 = Debug-Ausgaben an, 0 = aus
 
     // Verkürzte Zeiten für Tests (nur wenn DEBUG_ENABLED = 1)
-    #define DEBUG_SHORT_TIMES 0  // 1 = Verkürzte Zeiten, 0 = Normale Zeiten
+    #define DEBUG_SHORT_TIMES 1 // 1 = Verkürzte Zeiten, 0 = Normale Zeiten
 
     #if DEBUG_ENABLED
         #define DEBUG_PRINT(...)   Serial.print(__VA_ARGS__)

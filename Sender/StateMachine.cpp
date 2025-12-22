@@ -362,8 +362,8 @@ void StateMachine::enterSchiessBetrieb() {
 
     // Schießzeit setzen (normal oder verkürzt für DEBUG)
     #if DEBUG_SHORT_TIMES
-        // DEBUG: 6s statt 120s, 12s statt 240s
-        shootingDurationMs = (shootingTime == 120) ? 6000UL : 12000UL;
+        // DEBUG: 15s für beide Modi
+        shootingDurationMs = 15000UL;
     #else
         shootingDurationMs = shootingTime * 1000UL;  // Sekunden → Millisekunden
     #endif

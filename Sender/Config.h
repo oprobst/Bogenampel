@@ -29,7 +29,7 @@
 #define DEBUG_ENABLED 1  // 1 = Debug-Ausgaben an, 0 = aus
 
 // Verkürzte Zeiten für Tests (nur wenn DEBUG_ENABLED = 1)
-#define DEBUG_SHORT_TIMES 0  // 1 = Verkürzte Zeiten, 0 = Normale Zeiten
+#define DEBUG_SHORT_TIMES 1  // 1 = Verkürzte Zeiten, 0 = Normale Zeiten
 
 //=============================================================================
 // HARDWARE PIN-DEFINITIONEN

@@ -455,8 +455,16 @@ void updateTimer() {
         CRGB displayColor;
         static bool yellowPhaseActive = false;
 
-        if (timerRemainingSeconds <= 30) {
-            // Orange-Gelbe Phase (letzte 30 Sekunden)
+        #if DEBUG_SHORT_TIMES
+            // DEBUG: Gelbe Ampel in den letzten 5 Sekunden
+            uint32_t yellowThreshold = 5;
+        #else
+            // Normal: Gelbe Ampel in den letzten 30 Sekunden
+            uint32_t yellowThreshold = 30;
+        #endif
+
+        if (timerRemainingSeconds <= yellowThreshold) {
+            // Orange-Gelbe Phase
             digitalWrite(Pins::LED_GREEN, LOW);
             digitalWrite(Pins::LED_YELLOW, HIGH);
             digitalWrite(Pins::LED_RED, LOW);
@@ -686,7 +694,7 @@ void handleCommand(RadioCommand cmd) {
 
             // Timer-Dauer setzen (wird nach Vorbereitungsphase gestartet)
             #if DEBUG_SHORT_TIMES
-                timerDurationMs = (cmd == CMD_START_120) ? 6000UL : 12000UL;
+                timerDurationMs = 15000UL;  // 15 Sekunden für beide Modi
             #else
                 timerDurationMs = (cmd == CMD_START_120) ? 120000UL : 240000UL;
             #endif
@@ -713,30 +721,9 @@ void handleCommand(RadioCommand cmd) {
         case CMD_STOP:
             DEBUG_PRINTLN(F("STOP"));
 
-            // Timer und Vorbereitung stoppen
-            timerRunning = false;
-            inPreparationPhase = false;
+            preparationRemainingSeconds = 0; 
+            preparationDurationMs = 0; 
 
-            // Rote LED an, Rest aus
-            digitalWrite(Pins::LED_GREEN, LOW);
-            digitalWrite(Pins::LED_YELLOW, LOW);
-            digitalWrite(Pins::LED_RED, HIGH);
-
-            // Zeige "000" in ROT
-            display.displayTimer(0, CRGB::Red, true);
-
-            // Behalte aktuelle Gruppe sichtbar (falls vorhanden)
-            if (!groupsEnabled) {
-                // Keine Gruppe (1-2 Schützen Modus) - beide aus
-                display.setGroup(0, CRGB::Black);
-                display.setGroup(1, CRGB::Black);
-            } else if (currentGroup == Groups::Type::GROUP_AB) {
-                display.setGroup(0, CRGB::Red);
-            } else {
-                display.setGroup(1, CRGB::Red);
-            }
-
-            buzzer.beep(3); 
             break;
 
         case CMD_GROUP_AB:
