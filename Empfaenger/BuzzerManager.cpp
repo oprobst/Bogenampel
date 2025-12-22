@@ -29,8 +29,8 @@ void BuzzerManager::beep(uint8_t count) {
     state = 1;  // Starte mit Beeping
     lastToggle = millis();
 
-    // Ersten Ton sofort starten
-    tone(buzzerPin, buzzerFrequency);
+    // Ersten Ton sofort starten (KY-012: Aktiver Buzzer)
+    digitalWrite(buzzerPin, HIGH);
 }
 
 void BuzzerManager::update() {
@@ -42,7 +42,7 @@ void BuzzerManager::update() {
     if (state == 1) {
         // Beeping-Zustand: Nach 500ms in Pause wechseln
         if (elapsed >= BEEP_DURATION_MS) {
-            noTone(buzzerPin);
+            // KY-012: Aktiver Buzzer - einfach LOW
             digitalWrite(buzzerPin, LOW);
             beepCount++;
 
@@ -59,7 +59,8 @@ void BuzzerManager::update() {
     } else {
         // Pause-Zustand: Nach 500ms nächsten Ton starten
         if (elapsed >= PAUSE_DURATION_MS) {
-            tone(buzzerPin, buzzerFrequency);
+            // KY-012: Aktiver Buzzer - einfach HIGH
+            digitalWrite(buzzerPin, HIGH);
             state = 1;
             lastToggle = now;
         }
@@ -68,7 +69,7 @@ void BuzzerManager::update() {
 
 void BuzzerManager::stop() {
     if (active) {
-        noTone(buzzerPin);
+        // KY-012: Aktiver Buzzer - einfach LOW
         digitalWrite(buzzerPin, LOW);
         active = false;
         state = 0;

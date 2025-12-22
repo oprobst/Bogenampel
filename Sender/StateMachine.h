@@ -12,6 +12,7 @@
 #include "SplashScreen.h"
 #include "PfeileHolenMenu.h"
 #include "SchiessBetriebMenu.h"
+#include "AlarmScreen.h"
 
 /**
  * @brief System-Zustände (Tournament State Machine)
@@ -20,7 +21,8 @@ enum class State : uint8_t {
     STATE_SPLASH,          // Zeigt Splash Screen (3 Sekunden, keine Buttons)
     STATE_CONFIG_MENU,     // Konfigurationsmenü (Zeit, Schützenanzahl)
     STATE_PFEILE_HOLEN,    // Turniermodus: Pfeile holen (Pause zwischen Passen)
-    STATE_SCHIESS_BETRIEB  // Turniermodus: Schießbetrieb aktiv
+    STATE_SCHIESS_BETRIEB, // Turniermodus: Schießbetrieb aktiv
+    STATE_ALARM            // Alarm: Notfall-Abbruch des Schießbetriebs
 };
 
 /**
@@ -84,6 +86,7 @@ private:
     ConfigMenu configMenu;          // Konfigurationsmenü
     PfeileHolenMenu pfeileHolenMenu; // Pfeile-Holen-Menü
     SchiessBetriebMenu schiessBetriebMenu; // Schießbetrieb-Menü
+    AlarmScreen alarmScreen;        // Alarm-Screen
     State currentState;
     State previousState;
     uint32_t stateStartTime;  // Zeitstempel beim Zustandswechsel
@@ -131,6 +134,7 @@ private:
     void handleConfigMenu();
     void handlePfeileHolen();
     void handleSchiessBetrieb();
+    void handleAlarm();
 
     //-------------------------------------------------------------------------
     // State Entry/Exit Functions
@@ -144,6 +148,8 @@ private:
     void enterSchiessBetrieb();
     void handleShootingPhaseEnd();  // Behandelt Ende der Schießphase (1-2 vs 3-4 Schützen)
     void exitSchiessBetrieb();
+    void enterAlarm();
+    void exitAlarm();
 
     //-------------------------------------------------------------------------
     // Hilfsfunktionen
@@ -156,7 +162,7 @@ private:
 
     /**
      * @brief Wechselt zur nächsten Schützengruppe im 4er-Zyklus
-     * AB_POS1 -> CD_POS1 -> CD_POS2 -> AB_POS2 -> AB_POS1
+     * AB_POS1 -> CD_POS2 -> CD_POS1 -> AB_POS2 -> AB_POS1
      */
     void advanceToNextGroup();
 };

@@ -81,7 +81,7 @@ namespace RF {
     // RF-Power Level (verwende RF24-Library Enums direkt)
     // RF24_PA_MAX = 0dBm (höchste Leistung, ~50m Reichweite)
     // WICHTIG: Benötigt externe 3.3V Versorgung (AMS1117) + 100µF Kondensator!
-    constexpr rf24_pa_dbm_e POWER_LEVEL = RF24_PA_MIN;
+    constexpr rf24_pa_dbm_e POWER_LEVEL = RF24_PA_HIGH;
 
     // Pipe-Adressen (5 Bytes) - MUSS IDENTISCH MIT SENDER SEIN!
     const uint8_t PIPE_ADDRESS[5] PROGMEM = {'B', '4', 'M', 'P', 'L'};  // "BAMPL" = Bogenampel
@@ -191,10 +191,10 @@ namespace System {
     constexpr uint32_t SERIAL_BAUD = 115200;
 
     // Debugging aktivieren/deaktivieren
-    #define DEBUG_ENABLED 1  // 1 = Debug-Ausgaben an, 0 = aus
+    #define DEBUG_ENABLED 0  // 1 = Debug-Ausgaben an, 0 = aus
 
     // Verkürzte Zeiten für Tests (nur wenn DEBUG_ENABLED = 1)
-    #define DEBUG_SHORT_TIMES 1 // 1 = Verkürzte Zeiten, 0 = Normale Zeiten
+    #define DEBUG_SHORT_TIMES 0 // 1 = Verkürzte Zeiten, 0 = Normale Zeiten
 
     #if DEBUG_ENABLED
         #define DEBUG_PRINT(...)   Serial.print(__VA_ARGS__)

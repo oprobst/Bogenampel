@@ -6,7 +6,7 @@
 #include "ButtonManager.h"
 
 ButtonManager::ButtonManager()
-    : okPressStartTime(0), okPressActive(false), alarmTriggered(false) {
+    : arrowPressStartTime(0), arrowPressActive(false), alarmTriggered(false) {
     // Alle Button-States initialisieren
     for (uint8_t i = 0; i < static_cast<uint8_t>(Button::COUNT); i++) {
         buttons[i].pressed = false;
@@ -72,25 +72,27 @@ void ButtonManager::update() {
         }
     }
 
-    // Alarm-Detektion: OK-Button > 3 Sekunden gehalten
-    bool okPressed = buttons[static_cast<uint8_t>(Button::OK)].pressed;
+    // Alarm-Detektion: Pfeiltasten (LEFT oder RIGHT) > 2 Sekunden gehalten
+    bool leftPressed = buttons[static_cast<uint8_t>(Button::LEFT)].pressed;
+    bool rightPressed = buttons[static_cast<uint8_t>(Button::RIGHT)].pressed;
+    bool arrowPressed = leftPressed || rightPressed;
 
-    if (okPressed && !okPressActive) {
-        // OK-Button wurde gerade gedrückt
-        okPressStartTime = now;
-        okPressActive = true;
+    if (arrowPressed && !arrowPressActive) {
+        // Pfeiltaste wurde gerade gedrückt
+        arrowPressStartTime = now;
+        arrowPressActive = true;
         alarmTriggered = false;
     }
-    else if (okPressed && okPressActive) {
-        // OK-Button wird gehalten - prüfe Dauer
-        uint32_t duration = now - okPressStartTime;
+    else if (arrowPressed && arrowPressActive) {
+        // Pfeiltaste wird gehalten - prüfe Dauer
+        uint32_t duration = now - arrowPressStartTime;
         if (duration >= Timing::ALARM_THRESHOLD_MS && !alarmTriggered) {
             alarmTriggered = true;  // Alarm-Flag setzen (wird mit isAlarmTriggered() abgerufen)
         }
     }
-    else if (!okPressed && okPressActive) {
-        // OK-Button wurde losgelassen
-        okPressActive = false;
+    else if (!arrowPressed && arrowPressActive) {
+        // Pfeiltaste wurde losgelassen
+        arrowPressActive = false;
     }
 }
 

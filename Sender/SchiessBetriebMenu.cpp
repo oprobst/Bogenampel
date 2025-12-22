@@ -44,15 +44,12 @@ void SchiessBetriebMenu::draw() {
         drawEndButton();
         drawHelp();
 
-        lastRemainingSec = remainingSec;
         firstDraw = false;
     }
-    else {
-        // Selective Redraw: Nur Timer aktualisieren wenn sich Zeit geändert hat
-        if (remainingSec != lastRemainingSec) {
-            updateTimer();
-            lastRemainingSec = remainingSec;
-        }
+    // Selective Redraw: Nur bei Phasenwechsel (Vorbereitung ↔ Schießbetrieb)
+    // Da wir keine Sekunden mehr anzeigen, kein Update bei jeder Sekunde nötig
+    else if (needsUpdate) {
+        updateTimer();
     }
 
     needsUpdate = false;
@@ -104,20 +101,9 @@ void SchiessBetriebMenu::drawHeader() {
 void SchiessBetriebMenu::drawGroupSequence() {
     // Gruppensequenz anzeigen (nur bei 3-4 Schützen)
     if (shooterCount == 4) {
-        // Zeile 1: "Aktuell: A/B" oder "Aktuell: C/D"
+        // Gruppensequenz: "{A/B -> C/D} {C/D -> A/B}"
         display.setCursor(10, 58);
         display.setTextSize(2);
-        display.setTextColor(ST77XX_WHITE);
-        display.print(F("Aktuell: "));
-        display.setTextColor(ST77XX_YELLOW);
-        display.println(currentGroup == Groups::Type::GROUP_AB ? F("A/B") : F("C/D"));
-
-        // Zeile 2: Statischer String mit Hervorhebung
-        display.setCursor(10, 82);
-        display.setTextSize(2);
-
-        // "{A/B -> C/D} {C/D -> A/B}"
-        // Teile: "{A/B", " -> ", "C/D}", " ", "{C/D", " -> ", "A/B}"
 
         // Bestimme welcher Teil gelb sein soll
         bool highlightAB1 = (currentGroup == Groups::Type::GROUP_AB && currentPosition == Groups::Position::POS_1);
@@ -153,30 +139,44 @@ void SchiessBetriebMenu::drawGroupSequence() {
         display.setTextColor(highlightAB2 ? ST77XX_YELLOW : Display::COLOR_GRAY);
         display.print(F("A/B}"));
     }
-    // Bei 1-2 Schützen: Keine Gruppenanzeige (nur A/B, keine Rotation)
+    // Bei 1-2 Schützen: Keine Gruppenanzeige
 }
 
 void SchiessBetriebMenu::drawTimer() {
-    // Timer-Farbe basierend auf Phase
-    uint16_t timerColor = inPreparationPhase ? Display::COLOR_ORANGE : ST77XX_GREEN;
+    // Phasentext statt Timer
+    const char* phaseText = inPreparationPhase ? "Vorbereitung" : "Alles ins Gold";
+    uint16_t phaseColor = inPreparationPhase ? Display::COLOR_ORANGE : ST77XX_GREEN;
 
-    // Timer-Position: Bei 3-4 Schützen tiefer setzen (wegen Gruppenanzeige)
-    uint16_t timerY = (shooterCount == 4) ? 112 : 65;
+    // Position: Bei 3-4 Schützen tiefer setzen (wegen Gruppenanzeige)
+    uint16_t phaseY = (shooterCount == 4) ? 88 : 65;
 
-    display.setTextSize(4);
-    display.setTextColor(timerColor);
+    display.setTextSize(2);
+    display.setTextColor(phaseColor);
 
-    // Timer horizontal zentrieren
-    char timerText[8];
-    sprintf(timerText, "%ds", remainingSec);
+    // Text horizontal zentrieren
     int16_t x1, y1;
     uint16_t w, h;
-    display.getTextBounds(timerText, 0, 0, &x1, &y1, &w, &h);
-    uint16_t timerX = (display.width() - w) / 2;
+    display.getTextBounds(phaseText, 0, 0, &x1, &y1, &w, &h);
+    uint16_t phaseX = (display.width() - w) / 2;
 
-    display.setCursor(timerX, timerY);
-    display.print(remainingSec);
-    display.print(F("s"));
+    display.setCursor(phaseX, phaseY);
+    display.print(phaseText);
+
+    // Aktuelle Gruppe groß darunter anzeigen (nur bei 3-4 Schützen)
+    if (shooterCount == 4) {
+        const char* groupText = (currentGroup == Groups::Type::GROUP_AB) ? "A/B" : "C/D";
+
+        display.setTextSize(6);  // Sehr groß
+        display.setTextColor(ST77XX_YELLOW);
+
+        // Text zentrieren
+        display.getTextBounds(groupText, 0, 0, &x1, &y1, &w, &h);
+        uint16_t groupX = (display.width() - w) / 2;
+        uint16_t groupY = 115;  // Unterhalb der Phase
+
+        display.setCursor(groupX, groupY);
+        display.print(groupText);
+    }
 }
 
 void SchiessBetriebMenu::drawEndButton() {
@@ -212,28 +212,42 @@ void SchiessBetriebMenu::drawHelp() {
 }
 
 void SchiessBetriebMenu::updateTimer() {
-    // Timer-Position: Bei 3-4 Schützen tiefer setzen (wegen Gruppenanzeige)
-    const uint16_t timerY = (shooterCount == 4) ? 112 : 65;
-    const uint16_t timerH = 32;   // Höhe für Textgröße 4
+    // Phasentext-Position: Bei 3-4 Schützen höher setzen (wegen Gruppenanzeige darunter)
+    const uint16_t phaseY = (shooterCount == 4) ? 88 : 65;
 
-    // Timer-Farbe basierend auf Phase
-    uint16_t timerColor = inPreparationPhase ? Display::COLOR_ORANGE : ST77XX_GREEN;
+    // Lösche gesamten Bereich (Phase + große Gruppe bei 3-4 Schützen)
+    const uint16_t clearHeight = (shooterCount == 4) ? 80 : 20;  // Mehr Platz für große Gruppe
+    display.fillRect(0, phaseY, display.width(), clearHeight, ST77XX_BLACK);
 
-    // Timer horizontal zentrieren
-    display.setTextSize(4);
-    char timerText[8];
-    sprintf(timerText, "%ds", remainingSec);
+    // Phasentext und -farbe
+    const char* phaseText = inPreparationPhase ? "Vorbereitung" : "Alle ins Gold";
+    uint16_t phaseColor = inPreparationPhase ? Display::COLOR_ORANGE : ST77XX_GREEN;
+
+    // Text horizontal zentrieren
+    display.setTextSize(2);
     int16_t x1, y1;
     uint16_t w, h;
-    display.getTextBounds(timerText, 0, 0, &x1, &y1, &w, &h);
-    uint16_t timerX = (display.width() - w) / 2;
+    display.getTextBounds(phaseText, 0, 0, &x1, &y1, &w, &h);
+    uint16_t phaseX = (display.width() - w) / 2;
 
-    // Timer-Bereich löschen (volle Breite um Flackern zu vermeiden)
-    display.fillRect(0, timerY, display.width(), timerH, ST77XX_BLACK);
+    // Phasentext neu zeichnen
+    display.setTextColor(phaseColor);
+    display.setCursor(phaseX, phaseY);
+    display.print(phaseText);
 
-    // Timer neu zeichnen
-    display.setTextColor(timerColor);
-    display.setCursor(timerX, timerY);
-    display.print(remainingSec);
-    display.print(F("s"));
+    // Aktuelle Gruppe groß darunter anzeigen (nur bei 3-4 Schützen)
+    if (shooterCount == 4) {
+        const char* groupText = (currentGroup == Groups::Type::GROUP_AB) ? "A/B" : "C/D";
+
+        display.setTextSize(6);  // Sehr groß
+        display.setTextColor(ST77XX_YELLOW);
+
+        // Text zentrieren
+        display.getTextBounds(groupText, 0, 0, &x1, &y1, &w, &h);
+        uint16_t groupX = (display.width() - w) / 2;
+        uint16_t groupY = 115;  // Unterhalb der Phase
+
+        display.setCursor(groupX, groupY);
+        display.print(groupText);
+    }
 }

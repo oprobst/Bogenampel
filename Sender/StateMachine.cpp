@@ -23,6 +23,7 @@ StateMachine::StateMachine(Adafruit_ST7789& tft, ButtonManager& btnMgr)
     , configMenu(tft, btnMgr)
     , pfeileHolenMenu(tft, btnMgr)
     , schiessBetriebMenu(tft, btnMgr)
+    , alarmScreen(tft, btnMgr)
     , currentState(State::STATE_SPLASH)
     , previousState(State::STATE_SPLASH)
     , stateStartTime(0)
@@ -67,6 +68,10 @@ void StateMachine::update() {
         case State::STATE_SCHIESS_BETRIEB:
             handleSchiessBetrieb();
             break;
+
+        case State::STATE_ALARM:
+            handleAlarm();
+            break;
     }
 }
 
@@ -79,6 +84,7 @@ void StateMachine::setState(State newState) {
         case State::STATE_CONFIG_MENU: exitConfigMenu(); break;
         case State::STATE_PFEILE_HOLEN: exitPfeileHolen(); break;
         case State::STATE_SCHIESS_BETRIEB: exitSchiessBetrieb(); break;
+        case State::STATE_ALARM: exitAlarm(); break;
     }
 
     // Zustand wechseln
@@ -92,6 +98,7 @@ void StateMachine::setState(State newState) {
         case State::STATE_CONFIG_MENU: enterConfigMenu(); break;
         case State::STATE_PFEILE_HOLEN: enterPfeileHolen(); break;
         case State::STATE_SCHIESS_BETRIEB: enterSchiessBetrieb(); break;
+        case State::STATE_ALARM: enterAlarm(); break;
     }
 }
 
@@ -409,10 +416,10 @@ void StateMachine::handleSchiessBetrieb() {
                 inPreparationPhase = false;
 
                 DEBUG_PRINTLN(F("Prep END -> Shooting START"));
-            }
 
-            // Display aktualisieren (in Millisekunden für Menu-Kompatibilität)
-            schiessBetriebMenu.setPreparationPhase(true, preparationSecondsRemaining * 1000);
+                // Display aktualisieren (nur beim Phasenwechsel!)
+                schiessBetriebMenu.setShootingPhase(shootingSecondsRemaining * 1000);
+            }
         }
         // Fall 2: Eigentliche Schießphase (120/240 Sekunden oder 15s im DEBUG, grün)
         else {
@@ -420,9 +427,6 @@ void StateMachine::handleSchiessBetrieb() {
             if (shootingSecondsRemaining > 0) {
                 shootingSecondsRemaining--;
             }
-
-            // Display aktualisieren (in Millisekunden für Menu-Kompatibilität)
-            schiessBetriebMenu.setShootingPhase(shootingSecondsRemaining * 1000);
 
             // Automatisches Ende bei Zeitablauf
             if (shootingSecondsRemaining == 0) {
@@ -518,6 +522,36 @@ void StateMachine::exitSchiessBetrieb() {
 }
 
 //=============================================================================
+// STATE_ALARM
+//=============================================================================
+
+void StateMachine::enterAlarm() {
+    // Alarm-Screen initialisieren
+    alarmScreen.begin();
+    alarmScreen.draw();
+
+    // CMD_ALARM an Empfänger senden
+    sendCommand(CMD_ALARM);
+
+    DEBUG_PRINTLN(F("ALARM triggered"));
+}
+
+void StateMachine::handleAlarm() {
+    // AlarmScreen aktualisieren
+    alarmScreen.update();
+
+    // Automatisches Ende nach ~4 Sekunden (8 Blinks × 500ms)
+    // (8 × 500ms = 4000ms, aber wir geben etwas Puffer)
+    if (timeInState(4500)) {
+        // Zurück zu Pfeile Holen
+        setState(State::STATE_PFEILE_HOLEN);
+    }
+}
+
+void StateMachine::exitAlarm() {
+}
+
+//=============================================================================
 // Hilfsfunktionen
 //=============================================================================
 
@@ -526,7 +560,7 @@ bool StateMachine::timeInState(uint32_t milliseconds) const {
 }
 
 void StateMachine::advanceToNextGroup() {
-    // 4-Zyklus: AB_POS1 -> CD_POS1 -> CD_POS2 -> AB_POS2 -> AB_POS1
+    // 4-Zyklus: AB_POS1 -> CD_POS2 -> CD_POS1 -> AB_POS2 -> AB_POS1
     if (currentGroup == Groups::Type::GROUP_AB && currentPosition == Groups::Position::POS_1) {
         // State 1 -> State 2
         currentGroup = Groups::Type::GROUP_CD;

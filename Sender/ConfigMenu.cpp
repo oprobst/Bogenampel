@@ -331,6 +331,10 @@ void ConfigMenu::drawHelp() {
     // Hilfetext unten
     display.setTextSize(1);
     display.setTextColor(Display::COLOR_GRAY);
-    display.setCursor(10, display.height() - 15);
+    display.setCursor(10, display.height() - 25);
     display.print(F("L/R: Aendern, OK: Weiter"));
+
+    // Alarm-Hinweis (zweite Zeile)
+    display.setCursor(10, display.height() - 12);
+    display.print(F("Pfeiltaste >2s: Alarm"));
 }

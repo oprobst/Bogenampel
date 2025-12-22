@@ -35,6 +35,7 @@ BuzzerManager buzzer(Pins::BUZZER, Timing::BUZZER_FREQUENCY_HZ);
 // Forward-Deklarationen
 void showRainbowEffect();
 void setTrafficLightColor(CRGB color);
+void updateAlarm();
 
 // State-Variablen
 uint32_t lastBlinkTime = 0;        // Für LED-Blink-Timer
@@ -55,6 +56,15 @@ bool groupsEnabled = true;         // Sind Gruppen aktiv? (false = 1-2 Schützen
 bool inPreparationPhase = false;   // Läuft die Vorbereitungsphase?
 uint32_t preparationRemainingSeconds = 0;  // Verbleibende Sekunden Vorbereitungsphase
 uint32_t preparationDurationMs = 0; // Dauer der Vorbereitungsphase (für Kompatibilität)
+
+// Tracking für automatischen Gruppenwechsel (bei ganzer Passe POS_1)
+bool firstGroupInPass = true;      // true = erste Gruppe, false = zweite Gruppe
+
+// Alarm State-Variablen (nicht-blockierend)
+bool alarmActive = false;          // Läuft gerade ein Alarm?
+uint8_t alarmBlinkCount = 0;       // Aktueller Blink-Zähler (0-7)
+bool alarmLedState = false;        // LED-Zustand (HIGH/LOW)
+uint32_t alarmLastToggle = 0;      // Zeitpunkt der letzten LED-Umschaltung
 
 
 //=============================================================================
@@ -182,6 +192,9 @@ void loop() {
 
     // Aktualisiere Buzzer-Zustand (nicht-blockierend, muss jede Iteration laufen)
     buzzer.update();
+
+    // Aktualisiere Alarm-Zustand (nicht-blockierend)
+    updateAlarm();
 
     // Prüfe Debug-Button (nicht zeitkritisch)
     checkButton();
@@ -407,6 +420,59 @@ void checkButton() {
 }
 
 /**
+ * @brief Aktualisiert Alarm-Zustand (nicht-blockierend)
+ *
+ * Blinkt 8x mit 250ms Pausen (alle LEDs inkl. 7-Segment und Gruppen).
+ * Diese Funktion muss regelmäßig in loop() aufgerufen werden!
+ */
+void updateAlarm() {
+    if (!alarmActive) return;
+
+    uint32_t now = millis();
+    uint32_t elapsed = now - alarmLastToggle;
+
+    // 250ms vergangen?
+    if (elapsed >= 250) {
+        alarmLastToggle = now;
+
+        if (alarmLedState) {
+            // LEDs ausschalten
+            digitalWrite(Pins::LED_GREEN, LOW);
+            digitalWrite(Pins::LED_YELLOW, LOW);
+            digitalWrite(Pins::LED_RED, LOW);
+
+            // LED Strip ausschalten (7-Segment + Gruppen)
+            FastLED.clear();
+            FastLED.show();
+
+            alarmLedState = false;
+
+            // Blink-Zähler erhöhen
+            alarmBlinkCount++;
+
+            // Alle 8 Blinks fertig?
+            if (alarmBlinkCount >= 8) {
+                alarmActive = false;
+                // Rote LED bleibt an nach Alarm
+                digitalWrite(Pins::LED_RED, HIGH);
+                // LED Strip bleibt aus
+            }
+        } else {
+            // LEDs einschalten
+            digitalWrite(Pins::LED_GREEN, HIGH);
+            digitalWrite(Pins::LED_YELLOW, HIGH);
+            digitalWrite(Pins::LED_RED, HIGH);
+
+            // LED Strip einschalten (alle ROT: 7-Segment + Gruppen)
+            fill_solid(leds, LEDStrip::TOTAL_LEDS, CRGB::Red);
+            FastLED.show();
+
+            alarmLedState = true;
+        }
+    }
+}
+
+/**
  * @brief Aktualisiert Timer und LED-Status mit 7-Segment-Anzeige (Interrupt-basiert)
  *
  * Diese Funktion wird genau einmal pro Sekunde aufgerufen (durch Timer1-Interrupt).
@@ -481,13 +547,17 @@ void updateTimer() {
         // Zeige verbleibende Zeit auf 7-Segment-Anzeige
         display.displayTimer(displaySec, displayColor);
 
-        // Behalte aktuelle Gruppe sichtbar in gleicher Farbe wie die Ziffern
-        if (currentGroup == Groups::Type::GROUP_AB) {
+        // Behalte aktuelle Gruppe sichtbar in gleicher Farbe wie die Ziffern (nur bei aktivierten Gruppen)
+        if (!groupsEnabled) {
+            // Keine Gruppe (1-2 Schützen Modus) - beide aus
+            display.setGroup(0, CRGB::Black);
+            display.setGroup(1, CRGB::Black);
+        } else if (currentGroup == Groups::Type::GROUP_AB) {
             display.setGroup(0, displayColor);
         } else {
             display.setGroup(1, displayColor);
         }
-       
+
     }
      
     // Dekrementiere verbleibende Zeit
@@ -526,8 +596,12 @@ void updatePreparation() {
         uint32_t startTimeSec = (timerRemainingSeconds > 999) ? 999 : timerRemainingSeconds;
         display.displayTimer(startTimeSec, CRGB::Green);
 
-        // Behalte aktuelle Gruppe sichtbar in GRÜN (gleiche Farbe wie Ziffern)
-        if (currentGroup == Groups::Type::GROUP_AB) {
+        // Behalte aktuelle Gruppe sichtbar in GRÜN (nur bei aktivierten Gruppen)
+        if (!groupsEnabled) {
+            // Keine Gruppe (1-2 Schützen Modus) - beide aus
+            display.setGroup(0, CRGB::Black);
+            display.setGroup(1, CRGB::Black);
+        } else if (currentGroup == Groups::Type::GROUP_AB) {
             display.setGroup(0, CRGB::Green);
         } else {
             display.setGroup(1, CRGB::Green);
@@ -539,14 +613,17 @@ void updatePreparation() {
         // Zeige verbleibende Vorbereitungszeit in ROT
         display.displayTimer(preparationRemainingSeconds, CRGB::Red);
 
-        // Behalte aktuelle Gruppe sichtbar in ROT (gleiche Farbe wie Ziffern)
-        if (currentGroup == Groups::Type::GROUP_AB) {
+        // Behalte aktuelle Gruppe sichtbar in ROT (nur bei aktivierten Gruppen)
+        if (!groupsEnabled) {
+            // Keine Gruppe (1-2 Schützen Modus) - beide aus
+            display.setGroup(0, CRGB::Black);
+            display.setGroup(1, CRGB::Black);
+        } else if (currentGroup == Groups::Type::GROUP_AB) {
             display.setGroup(0, CRGB::Red);
         } else {
             display.setGroup(1, CRGB::Red);
-
         }
-        
+
     }
 
     // Dekrementiere verbleibende Zeit
@@ -675,6 +752,22 @@ void handleCommand(RadioCommand cmd) {
         case CMD_START_240:
             DEBUG_PRINTLN(F("START"));
 
+            // Automatischer Gruppenwechsel bei ganzer Passe (POS_1)
+            if (groupsEnabled && currentPosition == Groups::Position::POS_1) {
+                if (!firstGroupInPass) {
+                    // Dies ist die zweite Gruppe in der Passe → wechsle zur anderen Gruppe
+                    if (currentGroup == Groups::Type::GROUP_AB) {
+                        currentGroup = Groups::Type::GROUP_CD;
+                        DEBUG_PRINTLN(F("Auto: AB -> CD"));
+                    } else {
+                        currentGroup = Groups::Type::GROUP_AB;
+                        DEBUG_PRINTLN(F("Auto: CD -> AB"));
+                    }
+                }
+                // Toggle für nächsten START
+                firstGroupInPass = !firstGroupInPass;
+            }
+
             // Timer stoppen (falls noch von vorheriger Gruppe aktiv)
             timerRunning = false;
 
@@ -721,6 +814,7 @@ void handleCommand(RadioCommand cmd) {
             preparationDurationMs = 0;
 
             // Akustisches Signal: 3x Piepen (Schießphase beendet)
+            // (Alarm wird NICHT vorzeitig beendet - läuft bis zum Ende)
             buzzer.beep(3);
             break;
 
@@ -729,6 +823,7 @@ void handleCommand(RadioCommand cmd) {
             currentGroup = Groups::Type::GROUP_AB;      // Gruppe A/B
             currentPosition = Groups::Position::POS_1;  // Position 1 (ganze Passe)
             groupsEnabled = true;
+            firstGroupInPass = true;  // Neue Passe beginnt mit erster Gruppe
 
             // Timer und Vorbereitung stoppen
             timerRunning = false;
@@ -751,6 +846,7 @@ void handleCommand(RadioCommand cmd) {
             currentGroup = Groups::Type::GROUP_CD;      // Gruppe C/D
             currentPosition = Groups::Position::POS_1;  // Position 1 (ganze Passe)
             groupsEnabled = true;
+            firstGroupInPass = true;  // Neue Passe beginnt mit erster Gruppe
 
             // Timer und Vorbereitung stoppen
             timerRunning = false;
@@ -836,20 +932,23 @@ void handleCommand(RadioCommand cmd) {
         case CMD_ALARM:
             DEBUG_PRINTLN(F("ALARM"));
 
-            // Alle LEDs blinken schnell
-            for (int i = 0; i < 5; i++) {
-                digitalWrite(Pins::LED_GREEN, HIGH);
-                digitalWrite(Pins::LED_YELLOW, HIGH);
-                digitalWrite(Pins::LED_RED, HIGH);
-                delay(100);
-                digitalWrite(Pins::LED_GREEN, LOW);
-                digitalWrite(Pins::LED_YELLOW, LOW);
-                digitalWrite(Pins::LED_RED, LOW);
-                delay(100);
-            }
+            // Timer und Phasen sofort stoppen
+            timerRunning = false;
+            timerRemainingSeconds = 0;
+            inPreparationPhase = false;
+            preparationRemainingSeconds = 0;
 
-            // Rote LED bleibt an
+            // Starte nicht-blockierenden Alarm (8x blinken mit 250ms)
+            alarmActive = true;
+            alarmBlinkCount = 0;
+            alarmLedState = false;
+            alarmLastToggle = millis();
+
+            // Erste LEDs sofort einschalten
+            digitalWrite(Pins::LED_GREEN, HIGH);
+            digitalWrite(Pins::LED_YELLOW, HIGH);
             digitalWrite(Pins::LED_RED, HIGH);
+            alarmLedState = true;
 
             // Akustisches Signal: 8x Piepen (Alarm)
             buzzer.beep(8);

@@ -81,7 +81,7 @@ public:
     bool isAnyPressed() const;
 
     /**
-     * @brief Prüft ob Alarm ausgelöst wurde (OK > 3 Sekunden)
+     * @brief Prüft ob Alarm ausgelöst wurde (Pfeiltaste > 2 Sekunden)
      * @return true wenn Alarm-Trigger erkannt (Flag wird gelöscht!)
      */
     bool isAlarmTriggered();
@@ -101,9 +101,9 @@ private:
 
     ButtonState buttons[static_cast<uint8_t>(Button::COUNT)];
 
-    // Alarm-Detektion (OK-Button > 3 Sekunden)
-    uint32_t okPressStartTime;    // Zeitpunkt, wann OK gedrückt wurde
-    bool okPressActive;            // OK-Button aktuell gedrückt
+    // Alarm-Detektion (Pfeiltasten > 2 Sekunden)
+    uint32_t arrowPressStartTime;  // Zeitpunkt, wann Pfeiltaste gedrückt wurde
+    bool arrowPressActive;         // Pfeiltaste aktuell gedrückt
     bool alarmTriggered;           // Alarm wurde ausgelöst (Flag)
 
     /**

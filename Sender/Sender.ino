@@ -92,17 +92,10 @@ void loop() {
     buttons.update();
 
     // Alarm-Detection (globale Prüfung, hat Vorrang vor allem anderen)
-    if (buttons.isAlarmTriggered()) {
-        // Sende Alarm mit Retries
-        TransmissionResult result = sendAlarmWithRetry();
-
-        if (result == TX_SUCCESS) {
-            // Kurzes visuelles Feedback
-            digitalWrite(Pins::LED_RED, HIGH);
-            delay(50);
-            digitalWrite(Pins::LED_RED, LOW);
-        }
-        // Kein State-Wechsel, bleibe im aktuellen State
+    // Nur während Schießbetrieb aktiv
+    if (buttons.isAlarmTriggered() && stateMachine.getCurrentState() == State::STATE_SCHIESS_BETRIEB) {
+        // Wechsel zu Alarm-State (sendet CMD_ALARM und zeigt Alarm-Screen)
+        stateMachine.setState(State::STATE_ALARM);
     }
 
     // State Machine Update (verwaltet alle States inkl. Splash Screen)
