@@ -60,7 +60,7 @@ namespace Pins {
     //-------------------------------------------------------------------------
     // Eingänge: Taster (mit internem Pull-Up, aktiv LOW)
     //-------------------------------------------------------------------------
-    constexpr uint8_t BTN_DEBUG   = 5;   // J1: Debug-Taster
+    constexpr uint8_t BTN_DEBUG   = 7;   // J3: Debug-Taster
     constexpr uint8_t DEBUG_JUMPER = 2;  // D2: Debug-Jumper (LOW = Debug-Modus)
 
 } // namespace Pins

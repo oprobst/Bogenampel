@@ -358,19 +358,25 @@ void StateMachine::exitPfeileHolen() {
 void StateMachine::enterSchiessBetrieb() {
     // Starte mit Vorbereitungsphase (10 Sekunden, oder 5s im DEBUG)
     inPreparationPhase = true;
-    preparationStartTime = millis();
+    preparationSecondsRemaining = Timing::PREPARATION_TIME_MS / 1000;  // 10s oder 5s
 
     // Schießzeit setzen (normal oder verkürzt für DEBUG)
     #if DEBUG_SHORT_TIMES
         // DEBUG: 15s für beide Modi
         shootingDurationMs = 15000UL;
+        shootingSecondsRemaining = 15;
     #else
         shootingDurationMs = shootingTime * 1000UL;  // Sekunden → Millisekunden
+        shootingSecondsRemaining = shootingTime;     // 120s oder 240s
     #endif
 
     // Sende START-Kommando sofort (Empfänger startet eigene 10s Vorbereitungsphase)
     RadioCommand cmd = (shootingTime == 120) ? CMD_START_120 : CMD_START_240;
     sendCommand(cmd);
+
+    // SOFORT danach: Starte Sender-Timer (Interrupt-basiert, synchron mit Empfänger)
+    extern void resetSenderTimer();  // Funktion aus Sender.ino
+    resetSenderTimer();
 
     // Menü initialisieren
     schiessBetriebMenu.begin();
@@ -384,78 +390,67 @@ void StateMachine::enterSchiessBetrieb() {
 }
 
 void StateMachine::handleSchiessBetrieb() {
-    // Fall 1: Vorbereitungsphase (10 Sekunden, orange Countdown)
-    if (inPreparationPhase) {
-        uint32_t prepElapsed = millis() - preparationStartTime;
+    // Prüfe ob eine Sekunde vergangen ist (Interrupt-Flag aus Sender.ino)
+    extern volatile bool senderSecondTick;
 
-        // Prüfe ob Vorbereitungsphase vorbei
-        if (prepElapsed >= Timing::PREPARATION_TIME_MS) {
-            // Beende Vorbereitungsphase (Empfänger macht das automatisch auch)
-            inPreparationPhase = false;
-            shootingStartTime = millis();
+    if (senderSecondTick) {
+        senderSecondTick = false;  // Flag zurücksetzen
+
+        // Fall 1: Vorbereitungsphase (10 Sekunden oder 5s im DEBUG, orange Countdown)
+        if (inPreparationPhase) {
+            // Dekrementiere verbleibende Zeit
+            if (preparationSecondsRemaining > 0) {
+                preparationSecondsRemaining--;
+            }
+
+            // Prüfe ob Vorbereitungsphase vorbei
+            if (preparationSecondsRemaining == 0) {
+                // Beende Vorbereitungsphase → Wechsel zur Schießphase
+                inPreparationPhase = false;
+
+                DEBUG_PRINTLN(F("Prep END -> Shooting START"));
+            }
+
+            // Display aktualisieren (in Millisekunden für Menu-Kompatibilität)
+            schiessBetriebMenu.setPreparationPhase(true, preparationSecondsRemaining * 1000);
         }
+        // Fall 2: Eigentliche Schießphase (120/240 Sekunden oder 15s im DEBUG, grün)
+        else {
+            // Dekrementiere verbleibende Zeit
+            if (shootingSecondsRemaining > 0) {
+                shootingSecondsRemaining--;
+            }
 
-        // Timer alle 1000ms aktualisieren
-        static uint32_t lastDisplayUpdate = 0;
-        if (millis() - lastDisplayUpdate >= 1000) {
-            // Timer aktualisieren
-            uint32_t prepRemaining = (prepElapsed < Timing::PREPARATION_TIME_MS)
-                ? (Timing::PREPARATION_TIME_MS - prepElapsed) : 0;
-            schiessBetriebMenu.setPreparationPhase(true, prepRemaining);
-            lastDisplayUpdate = millis();
+            // Display aktualisieren (in Millisekunden für Menu-Kompatibilität)
+            schiessBetriebMenu.setShootingPhase(shootingSecondsRemaining * 1000);
+
+            // Automatisches Ende bei Zeitablauf
+            if (shootingSecondsRemaining == 0) {
+                handleShootingPhaseEnd();
+                return;
+            }
         }
-
-        // Menu aktualisieren
-        schiessBetriebMenu.update();
-        if (schiessBetriebMenu.needsRedraw()) {
-            schiessBetriebMenu.draw();
-        }
-
-        // Prüfe ob "Passe beenden" gedrückt wurde
-        if (schiessBetriebMenu.isEndRequested()) {
-            schiessBetriebMenu.resetEndRequest();
-
-            // Wechsle zur nächsten Gruppe ZUERST
-            advanceToNextGroup();
-
-            // Sende STOP
-            sendCommand(CMD_STOP);
-
-            // Wechsle zu STATE_PFEILE_HOLEN (sendet GROUP-Kommando in enterPfeileHolen)
-            setState(State::STATE_PFEILE_HOLEN);
-        }
-        return;
     }
 
-    // Fall 2: Eigentliche Schießphase (120/240 Sekunden, grün)
-    uint32_t elapsed = millis() - shootingStartTime;
-    bool timeExpired = (elapsed >= shootingDurationMs);
-
-    // Nur Timer alle 1000ms aktualisieren (1x pro Sekunde)
-    static uint32_t lastDisplayUpdate = 0;
-    if (millis() - lastDisplayUpdate >= 1000) {
-        // Timer aktualisieren
-        uint32_t remainingMs = (elapsed < shootingDurationMs) ? (shootingDurationMs - elapsed) : 0;
-        schiessBetriebMenu.setShootingPhase(remainingMs);
-        lastDisplayUpdate = millis();
-    }
-
-    // Menu aktualisieren
+    // Menu aktualisieren (jeder Frame, nicht nur bei Sekunden-Tick)
     schiessBetriebMenu.update();
     if (schiessBetriebMenu.needsRedraw()) {
         schiessBetriebMenu.draw();
     }
 
-    // Automatisches Ende bei Zeitablauf
-    if (timeExpired) {
-        handleShootingPhaseEnd();
-        return;
-    }
-
-    // Manuelles Ende durch Button
+    // Prüfe ob "Passe beenden" gedrückt wurde (in BEIDEN Phasen möglich)
     if (schiessBetriebMenu.isEndRequested()) {
         schiessBetriebMenu.resetEndRequest();
-        handleShootingPhaseEnd();
+
+        if (inPreparationPhase) {
+            // Während Vorbereitungsphase: Abbruch
+            advanceToNextGroup();
+            sendCommand(CMD_STOP);
+            setState(State::STATE_PFEILE_HOLEN);
+        } else {
+            // Während Schießphase: Normale Beendigung
+            handleShootingPhaseEnd();
+        }
     }
 }
 
@@ -480,30 +475,37 @@ void StateMachine::handleShootingPhaseEnd() {
         setState(State::STATE_PFEILE_HOLEN);
     } else {
         // 3-4 Schützen: Zwei Gruppen pro Passe
-        // Prüfe welche Gruppe gerade fertig ist (BEFORE advanceToNextGroup!)
-        if (currentGroup == Groups::Type::GROUP_AB) {
-            // Erste Gruppe (A/B) fertig → Starte zweite Gruppe (C/D)
-            advanceToNextGroup();  // Wechsle zu GROUP_CD
+        // Prüfe welche Position gerade fertig ist (BEFORE advanceToNextGroup!)
+        // POS_1 = erste Gruppe der Passe → zweite Gruppe starten
+        // POS_2 = zweite Gruppe der Passe → STOP
+        if (currentPosition == Groups::Position::POS_1) {
+            // Erste Gruppe der Passe fertig → Starte zweite Gruppe
+            advanceToNextGroup();  // Wechsle zur zweiten Gruppe
 
-            // Vorbereitung für zweite Gruppe manuell neu starten
+            // Vorbereitung für zweite Gruppe manuell neu starten (Interrupt-basiert)
             // (setState würde nicht funktionieren da wir bereits in STATE_SCHIESS_BETRIEB sind)
             inPreparationPhase = true;
-            preparationStartTime = millis();
+            preparationSecondsRemaining = Timing::PREPARATION_TIME_MS / 1000;  // 10s oder 5s
+            shootingSecondsRemaining = shootingDurationMs / 1000;  // Wiederherstellen
 
             // Sende START-Kommando (Empfänger startet eigene 10s Vorbereitungsphase)
             RadioCommand startCmd = (shootingTime == 120) ? CMD_START_120 : CMD_START_240;
             sendCommand(startCmd);
+
+            // Timer zurücksetzen für synchronen Start
+            extern void resetSenderTimer();
+            resetSenderTimer();
 
             // Menü für zweite Gruppe aktualisieren
             schiessBetriebMenu.setTournamentConfig(shootingTime, shooterCount, currentGroup, currentPosition);
             schiessBetriebMenu.setPreparationPhase(true, Timing::PREPARATION_TIME_MS);
             schiessBetriebMenu.draw();
         } else {
-            // Zweite Gruppe (C/D) fertig → Ende der Passe
+            // Zweite Gruppe der Passe fertig (POS_2) → Ende der Passe
             // Sende STOP (3 Pieptöne auf Empfänger)
             sendCommand(CMD_STOP);
 
-            // Wechsle zur nächsten Gruppe (zurück zu A/B für nächste Passe)
+            // Wechsle zur nächsten Gruppe (für nächste Passe)
             advanceToNextGroup();
 
             // Gehe zu PFEILE_HOLEN

@@ -25,6 +25,21 @@ RF24 radio(Pins::NRF_CE, Pins::NRF_CSN);
 StateMachine stateMachine(tft, buttons);
 
 //=============================================================================
+// Timer1 für Interrupt-basierte 1-Sekunden-Ticks (wie Empfänger)
+//=============================================================================
+
+volatile bool senderSecondTick = false;     // Flag: Sekunde vergangen?
+
+/**
+ * @brief Timer1 Compare Match A Interrupt - wird jede Sekunde ausgelöst
+ *
+ * Diese ISR wird exakt jede Sekunde aufgerufen (identisch zum Empfänger).
+ */
+ISR(TIMER1_COMPA_vect) {
+    senderSecondTick = true;
+}
+
+//=============================================================================
 // Setup
 //=============================================================================
 
@@ -41,6 +56,9 @@ void setup() {
 
     // Pins initialisieren
     initializePins();
+
+    // Timer1 für Sekunden-Ticks initialisieren (MUSS VOR State Machine starten!)
+    setupTimer1();
 
     // Button Manager initialisieren
     buttons.begin();
@@ -110,6 +128,53 @@ void initializePins() {
 
     // NRF24 Control Pins werden von RF24.begin() initialisiert!
     // Keine manuelle Initialisierung nötig
+}
+
+/**
+ * @brief Konfiguriert Timer1 für exakte 1-Sekunden-Interrupts (identisch zum Empfänger)
+ *
+ * Timer1 ist ein 16-Bit-Timer auf dem ATmega328P.
+ * Mit Prescaler 256 und einem Compare-Wert von 62499:
+ * - F_CPU = 16 MHz
+ * - Prescaler = 256
+ * - Timer-Takt = 16 MHz / 256 = 62.5 kHz
+ * - Für 1 Hz: 62.5 kHz / 62500 = 1 Hz (exakt 1 Sekunde)
+ */
+void setupTimer1() {
+    cli();  // Interrupts temporär deaktivieren
+
+    // Timer1 zurücksetzen
+    TCCR1A = 0;
+    TCCR1B = 0;
+    TCNT1 = 0;
+
+    // Compare-Wert setzen für 1 Hz (1 Sekunde)
+    // OCR1A = (F_CPU / (Prescaler * gewünschte Frequenz)) - 1
+    // OCR1A = (16000000 / (256 * 1)) - 1 = 62499
+    OCR1A = 62499;
+
+    // CTC-Modus (Clear Timer on Compare Match)
+    TCCR1B |= (1 << WGM12);
+
+    // Prescaler 256
+    TCCR1B |= (1 << CS12);
+
+    // Timer1 Compare Match A Interrupt aktivieren
+    TIMSK1 |= (1 << OCIE1A);
+
+    sei();  // Interrupts wieder aktivieren
+
+    DEBUG_PRINTLN(F("Timer1 konfiguriert (1s Ticks)"));
+}
+
+/**
+ * @brief Setzt den Sender-Timer zurück (für synchronen Start)
+ */
+void resetSenderTimer() {
+    cli();  // Interrupts kurz deaktivieren
+    TCNT1 = 0;  // Timer1 Counter zurücksetzen
+    senderSecondTick = false;
+    sei();
 }
 
 /**

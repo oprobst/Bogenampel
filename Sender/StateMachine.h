@@ -117,12 +117,12 @@ private:
     Groups::Position currentPosition; // Aktuelle Position (POS_1 oder POS_2)
 
     //-------------------------------------------------------------------------
-    // State Variables: SCHIESS_BETRIEB
+    // State Variables: SCHIESS_BETRIEB (Interrupt-basiert)
     //-------------------------------------------------------------------------
-    uint32_t shootingStartTime;     // Zeitpunkt des Schießbetrieb-Starts (millis)
-    uint32_t shootingDurationMs;    // Dauer in Millisekunden (120000 oder 240000)
-    bool inPreparationPhase;        // Sind wir in der Vorbereitungsphase? (10s)
-    uint32_t preparationStartTime;  // Start der Vorbereitungsphase
+    bool inPreparationPhase;              // Sind wir in der Vorbereitungsphase? (10s oder 5s)
+    uint32_t preparationSecondsRemaining; // Verbleibende Sekunden Vorbereitungsphase
+    uint32_t shootingSecondsRemaining;    // Verbleibende Sekunden Schießphase
+    uint32_t shootingDurationMs;          // Dauer in Millisekunden (nur für Kompatibilität)
 
     //-------------------------------------------------------------------------
     // State Handlers

@@ -415,11 +415,6 @@ void checkButton() {
 void updateTimer() {
     if (!timerRunning) return;
 
-    // Dekrementiere verbleibende Zeit
-    if (timerRemainingSeconds > 0) {
-        timerRemainingSeconds--;
-    }
-
     if (timerRemainingSeconds == 0) {
         // Timer abgelaufen
         timerRunning = false;
@@ -492,9 +487,12 @@ void updateTimer() {
         } else {
             display.setGroup(1, displayColor);
         }
-
-        DEBUG_PRINT(F("T:"));
-        DEBUG_PRINTLN(timerRemainingSeconds);
+       
+    }
+     
+    // Dekrementiere verbleibende Zeit
+    if (timerRemainingSeconds > 0) {
+        timerRemainingSeconds--;
     }
 }
 
@@ -505,11 +503,6 @@ void updateTimer() {
  */
 void updatePreparation() {
     if (!inPreparationPhase) return;
-
-    // Dekrementiere verbleibende Zeit
-    if (preparationRemainingSeconds > 0) {
-        preparationRemainingSeconds--;
-    }
 
     if (preparationRemainingSeconds == 0) {
         // Beende Vorbereitungsphase
@@ -553,9 +546,12 @@ void updatePreparation() {
             display.setGroup(1, CRGB::Red);
 
         }
+        
+    }
 
-        DEBUG_PRINT(F("Prep:"));
-        DEBUG_PRINTLN(preparationRemainingSeconds);
+    // Dekrementiere verbleibende Zeit
+    if (preparationRemainingSeconds > 0) {
+        preparationRemainingSeconds--;
     }
 }
 
@@ -721,9 +717,11 @@ void handleCommand(RadioCommand cmd) {
         case CMD_STOP:
             DEBUG_PRINTLN(F("STOP"));
 
-            preparationRemainingSeconds = 0; 
-            preparationDurationMs = 0; 
+            preparationRemainingSeconds = 0;
+            preparationDurationMs = 0;
 
+            // Akustisches Signal: 3x Piepen (Schießphase beendet)
+            buzzer.beep(3);
             break;
 
         case CMD_GROUP_AB:
