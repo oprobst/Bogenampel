@@ -18,13 +18,20 @@ Detaillierte Pin-Belegung: siehe [HARDWARE.md](../HARDWARE.md)
 ```
 Sender/
 ├── Sender.ino              # Hauptdatei mit setup() und loop()
-├── Config.h                # Zentrale Konfiguration (Pins, Konstanten)
-├── Commands.h              # RF-Kommando-Definitionen
-├── SplashScreen.h/cpp      # Startup-Logo
+├── Config.h                # Zentrale Konfiguration (Pins, Konstanten, EEPROM)
+├── Commands.h              # RF-Kommando-Definitionen (11 Kommandos)
+├── StateMachine.h/cpp      # State Machine (5 States, 584 LOC)
+├── ButtonManager.h/cpp     # Button-Handling mit Debouncing und Buzzer
+├── SplashScreen.h/cpp      # Startup-Logo und Verbindungstest
+├── ConfigMenu.h/cpp        # Konfigurations-Menü (340 LOC)
+├── SchiessBetriebMenu.h/cpp # Schießbetrieb-Menü (253 LOC)
+├── PfeileHolenMenu.h/cpp   # Pfeile-Holen-Menü mit 4-State Cycle (526 LOC)
+├── AlarmScreen.h/cpp       # Alarm-Bildschirm (100 LOC)
 ├── HARDWARE.md             # Pin-Belegung und Hardware-Dokumentation
 ├── SETUP.md                # Setup-Anleitung
 └── README.md               # Diese Datei
 
+Total: 3090 LOC (ohne Libraries)
 Hinweis: Flat-File-Structure für Arduino IDE Kompatibilität (keine Unterordner)
 ```
 
@@ -32,32 +39,55 @@ Hinweis: Flat-File-Structure für Arduino IDE Kompatibilität (keine Unterordner
 
 ### ✅ Implementiert (Version 1.0)
 
-- [ ] **Splash Screen** (003-startup-logo-splash)
-  - Logo und "Bogenampeln V1.0" für 3 Sekunden
+- [x] **Splash Screen** (003-startup-logo-splash)
+  - Logo und "Bogenampeln V1.0" für 15 Sekunden
   - Überspringen mit beliebiger Taste
+  - Verbindungsqualitäts-Test (10 Pings, Anzeige für 5s)
 
-- [ ] **Batteriemonitor** (001-battery-monitoring-display)
-  - Spannungsmessung über A7 (1:1 Spannungsteiler)
+- [x] **Batteriemonitor** (001-battery-monitoring-display)
+  - Spannungsmessung über A5 (1:1 Spannungsteiler)
   - Median-Filter (5 Werte) zur Glättung
   - Anzeige in % oder USB-Symbol
   - Low-Battery-Warnung bei <20%
 
-- [ ] **Timer-Steuerung** (001-archery-timer)
+- [x] **Timer-Steuerung** (001-archery-timer)
   - START: 10s Vorbereitung + 120/240s Countdown
   - STOP: Timer sofort anhalten
   - RF-Übertragung via NRF24L01
+  - Interrupt-basierte Timer-Synchronisation (Sender ↔ Empfänger)
 
-- [ ] **Gruppen-Anzeige** (002-shooter-groups)
+- [x] **Gruppen-Anzeige** (002-shooter-groups)
   - Toggle zwischen A/B und C/D
-  - 4-State Cycle mit Position-Indikator
-  - Anzeige auf Display
+  - 4-State Cycle mit Position-Indikator (POS_1, POS_2)
+  - Ganze Passe und Halbe Passe Unterstützung
+  - Anzeige auf Display und LED-Strip (Empfänger)
+
+- [x] **Menü-System für Einstellungen**
+  - Config-Menü: Schießzeit (120/240s), Schützenanzahl (1-2 / 3-4)
+  - Schießbetrieb-Menü: Timer-Steuerung, Gruppen-Wechsel
+  - Pfeile-Holen-Menü: 4-State Cycle (ganze/halbe Passe)
+  - Navigation mit 3 Tastern (Links, OK, Rechts)
+
+- [x] **EEPROM-Konfiguration**
+  - Turnier-Einstellungen werden gespeichert (shootingTime, shooterCount)
+  - Persistenz über Power-Cycles hinweg
+  - CRC8-Checksumme zur Validierung
+
+- [x] **Alarm-System**
+  - Auslösung: OK-Taste 2 Sekunden gedrückt halten
+  - Sendet CMD_ALARM an Empfänger
+  - Empfänger blinkt 8x rot/gelb mit Buzzer-Alarm
+  - Alarm-Screen auf Sender-Display
+
+- [x] **Buzzer-Feedback**
+  - Tastentöne bei jedem Button-Druck
+  - Frequenz: 1600 Hz, Dauer: 25ms
+  - Über ButtonManager gesteuert
 
 ### 🚧 Geplant (Version 2.0)
 
-- [ ] Menü-System für Einstellungen
-- [ ] Lautstärke-Regelung für Empfänger-Buzzer
-- [ ] Speichern von Einstellungen im EEPROM
-- [ ] Batterie-Kalibrierung
+- [ ] Batterie-Kalibrierung über Menü
+- [ ] Statistiken (Anzahl Durchgänge, Gesamtzeit)
 
 ## Abhängigkeiten (Libraries)
 
@@ -137,28 +167,61 @@ DEBUG_PRINT("Batterie: "); DEBUG_PRINT(percent); DEBUG_PRINTLN("%");
 
 ## State Machine
 
-Die Anwendung ist als State Machine implementiert:
+Die Anwendung ist als State Machine implementiert (StateMachine.h/cpp):
 
 ```
-SPLASH_SCREEN → IDLE ⇄ TRANSMITTING
-                  ↓
-            LOW_BATTERY_WARNING
+SPLASH_SCREEN → CONFIG_MENU → SCHIESS_BETRIEB ⇄ PFEILE_HOLEN
+                                     ↓
+                                 ALARM
 ```
 
-- **SPLASH_SCREEN**: Zeigt Logo für 3 Sekunden
-- **IDLE**: Wartet auf Benutzereingabe, zeigt Status
-- **TRANSMITTING**: Sendet RF-Kommando, zeigt Feedback
-- **LOW_BATTERY_WARNING**: Warnung bei <20% Batterie
+- **STATE_SPLASH_SCREEN**: Zeigt Logo für 15s, führt Verbindungstest durch
+- **STATE_CONFIG_MENU**: Einstellungen (Schießzeit, Schützenanzahl)
+  - Links/Rechts: Navigation
+  - OK: Weiter zu Schießbetrieb
+- **STATE_SCHIESS_BETRIEB**: Hauptmenü für Timer-Steuerung
+  - OK: Timer Start/Stop
+  - Links: Gruppe wechseln (A/B ↔ C/D)
+  - Rechts: Halbe Passe (POS_1 ↔ POS_2)
+  - OK 2s halten: Alarm auslösen
+- **STATE_PFEILE_HOLEN**: 4-State Cycle für Pfeile holen
+  - OK: Nächster State
+  - Links: Zurück zu Schießbetrieb
+- **STATE_ALARM**: Alarm-Screen, sendet CMD_ALARM an Empfänger
+  - Automatischer Rückkehr nach 3s
+
+Alle States unterstützen:
+- Batterie-Überwachung (Status-Bar oben rechts)
+- Gruppen-Anzeige (wenn 3-4 Schützen aktiv)
+- Interrupt-basierte Sekunden-Ticks für Timer-Synchronisation
 
 ## RF-Protokoll
 
 Siehe `Commands.h` für Details.
 
-**Paket-Format** (4 Bytes):
-- Byte 0: Kommando (START_TIMER, STOP_TIMER, TOGGLE_GROUP)
-- Byte 1: Daten (z.B. Gruppenstatus)
-- Byte 2: Sequenznummer
-- Byte 3: XOR-Checksumme
+**Paket-Format** (2 Bytes):
+- Byte 0: Kommando (RadioCommand enum)
+- Byte 1: XOR-Checksumme (command ^ 0xFF)
+
+**Verfügbare Kommandos (11 total):**
+- `CMD_STOP` (0x01) - Timer stoppen
+- `CMD_START_120` (0x02) - Timer 120s starten
+- `CMD_START_240` (0x03) - Timer 240s starten
+- `CMD_INIT` (0x04) - Empfänger initialisieren
+- `CMD_ALARM` (0x05) - Not-Alarm
+- `CMD_PING` (0x06) - Verbindungstest
+- `CMD_GROUP_AB` (0x08) - Gruppe A/B aktiv (ganze Passe)
+- `CMD_GROUP_CD` (0x09) - Gruppe C/D aktiv (ganze Passe)
+- `CMD_GROUP_NONE` (0x0A) - Keine Gruppe (1-2 Schützen)
+- `CMD_GROUP_FINISH_AB` (0x0B) - Halbe Passe nach A/B
+- `CMD_GROUP_FINISH_CD` (0x0C) - Halbe Passe nach C/D
+
+**RF-Konfiguration:**
+- Kanal: 76 (2.476 GHz)
+- Datenrate: 250 kbps (robust)
+- Power: RF24_PA_MIN (Sender) / RF24_PA_HIGH (Empfänger)
+- Auto-ACK: aktiviert
+- Retry: 15x, Delay 1.5ms
 
 ## Testing
 

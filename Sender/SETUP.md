@@ -87,8 +87,11 @@ Splash Screen beendet
 ## 7. Testen
 
 1. Display sollte Splash Screen zeigen: "BOGENAMPEL" + "V1.0"
-2. Nach 3 Sekunden oder Tastendruck: "Bereit"
-3. Grüne LED sollte leuchten (wenn implementiert)
+2. Verbindungsqualitäts-Test läuft (10 Pings, Anzeige für 5s)
+3. Nach 15 Sekunden oder Tastendruck: Wechsel zu Config-Menü
+4. Config-Menü: Schießzeit (120/240s) und Schützenanzahl (1-2 / 3-4) einstellen
+5. OK-Taste: Weiter zu Schießbetrieb-Menü
+6. Status-LED (rot) sollte leuchten
 
 ## PlatformIO (Alternative)
 

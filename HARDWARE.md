@@ -88,43 +88,43 @@ Der Sender ist die Bedieneinheit der Bogenampel und basiert auf einem Arduino Na
 
 | Arduino Pin | Signal | NRF24 Pin | Funktion | Level |
 |-------------|--------|-----------|----------|-------|
-| D7 | CE_NRF | CE (Pin 3) | Chip Enable | 5V → 3.3V intern |
-| D6 | CS_NRF | CSN (Pin 4) | Chip Select | 5V → 3.3V intern |
+| D9 | CE_NRF | CE (Pin 3) | Chip Enable | 5V → 3.3V intern |
+| D8 | CS_NRF | CSN (Pin 4) | Chip Select | 5V → 3.3V intern |
 | D13 | SPI.SCK | SCK (Pin 5) | SPI Clock | Gemeinsam mit Display |
 | D11 | SPI.MOSI | MOSI (Pin 6) | SPI Data Out | Gemeinsam mit Display |
 | D12 | SPI.MISO | MISO (Pin 7) | SPI Data In | Gemeinsam mit Display |
 | 3.3V | VCC | VCC (Pin 2) | Stromversorgung | 3.3V |
 | GND | GND | GND (Pin 1) | Masse | 0V |
 
-**Verifiziert aus Schaltplan:**
-- D7 → CE_NRF (Chip Enable)
-- D6 → CS_NRF (Chip Select)
+**Verifiziert aus Code (Sender/Config.h):**
+- D9 → CE_NRF (Chip Enable)
+- D8 → CS_NRF (Chip Select)
 - 10µF Kondensator (C1) zwischen VCC und GND für Stabilisierung
 
 ### Eingänge (Taster & Schalter)
 
 | Arduino Pin | Signal | Funktion | Pull-Up | Bemerkung |
 |-------------|--------|----------|---------|-----------|
-| D2 | Input 1 (J1) | Menü-Navigation links | Ja | Aktiv LOW |
-| D3 | Input 2 (J2) | Menü-Auswahl bestätigen (OK) | Ja | Aktiv LOW |
-| D4 | Input 3 (J3) | Menü-Navigation rechts | Ja | Aktiv LOW |
+| D5 | Input 1 (J1) | Menü-Navigation links | Ja | Aktiv LOW |
+| D6 | Input 2 (J2) | Menü-Auswahl bestätigen (OK) | Ja | Aktiv LOW |
+| D7 | Input 3 (J3) | Menü-Navigation rechts | Ja | Aktiv LOW |
 
-**Verifiziert aus Schaltplan:**
-- J1 (Input 1) → D2 mit internem Pull-Up (Links)
-- J2 (Input 2) → D3 mit internem Pull-Up (OK)
-- J3 (Input 3) → D4 mit internem Pull-Up (Rechts)
+**Verifiziert aus Code (Sender/Config.h):**
+- J1 (Input 1) → D5 mit internem Pull-Up (Links)
+- J2 (Input 2) → D6 mit internem Pull-Up (OK)
+- J3 (Input 3) → D7 mit internem Pull-Up (Rechts)
 - Alle Taster sind aktiv LOW (Taster schließt gegen GND)
 
 ### Analoge Eingänge
 
 | Arduino Pin | Signal | Funktion | Spannungsteiler | Bemerkung |
 |-------------|--------|----------|-----------------|-----------|
-| A7 | VOLTAGE_SENSE | Batteriespannung | 10kΩ:10kΩ (1:1) | Median-Filter über 5 Werte |
+| A5 | VOLTAGE_SENSE | Batteriespannung | 10kΩ:10kΩ (1:1) | Median-Filter über 5 Werte |
 
 **Berechnung Batteriespannung:**
 ```cpp
 // Spannungsteiler 1:1 → Vbat = 2 × Vmeasured
-uint16_t adcValue = analogRead(A7);
+uint16_t adcValue = analogRead(A5);
 float voltage = (adcValue / 1023.0) * 5.0 * 2.0;  // in Volt
 uint8_t percent = map(voltage, 6.0, 9.6, 0, 100); // 6V=0%, 9.6V=100%
 ```
@@ -138,6 +138,17 @@ uint8_t percent = map(voltage, 6.0, 9.6, 0, 100); // 6V=0%, 9.6V=100%
 **Aktualisiert:**
 - D1 (rot) → A2 über 330Ω Widerstand
 - Nur eine LED bestückt, verwendet für Debug-Zwecke (z.B. RF-Übertragung)
+
+### Buzzer (Akustisches Feedback)
+
+| Arduino Pin | Signal | Funktion | Bemerkung |
+|-------------|--------|----------|-----------|
+| D4 | BUZZER | KY-006 Passiver Piezo Buzzer | Für Tastentöne (Click-Feedback) |
+
+**Details:**
+- Frequenz: 1600 Hz (satter Klick-Ton)
+- Dauer: 25ms pro Klick
+- Wird beim Drücken von Tasten aktiviert (ButtonManager)
 
 ### Stromversorgung
 
@@ -201,8 +212,8 @@ Der TXS0108EPW konvertiert bidirektional zwischen 5V (Arduino) und 3.3V (Display
 | A6 | DSPL_RST | RESET | Reset |
 
 **Wichtig:**
-- VCCA = 5V (Arduino-Seite)
-- VCCB = 3.3V (Display-Seite)
+- VCCB = 5V (Arduino-Seite)
+- VCCA = 3.3V (Display-Seite)
 - OE (Output Enable) = VCCA (immer aktiviert)
 
 ---
@@ -270,7 +281,7 @@ Der TXS0108EPW konvertiert bidirektional zwischen 5V (Arduino) und 3.3V (Display
 
 ## ✅ Pin-Verifikation - Komplett
 
-**Alle Pin-Zuweisungen wurden aus dem Schaltplan verifiziert:**
+**Alle Pin-Zuweisungen wurden aus dem Code (Sender/Config.h) verifiziert:**
 
 1. ✅ **ST7789 Display** (über TXS0108EPW Level Shifter):
    - [x] DSPL_CS → A0
@@ -279,21 +290,24 @@ Der TXS0108EPW konvertiert bidirektional zwischen 5V (Arduino) und 3.3V (Display
    - [x] DSPL_LED → 3.3V (fest)
 
 2. ✅ **NRF24L01**:
-   - [x] CE_NRF → D7
-   - [x] CS_NRF → D6
+   - [x] CE_NRF → D9
+   - [x] CS_NRF → D8
 
 3. ✅ **Taster**:
-   - [x] Input 1 (J1) → D2 (Menü Links)
-   - [x] Input 2 (J2) → D3 (Menü OK)
-   - [x] Input 3 (J3) → D4 (Menü Rechts)
+   - [x] Input 1 (J1) → D5 (Menü Links)
+   - [x] Input 2 (J2) → D6 (Menü OK)
+   - [x] Input 3 (J3) → D7 (Menü Rechts)
 
 4. ✅ **Status-LED**:
    - [x] LED 1 (D1 rot) → A2 (Debug/Status)
 
-5. ✅ **Analoge Eingänge**:
-   - [x] Batteriespannung → A7 (via 1:1 Spannungsteiler)
+5. ✅ **Buzzer**:
+   - [x] Buzzer → D4 (KY-006 Passiver Piezo)
 
-6. ✅ **SPI-Bus** (gemeinsam):
+6. ✅ **Analoge Eingänge**:
+   - [x] Batteriespannung → A5 (via 1:1 Spannungsteiler)
+
+7. ✅ **SPI-Bus** (gemeinsam):
    - [x] SCK → D13
    - [x] MOSI → D11
    - [x] MISO → D12
@@ -308,6 +322,7 @@ Der TXS0108EPW konvertiert bidirektional zwischen 5V (Arduino) und 3.3V (Display
 | 2025-12-13 | 1.1 | Pin-Zuweisungen aus Schaltplan.png verifiziert und aktualisiert |
 | 2025-12-13 | 1.2 | Display auf ST7789 korrigiert, Pin-Zuweisungen aktualisiert (TFT_CS→A0, TFT_RST→A1, LEDs→A2/A3/A4) |
 | 2025-12-13 | 1.3 | Button-Namen aktualisiert (Links/OK/Rechts), nur LED_RED (A2) bestückt, grüne und gelbe LED entfernt |
+| 2025-12-25 | 1.4 | Pin-Zuweisungen aus Code synchronisiert: NRF (D9/D8), Buttons (D5/D6/D7), VOLTAGE_SENSE (A5), Buzzer (D4) hinzugefügt |
 
 ---
 
