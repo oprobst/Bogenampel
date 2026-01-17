@@ -5130,6 +5130,16 @@
 	)
 	(wire
 		(pts
+			(xy 121.92 111.76) (xy 143.51 111.76)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "38fb7ffb-a487-484b-bd59-10ce19d41e5d")
+	)
+	(wire
+		(pts
 			(xy 243.84 163.83) (xy 63.5 163.83)
 		)
 		(stroke
@@ -5440,6 +5450,16 @@
 	)
 	(wire
 		(pts
+			(xy 121.92 114.3) (xy 139.7 114.3)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "620cf133-8d18-49af-aa6e-bb25a77d639d")
+	)
+	(wire
+		(pts
 			(xy 82.55 104.14) (xy 96.52 104.14)
 		)
 		(stroke
@@ -5467,6 +5487,16 @@
 			(type default)
 		)
 		(uuid "654d53c5-b442-4dd2-83ea-9199c627a029")
+	)
+	(wire
+		(pts
+			(xy 139.7 114.3) (xy 139.7 124.46)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "65c682ee-df93-41d5-aca1-1c06c7d2021b")
 	)
 	(wire
 		(pts
@@ -5537,16 +5567,6 @@
 			(type default)
 		)
 		(uuid "6d66bd64-ed57-4ae6-a854-9c3afb4f928f")
-	)
-	(wire
-		(pts
-			(xy 121.92 124.46) (xy 208.28 124.46)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "6ecd5304-8772-466b-8cc9-32409b5565dc")
 	)
 	(wire
 		(pts
@@ -5707,6 +5727,16 @@
 			(type default)
 		)
 		(uuid "81f9d17e-f696-45ae-89cb-6dcb4716d5c4")
+	)
+	(wire
+		(pts
+			(xy 143.51 111.76) (xy 143.51 121.92)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "82e06bce-71c6-4d85-8bda-4bb9426f0da7")
 	)
 	(wire
 		(pts
@@ -6500,6 +6530,26 @@
 	)
 	(wire
 		(pts
+			(xy 143.51 121.92) (xy 208.28 121.92)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e43cb91f-746d-40f6-b416-3568cf261f1d")
+	)
+	(wire
+		(pts
+			(xy 139.7 124.46) (xy 208.28 124.46)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e44209a7-b1e3-4036-8f1d-f079df504366")
+	)
+	(wire
+		(pts
 			(xy 237.49 119.38) (xy 237.49 110.49)
 		)
 		(stroke
@@ -6730,16 +6780,6 @@
 	)
 	(wire
 		(pts
-			(xy 121.92 121.92) (xy 208.28 121.92)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "fe4c8e47-8f81-4753-832c-a6b3b8ec0ecf")
-	)
-	(wire
-		(pts
 			(xy 262.89 34.29) (xy 269.24 34.29)
 		)
 		(stroke
@@ -6769,7 +6809,7 @@
 		(uuid "05266dac-e59e-4d5d-8c94-68184f04b251")
 	)
 	(label "DSPL_CS_5V"
-		(at 123.19 121.92 0)
+		(at 123.19 111.76 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -7039,7 +7079,7 @@
 		(uuid "ca4356d9-0df4-4488-a064-65f6e413beae")
 	)
 	(label "DSPL_RES_5V"
-		(at 123.19 124.46 0)
+		(at 123.19 114.3 0)
 		(effects
 			(font
 				(size 1.27 1.27)

@@ -133,8 +133,8 @@
 	(net 44 "/SIG_LED1")
 	(net 45 "Net-(J5-Pin_1)")
 	(net 46 "unconnected-(A1-3V3-Pad17)")
-	(net 47 "unconnected-(A1-A2-Pad21)")
-	(net 48 "unconnected-(A1-A3-Pad22)")
+	(net 47 "unconnected-(A1-A7-Pad26)")
+	(net 48 "unconnected-(A1-A6-Pad25)")
 	(footprint "LED_THT:LED_D3.0mm"
 		(layer "F.Cu")
 		(uuid "15c6cde3-d6ad-4752-92e6-a8fa5ed19aee")
@@ -2135,7 +2135,7 @@
 			(drill 1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net 47 "unconnected-(A1-A2-Pad21)")
+			(net 21 "/DSPL_CS_5V")
 			(pinfunction "A2")
 			(pintype "bidirectional")
 			(uuid "753b51c8-5c9b-4f69-9205-e3f7aadcc1b2")
@@ -2146,7 +2146,7 @@
 			(drill 1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net 48 "unconnected-(A1-A3-Pad22)")
+			(net 6 "/DSPL_RES_5V")
 			(pinfunction "A3")
 			(pintype "bidirectional")
 			(uuid "bd28a464-5a2d-480a-89c2-afb9d8fc3fb9")
@@ -2179,7 +2179,7 @@
 			(drill 1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net 21 "/DSPL_CS_5V")
+			(net 48 "unconnected-(A1-A6-Pad25)")
 			(pinfunction "A6")
 			(pintype "bidirectional")
 			(uuid "dada1ff5-6e8d-4eba-ab61-a6c09ab1ef72")
@@ -2190,7 +2190,7 @@
 			(drill 1)
 			(layers "*.Cu" "*.Mask")
 			(remove_unused_layers no)
-			(net 6 "/DSPL_RES_5V")
+			(net 47 "unconnected-(A1-A7-Pad26)")
 			(pinfunction "A7")
 			(pintype "bidirectional")
 			(uuid "72b8bf01-7802-48d0-8c30-caddf091193f")
@@ -3228,7 +3228,7 @@
 				)
 			)
 		)
-		(property "Datasheet" ""
+		(property "Datasheet" "http://www.irf.com/product-info/datasheets/data/irlz44n.pdf"
 			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
@@ -3240,7 +3240,7 @@
 				)
 			)
 		)
-		(property "Description" ""
+		(property "Description" "47A Id, 55V Vds, 22mOhm Rds Single N-Channel HEXFET Power MOSFET, TO-220AB"
 			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
@@ -14367,7 +14367,7 @@
 			(justify left bottom)
 		)
 	)
-	(gr_text "Bogenampel V 2.2"
+	(gr_text "Bogenampel V 2.3"
 		(at 92 73 0)
 		(layer "F.SilkS")
 		(uuid "bf38998c-9884-4181-a84c-4e2a44288e1d")
@@ -14452,7 +14452,7 @@
 			(justify left bottom)
 		)
 	)
-	(gr_text "12/2025\nOliver Probst"
+	(gr_text "01/2026\nOliver Probst"
 		(at 92 76.073 0)
 		(layer "F.SilkS")
 		(uuid "f8687513-e349-4989-a51a-b3bbbc5fce0b")
@@ -14476,7 +14476,7 @@
 			(justify left bottom)
 		)
 	)
-	(gr_text "12/2025\nOliver Probst"
+	(gr_text "01/2026\nOliver Probst"
 		(at 109 76.073 0)
 		(layer "B.SilkS")
 		(uuid "45565dfd-3c90-4a51-a17b-fbd879c7d618")
@@ -14488,8 +14488,8 @@
 			(justify left bottom mirror)
 		)
 	)
-	(gr_text "Bogenampel V 2.2"
-		(at 109 73.025 0)
+	(gr_text "Bogenampel V 2.3"
+		(at 109 73 0)
 		(layer "B.SilkS")
 		(uuid "dd995fe5-26b3-48e7-a04b-9d8fbc699d38")
 		(effects
@@ -14786,12 +14786,36 @@
 		(uuid "0d73a024-c2a6-4072-9773-4c99fe8d6b65")
 	)
 	(segment
+		(start 143.75 95.25)
+		(end 147.56 91.44)
+		(width 0.318)
+		(layer "B.Cu")
+		(net 6)
+		(uuid "445254ea-4834-4ff5-944d-d968fa33db50")
+	)
+	(segment
 		(start 125.73 97.155)
 		(end 127.635 95.25)
 		(width 0.3175)
 		(layer "B.Cu")
 		(net 6)
 		(uuid "4b091b28-ccd5-450d-8ec5-095e2b52fc82")
+	)
+	(segment
+		(start 147.56 91.44)
+		(end 152.4 91.44)
+		(width 0.318)
+		(layer "B.Cu")
+		(net 6)
+		(uuid "63264db2-3210-42ee-880e-b0eeaad13efa")
+	)
+	(segment
+		(start 138.43 95.25)
+		(end 143.75 95.25)
+		(width 0.318)
+		(layer "B.Cu")
+		(net 6)
+		(uuid "70ffcaeb-fc39-4b73-a6f2-0a94b77f1b5f")
 	)
 	(segment
 		(start 128.71 100.935)
@@ -14816,14 +14840,6 @@
 		(layer "B.Cu")
 		(net 6)
 		(uuid "f58fcb44-5e92-4a03-ae28-f3abf802fe6a")
-	)
-	(segment
-		(start 138.43 95.25)
-		(end 152.4 81.28)
-		(width 0.3175)
-		(layer "B.Cu")
-		(net 6)
-		(uuid "fa82c194-4a07-45fe-bcfa-0bf6d9861129")
 	)
 	(segment
 		(start 151.765 106.68)
@@ -16050,14 +16066,6 @@
 		(uuid "f2bffe54-b4bb-416d-bc3b-417e880a8472")
 	)
 	(segment
-		(start 152.4 83.82)
-		(end 141.605 94.615)
-		(width 0.318)
-		(layer "B.Cu")
-		(net 21)
-		(uuid "0be0b345-dd88-4c6a-8a06-fd7cc9d9c7c6")
-	)
-	(segment
 		(start 132.08 107.95)
 		(end 133.985 109.855)
 		(width 0.3175)
@@ -16066,12 +16074,28 @@
 		(uuid "5b10f2ab-4e91-4842-a222-558a64a25aa4")
 	)
 	(segment
-		(start 141.605 94.615)
+		(start 141.605 101.395)
 		(end 141.605 107.315)
 		(width 0.318)
 		(layer "B.Cu")
 		(net 21)
-		(uuid "8a6e16fd-6053-4ac4-a7b6-a21ed82818c6")
+		(uuid "6bccbaed-b8bb-49b1-9ded-478f7cfeeb42")
+	)
+	(segment
+		(start 149.02 93.98)
+		(end 141.605 101.395)
+		(width 0.318)
+		(layer "B.Cu")
+		(net 21)
+		(uuid "86ec99a8-8aaf-4286-92b4-019dbd5810f1")
+	)
+	(segment
+		(start 152.4 93.98)
+		(end 149.02 93.98)
+		(width 0.318)
+		(layer "B.Cu")
+		(net 21)
+		(uuid "9e4d0fe0-c1dc-41e0-88cb-a156a6e241be")
 	)
 	(segment
 		(start 133.985 109.855)
