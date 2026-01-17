@@ -35,6 +35,6 @@ public:
 private:
     Adafruit_ST7789& display;
 
-    // Position für Status-Text (wird in draw() initialisiert)
-    static constexpr uint16_t STATUS_Y = 180;
+    // Position für Status-Text (Portrait: 240x320)
+    static constexpr uint16_t STATUS_Y = 230;
 };

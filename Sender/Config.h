@@ -26,7 +26,7 @@
 //=============================================================================
 
 // Debugging aktivieren/deaktivieren
-#define DEBUG_ENABLED 0  // 1 = Debug-Ausgaben an, 0 = aus
+#define DEBUG_ENABLED 1  // 1 = Debug-Ausgaben an, 0 = aus
 
 // Verkürzte Zeiten für Tests (nur wenn DEBUG_ENABLED = 1)
 #define DEBUG_SHORT_TIMES 0  // 1 = Verkürzte Zeiten, 0 = Normale Zeiten
@@ -47,9 +47,9 @@ namespace Pins {
     //-------------------------------------------------------------------------
     // ST7789 TFT Display (über TXS0108EPW Level Shifter)
     //-------------------------------------------------------------------------
-    constexpr uint8_t TFT_CS   = A0;   // Display Chip Select (UI_CS → DSPL_CS)
+    constexpr uint8_t TFT_CS   = A2;  // Display Chip Select (UI_CS → DSPL_CS)
     constexpr uint8_t TFT_DC   = 10;  // Display Data/Command (UI_DC/RS → DSPL_DC/RS)
-    constexpr uint8_t TFT_RST  = A1;  // Display Reset (UI_RES → DSPL_RES)
+    constexpr uint8_t TFT_RST  = A3;  // Display Reset (UI_RES → DSPL_RES)
     // Hinweis: TFT_MOSI, TFT_SCK, TFT_MISO = SPI-Bus (siehe oben)
     // Backlight ist fest an 3.3V (kein PWM-Control)
 
@@ -70,12 +70,12 @@ namespace Pins {
     //-------------------------------------------------------------------------
     // Ausgänge: Status-LEDs
     //-------------------------------------------------------------------------
-    constexpr uint8_t LED_RED = A2;  // D1: Rote LED (Debug/Status)
+    constexpr uint8_t LED_RED = A0;  // D1: Rote LED (Debug/Status)
 
     //-------------------------------------------------------------------------
     // Ausgänge: Buzzer
     //-------------------------------------------------------------------------
-    constexpr uint8_t BUZZER = 4;  // D4: KY-006 Passiver Buzzer für Tastenton
+    constexpr uint8_t BUZZER = 2;  // D4: KY-006 Passiver Buzzer für Tastenton
 
     //-------------------------------------------------------------------------
     // Analoge Eingänge
@@ -95,7 +95,7 @@ namespace Display {
     constexpr uint16_t HEIGHT = 320;
 
     // Display-Orientierung (0, 1, 2, 3 = 0°, 90°, 180°, 270°)
-    constexpr uint8_t ROTATION = 3;  // 1 = 90° (Landscape: 320x240)
+    constexpr uint8_t ROTATION = 0;  // 0 = 0° (Portrait: 240x320)
 
     // Hinweis: Adafruit_ST7789 nutzt Standard-Farbdefinitionen:
     // ST77XX_BLACK, ST77XX_WHITE, ST77XX_RED, ST77XX_GREEN, ST77XX_BLUE, etc.
@@ -105,7 +105,7 @@ namespace Display {
     constexpr uint16_t COLOR_ORANGE  = 0xFD20;
 
     // Status-Bereich (obere rechte Ecke für Batterie/USB-Symbol)
-    constexpr uint8_t STATUS_AREA_X = 280;
+    constexpr uint8_t STATUS_AREA_X = 200;
     constexpr uint8_t STATUS_AREA_Y = 5;
     constexpr uint8_t STATUS_AREA_WIDTH = 35;
     constexpr uint8_t STATUS_AREA_HEIGHT = 20;
@@ -131,7 +131,8 @@ namespace RF {
     // RF-Power Level (verwende RF24-Library Enums direkt)
     // RF24_PA_MAX = 0dBm (höchste Leistung, ~50m Reichweite)
     // WICHTIG: Benötigt externe 3.3V Versorgung (AMS1117) + 100µF Kondensator!
-    constexpr rf24_pa_dbm_e POWER_LEVEL = RF24_PA_MIN;
+    constexpr rf24_pa_dbm_e POWER_LEVEL = RF24_PA_MAX;
+    //RF24_PA_MIN;
 
     // Pipe-Adressen (5 Bytes)
     // Sender schreibt an Pipe 0, Empfänger liest von Pipe 0

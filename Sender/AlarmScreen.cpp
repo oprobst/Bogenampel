@@ -22,21 +22,23 @@ void AlarmScreen::draw() {
     // Schwarzer Hintergrund
     display.fillScreen(ST77XX_BLACK);
 
-    // Großer "ALARM" Text in Rot (zentriert, oben)
+    // Portrait: Mehr vertikaler Platz, zentriert
+    int16_t x1, y1;
+    uint16_t w, h;
+
+    // Großer "ALARM" Text in Rot (zentriert)
     display.setTextSize(4);
     display.setTextColor(ST77XX_RED);
 
     const char* alarmText = "ALARM";
-    int16_t x1, y1;
-    uint16_t w, h;
     display.getTextBounds(alarmText, 0, 0, &x1, &y1, &w, &h);
     uint16_t alarmX = (display.width() - w) / 2;
-    uint16_t alarmY = 60;
+    uint16_t alarmY = 100;  // Portrait: mehr Platz oben
 
     display.setCursor(alarmX, alarmY);
     display.print(alarmText);
 
-    // Erklärungstext (zentriert, Mitte)
+    // Erklärungstext (zentriert)
     display.setTextSize(2);
     display.setTextColor(ST77XX_WHITE);
 
@@ -45,11 +47,11 @@ void AlarmScreen::draw() {
 
     display.getTextBounds(line1, 0, 0, &x1, &y1, &w, &h);
     uint16_t line1X = (display.width() - w) / 2;
-    display.setCursor(line1X, 130);
+    display.setCursor(line1X, 180);  // Portrait: angepasst
     display.println(line1);
 
     display.getTextBounds(line2, 0, 0, &x1, &y1, &w, &h);
     uint16_t line2X = (display.width() - w) / 2;
-    display.setCursor(line2X, 150);
+    display.setCursor(line2X, 210);  // Portrait: angepasst
     display.println(line2);
 }

@@ -28,15 +28,15 @@ void SplashScreen::draw() {
     display.setCursor(centerX - w/2, centerY - 75 - h/2);  // 15 Pixel nach oben verschoben
     display.print("BOGENAMPEL");
 
-    // Rahmen um Logo
-    display.drawRect(centerX - 140, centerY - 95, 280, 60, ST77XX_GREEN);  // 15 Pixel nach oben verschoben
+    // Rahmen um Logo (Portrait: 240 Breite)
+    display.drawRect(centerX - 110, centerY - 95, 220, 60, ST77XX_GREEN);  // 15 Pixel nach oben verschoben
 
     // Versions-Text
     display.setTextColor(ST77XX_WHITE);
     display.setTextSize(2);
-    display.getTextBounds("Bogenampeln V1.0", 0, 0, &x1, &y1, &w, &h);
+    display.getTextBounds("Bogenampel V1.0", 0, 0, &x1, &y1, &w, &h);
     display.setCursor(centerX - w/2, centerY + 20 - h/2);
-    display.print("Bogenampeln V1.0");
+    display.print("Bogenampel V2.3");
 
     // Hinweis zum Überspringen
     display.setTextColor(Display::COLOR_GRAY);

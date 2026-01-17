@@ -88,10 +88,14 @@ void SchiessBetriebMenu::setShootingPhase(uint32_t remainingMs) {
 //=============================================================================
 
 void SchiessBetriebMenu::drawHeader() {
-    // Überschrift: "Schiessbetrieb" in Orange
-    display.setTextSize(3);
+    // Überschrift: "Schiessbetrieb" in Orange (Portrait: TextSize 2, zentriert)
+    display.setTextSize(2);
     display.setTextColor(ST77XX_ORANGE);
-    display.setCursor(10, 10);
+
+    int16_t x1, y1;
+    uint16_t w, h;
+    display.getTextBounds(F("Schiessbetrieb"), 0, 0, &x1, &y1, &w, &h);
+    display.setCursor((display.width() - w) / 2, 15);
     display.print(F("Schiessbetrieb"));
 
     // Trennlinie
@@ -101,8 +105,7 @@ void SchiessBetriebMenu::drawHeader() {
 void SchiessBetriebMenu::drawGroupSequence() {
     // Gruppensequenz anzeigen (nur bei 3-4 Schützen)
     if (shooterCount == 4) {
-        // Gruppensequenz: "{A/B -> C/D} {C/D -> A/B}"
-        display.setCursor(10, 58);
+        // Portrait: Auf zwei Zeilen aufteilen für 240px Breite
         display.setTextSize(2);
 
         // Bestimme welcher Teil gelb sein soll
@@ -111,33 +114,31 @@ void SchiessBetriebMenu::drawGroupSequence() {
         bool highlightCD2 = (currentGroup == Groups::Type::GROUP_CD && currentPosition == Groups::Position::POS_2);
         bool highlightAB2 = (currentGroup == Groups::Type::GROUP_AB && currentPosition == Groups::Position::POS_2);
 
-        // "{A/B"
+        // Zeile 1: "{A/B -> C/D}"
+        display.setCursor(10, 60);
+        display.setTextColor(Display::COLOR_GRAY);
+        display.print(F("{"));
         display.setTextColor(highlightAB1 ? ST77XX_YELLOW : Display::COLOR_GRAY);
-        display.print(F("{A/B"));
-
-        // " -> "
+        display.print(F("A/B"));
         display.setTextColor(Display::COLOR_GRAY);
         display.print(F(" -> "));
-
-        // "C/D}"
         display.setTextColor(highlightCD2 ? ST77XX_YELLOW : Display::COLOR_GRAY);
-        display.print(F("C/D}"));
-
-        // " "
+        display.print(F("C/D"));
         display.setTextColor(Display::COLOR_GRAY);
-        display.print(F(" "));
+        display.print(F("}"));
 
-        // "{C/D"
+        // Zeile 2: "{C/D -> A/B}"
+        display.setCursor(10, 85);
+        display.setTextColor(Display::COLOR_GRAY);
+        display.print(F("{"));
         display.setTextColor(highlightCD1 ? ST77XX_YELLOW : Display::COLOR_GRAY);
-        display.print(F("{C/D"));
-
-        // " -> "
+        display.print(F("C/D"));
         display.setTextColor(Display::COLOR_GRAY);
         display.print(F(" -> "));
-
-        // "A/B}"
         display.setTextColor(highlightAB2 ? ST77XX_YELLOW : Display::COLOR_GRAY);
-        display.print(F("A/B}"));
+        display.print(F("A/B"));
+        display.setTextColor(Display::COLOR_GRAY);
+        display.print(F("}"));
     }
     // Bei 1-2 Schützen: Keine Gruppenanzeige
 }
@@ -147,8 +148,9 @@ void SchiessBetriebMenu::drawTimer() {
     const char* phaseText = inPreparationPhase ? "Vorbereitung" : "Alles ins Gold";
     uint16_t phaseColor = inPreparationPhase ? Display::COLOR_ORANGE : ST77XX_GREEN;
 
-    // Position: Bei 3-4 Schützen tiefer setzen (wegen Gruppenanzeige)
-    uint16_t phaseY = (shooterCount == 4) ? 88 : 65;
+    // Portrait: Positionen angepasst (mehr vertikaler Platz)
+    // Bei 3-4 Schützen: Nach Gruppensequenz (2 Zeilen bei Y=60 und Y=85)
+    uint16_t phaseY = (shooterCount == 4) ? 120 : 80;
 
     display.setTextSize(2);
     display.setTextColor(phaseColor);
@@ -172,7 +174,7 @@ void SchiessBetriebMenu::drawTimer() {
         // Text zentrieren
         display.getTextBounds(groupText, 0, 0, &x1, &y1, &w, &h);
         uint16_t groupX = (display.width() - w) / 2;
-        uint16_t groupY = 115;  // Unterhalb der Phase
+        uint16_t groupY = 155;  // Unterhalb der Phase (Portrait: mehr Platz)
 
         display.setCursor(groupX, groupY);
         display.print(groupText);
@@ -180,10 +182,10 @@ void SchiessBetriebMenu::drawTimer() {
 }
 
 void SchiessBetriebMenu::drawEndButton() {
-    // Button "Passe beenden" - knapp über dem grauen Text
-    const uint16_t btnY = 184;  // 8 Pixel höher als vorher
-    const uint16_t btnH = 30;
-    const uint16_t margin = 10;
+    // Button "Passe beenden" (Portrait: weiter unten, mehr Platz)
+    const uint16_t btnY = 240;
+    const uint16_t btnH = 35;
+    const uint16_t margin = 20;
     uint16_t btnW = display.width() - 2 * margin;
 
     // Grauer Hintergrund (wie bei anderen Buttons)
@@ -204,19 +206,19 @@ void SchiessBetriebMenu::drawEndButton() {
 }
 
 void SchiessBetriebMenu::drawHelp() {
-    // Hinweis unten
+    // Hinweis unten (Portrait: mehr Platz)
     display.setTextSize(1);
     display.setTextColor(Display::COLOR_GRAY);
-    display.setCursor(10, display.height() - 15);
+    display.setCursor(10, display.height() - 20);
     display.print(F("OK: Passe beenden"));
 }
 
 void SchiessBetriebMenu::updateTimer() {
-    // Phasentext-Position: Bei 3-4 Schützen höher setzen (wegen Gruppenanzeige darunter)
-    const uint16_t phaseY = (shooterCount == 4) ? 88 : 65;
+    // Portrait: Positionen angepasst
+    const uint16_t phaseY = (shooterCount == 4) ? 120 : 80;
 
     // Lösche gesamten Bereich (Phase + große Gruppe bei 3-4 Schützen)
-    const uint16_t clearHeight = (shooterCount == 4) ? 80 : 20;  // Mehr Platz für große Gruppe
+    const uint16_t clearHeight = (shooterCount == 4) ? 100 : 25;
     display.fillRect(0, phaseY, display.width(), clearHeight, ST77XX_BLACK);
 
     // Phasentext und -farbe
@@ -245,7 +247,7 @@ void SchiessBetriebMenu::updateTimer() {
         // Text zentrieren
         display.getTextBounds(groupText, 0, 0, &x1, &y1, &w, &h);
         uint16_t groupX = (display.width() - w) / 2;
-        uint16_t groupY = 115;  // Unterhalb der Phase
+        uint16_t groupY = 155;  // Unterhalb der Phase (Portrait)
 
         display.setCursor(groupX, groupY);
         display.print(groupText);

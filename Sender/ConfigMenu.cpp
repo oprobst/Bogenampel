@@ -152,23 +152,28 @@ void ConfigMenu::draw() {
 
 void ConfigMenu::drawHeader() {
     // Überschrift: "Konfiguration"
-    display.setTextSize(3);
+    display.setTextSize(2);
     display.setTextColor(ST77XX_CYAN);
-    display.setCursor(10, 10);
+
+    // Zentrieren
+    int16_t x1, y1;
+    uint16_t w, h;
+    display.getTextBounds(F("Konfiguration"), 0, 0, &x1, &y1, &w, &h);
+    display.setCursor((display.width() - w) / 2, 15);
     display.print(F("Konfiguration"));
 
     // Trennlinie
-    display.drawFastHLine(10, 45, display.width() - 20, Display::COLOR_GRAY);
+    display.drawFastHLine(10, 50, display.width() - 20, Display::COLOR_GRAY);
 }
 
 void ConfigMenu::drawTimeOption() {
-    // Optionen-Positionen
-    const uint16_t option1_x = 140;
-    const uint16_t option2_x = 210;
-    const uint16_t y = 60;
+    // Optionen-Positionen (Portrait: 240 Breite)
+    const uint16_t option1_x = 120;
+    const uint16_t option2_x = 180;
+    const uint16_t y = 65;
 
     // Bereich löschen (Zeit-Zeile + Beschriftung)
-    display.fillRect(0, y, display.width(), 35, ST77XX_BLACK);
+    display.fillRect(0, y, display.width(), 40, ST77XX_BLACK);
 
     // Label "Zeit:"
     display.setTextSize(2);
@@ -202,18 +207,16 @@ void ConfigMenu::drawTimeOption() {
     // Beschriftung "pro Passe"
     display.setTextSize(1);
     display.setTextColor(Display::COLOR_GRAY);
-    display.setCursor(10, 85);
+    display.setCursor(10, y + 25);
     display.print(F("pro Passe"));
 }
 
 void ConfigMenu::drawShooterOption() {
-    // Optionen-Positionen
-    const uint16_t option1_x = 140;
-    const uint16_t option2_x = 210;
-    const uint16_t y = 105;
+    // Optionen-Positionen (Portrait: 240 Breite)
+    const uint16_t y = 115;
 
     // Bereich löschen (Schützen-Zeile + Beschriftung)
-    display.fillRect(0, y, display.width(), 35, ST77XX_BLACK);
+    display.fillRect(0, y, display.width(), 50, ST77XX_BLACK);
 
     // Label "Schuetzen:"
     display.setTextSize(2);
@@ -221,120 +224,110 @@ void ConfigMenu::drawShooterOption() {
     display.setTextColor(cursorLine == 1 ? ST77XX_YELLOW : ST77XX_WHITE);
     display.print(F("Schuetzen:"));
 
+    // Beschriftung "pro Scheibe" (direkt unter "Schuetzen:")
+    display.setTextSize(1);
+    display.setTextColor(Display::COLOR_GRAY);
+    display.setCursor(10, y + 18);
+    display.print(F("pro Scheibe"));
+
+    // Optionen auf zweiter Zeile
+    const uint16_t optionY = y + 30;
+    const uint16_t option1_x = 60;
+    const uint16_t option2_x = 140;
+
+    display.setTextSize(2);
+    display.setTextColor(cursorLine == 1 ? ST77XX_YELLOW : ST77XX_WHITE);
+
     int16_t x1, y1;
     uint16_t w, h;
 
     // Option 1-2
-    display.setCursor(option1_x, y);
-    display.setTextColor(cursorLine == 1 ? ST77XX_YELLOW : ST77XX_WHITE);
+    display.setCursor(option1_x, optionY);
     display.print(F("1-2"));
     if (shooterCount == 2) {
-        display.getTextBounds(F("1-2"), option1_x, y, &x1, &y1, &w, &h);
-        display.drawLine(option1_x, y + h + 2, option1_x + w, y + h + 2,
+        display.getTextBounds(F("1-2"), option1_x, optionY, &x1, &y1, &w, &h);
+        display.drawLine(option1_x, optionY + h + 2, option1_x + w, optionY + h + 2,
                         cursorLine == 1 ? ST77XX_YELLOW : ST77XX_WHITE);
     }
 
     // Option 3-4
-    display.setCursor(option2_x, y);
-    display.setTextColor(cursorLine == 1 ? ST77XX_YELLOW : ST77XX_WHITE);
+    display.setCursor(option2_x, optionY);
     display.print(F("3-4"));
     if (shooterCount == 4) {
-        display.getTextBounds(F("3-4"), option2_x, y, &x1, &y1, &w, &h);
-        display.drawLine(option2_x, y + h + 2, option2_x + w, y + h + 2,
+        display.getTextBounds(F("3-4"), option2_x, optionY, &x1, &y1, &w, &h);
+        display.drawLine(option2_x, optionY + h + 2, option2_x + w, optionY + h + 2,
                         cursorLine == 1 ? ST77XX_YELLOW : ST77XX_WHITE);
     }
-
-    // Beschriftung "pro Scheibe"
-    display.setTextSize(1);
-    display.setTextColor(Display::COLOR_GRAY);
-    display.setCursor(10, 130);
-    display.print(F("pro Scheibe"));
 }
 
 void ConfigMenu::drawButtonOption() {
-    const uint16_t y = 160;
-    const uint16_t buttonHeight = 30;
+    // Portrait: Buttons übereinander
+    const uint16_t y = 180;
+    const uint16_t buttonHeight = 35;
     const uint16_t buttonSpacing = 10;
+    const uint16_t margin = 20;
+    const uint16_t buttonWidth = display.width() - 2 * margin;
 
-    // Button-Definitionen
-    const uint16_t btn1_x = 10;
-    const uint16_t btn1_width = 100;
-    const uint16_t btn2_x = btn1_x + btn1_width + buttonSpacing;
-    const uint16_t btn2_width = 80;
-
-    // Bereich löschen (komplette Button-Zeile inkl. Schatten)
-    display.fillRect(0, y, display.width(), buttonHeight + 2, ST77XX_BLACK);
+    // Bereich löschen (beide Buttons inkl. Schatten)
+    display.fillRect(0, y, display.width(), 2 * buttonHeight + buttonSpacing + 5, ST77XX_BLACK);
 
     // Farben für aktive Zeile
     uint16_t activeColor = cursorLine == 2 ? ST77XX_YELLOW : ST77XX_WHITE;
-    uint16_t fillColor = Display::COLOR_DARKGRAY;  // Hintergrund für ausgewählten Button
+    uint16_t fillColor = Display::COLOR_DARKGRAY;
 
-    // --- Button 1: "Ändern" ---
-
-    // Schatten (1px rechts und unten)
-    display.drawRect(btn1_x + 1, y + 1, btn1_width, buttonHeight, ST77XX_BLACK);
-
-    // Hintergrund wenn ausgewählt
-    if (selectedButton == 0) {
-        display.fillRect(btn1_x, y, btn1_width, buttonHeight, fillColor);
-    }
-
-    // Rahmen
-    display.drawRect(btn1_x, y, btn1_width, buttonHeight, activeColor);
-
-    // Text zentriert im Button
     int16_t x1, y1;
     uint16_t w, h;
+
+    // --- Button 1: "Aendern" (oben) ---
+    uint16_t btn1_y = y;
+
+    if (selectedButton == 0) {
+        display.fillRect(margin, btn1_y, buttonWidth, buttonHeight, fillColor);
+    }
+    display.drawRect(margin, btn1_y, buttonWidth, buttonHeight, activeColor);
+
     display.setTextSize(2);
     display.getTextBounds(F("Aendern"), 0, 0, &x1, &y1, &w, &h);
-    uint16_t text_x = btn1_x + (btn1_width - w) / 2;
-    uint16_t text_y = y + (buttonHeight - h) / 2;
+    uint16_t text_x = margin + (buttonWidth - w) / 2;
+    uint16_t text_y = btn1_y + (buttonHeight - h) / 2;
 
     display.setCursor(text_x, text_y);
     display.setTextColor(activeColor);
     display.print(F("Aendern"));
 
-    // Unterstreichung wenn ausgewählt
     if (selectedButton == 0) {
         display.drawLine(text_x, text_y + h + 1, text_x + w, text_y + h + 1, activeColor);
     }
 
-    // --- Button 2: "Start" ---
+    // --- Button 2: "Start" (unten) ---
+    uint16_t btn2_y = y + buttonHeight + buttonSpacing;
 
-    // Schatten (1px rechts und unten)
-    display.drawRect(btn2_x + 1, y + 1, btn2_width, buttonHeight, ST77XX_BLACK);
-
-    // Hintergrund wenn ausgewählt
     if (selectedButton == 1) {
-        display.fillRect(btn2_x, y, btn2_width, buttonHeight, fillColor);
+        display.fillRect(margin, btn2_y, buttonWidth, buttonHeight, fillColor);
     }
+    display.drawRect(margin, btn2_y, buttonWidth, buttonHeight, activeColor);
 
-    // Rahmen
-    display.drawRect(btn2_x, y, btn2_width, buttonHeight, activeColor);
-
-    // Text zentriert im Button
     display.getTextBounds(F("Start"), 0, 0, &x1, &y1, &w, &h);
-    text_x = btn2_x + (btn2_width - w) / 2;
-    text_y = y + (buttonHeight - h) / 2;
+    text_x = margin + (buttonWidth - w) / 2;
+    text_y = btn2_y + (buttonHeight - h) / 2;
 
     display.setCursor(text_x, text_y);
     display.setTextColor(activeColor);
     display.print(F("Start"));
 
-    // Unterstreichung wenn ausgewählt
     if (selectedButton == 1) {
         display.drawLine(text_x, text_y + h + 1, text_x + w, text_y + h + 1, activeColor);
     }
 }
 
 void ConfigMenu::drawHelp() {
-    // Hilfetext unten
+    // Hilfetext unten (Portrait: mehr Platz)
     display.setTextSize(1);
     display.setTextColor(Display::COLOR_GRAY);
-    display.setCursor(10, display.height() - 25);
+    display.setCursor(10, display.height() - 30);
     display.print(F("L/R: Aendern, OK: Weiter"));
 
     // Alarm-Hinweis (zweite Zeile)
-    display.setCursor(10, display.height() - 12);
+    display.setCursor(10, display.height() - 15);
     display.print(F("Pfeiltaste >2s: Alarm"));
 }

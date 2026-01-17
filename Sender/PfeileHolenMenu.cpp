@@ -138,10 +138,10 @@ void PfeileHolenMenu::draw() {
 //=============================================================================
 
 void PfeileHolenMenu::drawHeader() {
-    // Überschrift: "Pfeile holen"
-    display.setTextSize(3);
+    // Überschrift: "Pfeile holen" (linksbündig, damit Batterie-Icon nicht überdeckt)
+    display.setTextSize(2);
     display.setTextColor(ST77XX_GREEN);
-    display.setCursor(10, 10);
+    display.setCursor(10, 15);
     display.print(F("Pfeile holen"));
 
     // Trennlinie
@@ -149,147 +149,127 @@ void PfeileHolenMenu::drawHeader() {
 }
 
 void PfeileHolenMenu::drawOptions() {
+    // Portrait: Alle Buttons übereinander (volle Breite)
     const uint16_t buttonY = 60;
-    const uint16_t buttonHeight = 35;
+    const uint16_t buttonHeight = 40;
     const uint16_t buttonSpacing = 10;
-    const uint16_t margin = 10;
+    const uint16_t margin = 20;
+    const uint16_t buttonWidth = display.width() - 2 * margin;
 
     // Anzahl Buttons bestimmen
     uint8_t numButtons = (shooterCount == 4) ? 3 : 2;
 
     // Bereich löschen
-    display.fillRect(0, buttonY, display.width(), 2 * buttonHeight + buttonSpacing + 60, ST77XX_BLACK);
+    display.fillRect(0, buttonY, display.width(), numButtons * (buttonHeight + buttonSpacing) + 10, ST77XX_BLACK);
+
+    int16_t x1, y1;
+    uint16_t w, h;
 
     // =========================================================================
-    // Button 0: "Nächste Passe" - Volle Breite oben
+    // Button 0: "Nächste Passe"
     // =========================================================================
     {
-        uint16_t btnX = margin;
         uint16_t btnY = buttonY;
-        uint16_t btnW = display.width() - 2 * margin;
-        uint16_t btnH = buttonHeight;
         bool isSelected = (cursorPosition == 0);
 
-        // Hintergrund wenn ausgewählt
         if (isSelected) {
-            display.fillRect(btnX, btnY, btnW, btnH, Display::COLOR_DARKGRAY);
+            display.fillRect(margin, btnY, buttonWidth, buttonHeight, Display::COLOR_DARKGRAY);
         }
 
-        // Rahmen
         uint16_t frameColor = isSelected ? ST77XX_YELLOW : ST77XX_WHITE;
-        display.drawRect(btnX, btnY, btnW, btnH, frameColor);
+        display.drawRect(margin, btnY, buttonWidth, buttonHeight, frameColor);
 
-        // Text zentriert
-        int16_t x1, y1;
-        uint16_t w, h;
-        display.setTextSize(2);  // Größere Schrift für Hauptbutton
+        display.setTextSize(2);
         display.getTextBounds("Naechste Passe", 0, 0, &x1, &y1, &w, &h);
-        display.setCursor(btnX + (btnW - w) / 2, btnY + (btnH - h) / 2);
+        uint16_t text_x = margin + (buttonWidth - w) / 2;
+        uint16_t text_y = btnY + (buttonHeight - h) / 2;
+        display.setCursor(text_x, text_y);
         display.setTextColor(frameColor);
         display.print("Naechste Passe");
 
         if (isSelected) {
-            uint16_t text_x = btnX + (btnW - w) / 2;
-            uint16_t text_y = btnY + (btnH - h) / 2;
             display.drawLine(text_x, text_y + h + 1, text_x + w, text_y + h + 1, frameColor);
         }
     }
 
-    // =========================================================================
-    // Button 1 & 2: "Reihenfolge" (nur bei 3-4 Schützen) und "Neustart" - Halbe Breite nebeneinander
-    // =========================================================================
-    const uint16_t row2Y = buttonY + buttonHeight + buttonSpacing;
-    const uint16_t halfWidth = (display.width() - 3 * margin) / 2;
-
     if (shooterCount == 4) {
-        // Bei 3-4 Schützen: "Reihenfolge" links, "Neustart" rechts
-
-        // "Abfolge" (Position 1)
+        // =========================================================================
+        // Button 1: "Abfolge" (nur bei 3-4 Schützen)
+        // =========================================================================
         {
-            uint16_t btnX = margin;
-            uint16_t btnY = row2Y;
-            uint16_t btnW = halfWidth;
-            uint16_t btnH = buttonHeight;
+            uint16_t btnY = buttonY + buttonHeight + buttonSpacing;
             bool isSelected = (cursorPosition == 1);
 
             if (isSelected) {
-                display.fillRect(btnX, btnY, btnW, btnH, Display::COLOR_DARKGRAY);
+                display.fillRect(margin, btnY, buttonWidth, buttonHeight, Display::COLOR_DARKGRAY);
             }
 
             uint16_t frameColor = isSelected ? ST77XX_YELLOW : ST77XX_WHITE;
-            display.drawRect(btnX, btnY, btnW, btnH, frameColor);
+            display.drawRect(margin, btnY, buttonWidth, buttonHeight, frameColor);
 
-            int16_t x1, y1;
-            uint16_t w, h;
             display.setTextSize(2);
             display.getTextBounds("Abfolge", 0, 0, &x1, &y1, &w, &h);
-            display.setCursor(btnX + (btnW - w) / 2, btnY + (btnH - h) / 2);
+            uint16_t text_x = margin + (buttonWidth - w) / 2;
+            uint16_t text_y = btnY + (buttonHeight - h) / 2;
+            display.setCursor(text_x, text_y);
             display.setTextColor(frameColor);
             display.print("Abfolge");
 
             if (isSelected) {
-                uint16_t text_x = btnX + (btnW - w) / 2;
-                uint16_t text_y = btnY + (btnH - h) / 2;
                 display.drawLine(text_x, text_y + h + 1, text_x + w, text_y + h + 1, frameColor);
             }
         }
 
-        // "Neustart" (Position 2)
+        // =========================================================================
+        // Button 2: "Neustart"
+        // =========================================================================
         {
-            uint16_t btnX = margin + halfWidth + margin;
-            uint16_t btnY = row2Y;
-            uint16_t btnW = halfWidth;
-            uint16_t btnH = buttonHeight;
+            uint16_t btnY = buttonY + 2 * (buttonHeight + buttonSpacing);
             bool isSelected = (cursorPosition == 2);
 
             if (isSelected) {
-                display.fillRect(btnX, btnY, btnW, btnH, Display::COLOR_DARKGRAY);
+                display.fillRect(margin, btnY, buttonWidth, buttonHeight, Display::COLOR_DARKGRAY);
             }
 
             uint16_t frameColor = isSelected ? ST77XX_YELLOW : ST77XX_WHITE;
-            display.drawRect(btnX, btnY, btnW, btnH, frameColor);
+            display.drawRect(margin, btnY, buttonWidth, buttonHeight, frameColor);
 
-            int16_t x1, y1;
-            uint16_t w, h;
             display.setTextSize(2);
             display.getTextBounds("Neustart", 0, 0, &x1, &y1, &w, &h);
-            display.setCursor(btnX + (btnW - w) / 2, btnY + (btnH - h) / 2);
+            uint16_t text_x = margin + (buttonWidth - w) / 2;
+            uint16_t text_y = btnY + (buttonHeight - h) / 2;
+            display.setCursor(text_x, text_y);
             display.setTextColor(frameColor);
             display.print("Neustart");
 
             if (isSelected) {
-                uint16_t text_x = btnX + (btnW - w) / 2;
-                uint16_t text_y = btnY + (btnH - h) / 2;
                 display.drawLine(text_x, text_y + h + 1, text_x + w, text_y + h + 1, frameColor);
             }
         }
     } else {
-        // Bei 1-2 Schützen: Nur "Neustart" volle Breite
+        // =========================================================================
+        // Button 1: "Neustart" (bei 1-2 Schützen)
+        // =========================================================================
         {
-            uint16_t btnX = margin;
-            uint16_t btnY = row2Y;
-            uint16_t btnW = display.width() - 2 * margin;
-            uint16_t btnH = buttonHeight;
+            uint16_t btnY = buttonY + buttonHeight + buttonSpacing;
             bool isSelected = (cursorPosition == 1);
 
             if (isSelected) {
-                display.fillRect(btnX, btnY, btnW, btnH, Display::COLOR_DARKGRAY);
+                display.fillRect(margin, btnY, buttonWidth, buttonHeight, Display::COLOR_DARKGRAY);
             }
 
             uint16_t frameColor = isSelected ? ST77XX_YELLOW : ST77XX_WHITE;
-            display.drawRect(btnX, btnY, btnW, btnH, frameColor);
+            display.drawRect(margin, btnY, buttonWidth, buttonHeight, frameColor);
 
-            int16_t x1, y1;
-            uint16_t w, h;
             display.setTextSize(2);
             display.getTextBounds("Neustart", 0, 0, &x1, &y1, &w, &h);
-            display.setCursor(btnX + (btnW - w) / 2, btnY + (btnH - h) / 2);
+            uint16_t text_x = margin + (buttonWidth - w) / 2;
+            uint16_t text_y = btnY + (buttonHeight - h) / 2;
+            display.setCursor(text_x, text_y);
             display.setTextColor(frameColor);
             display.print("Neustart");
 
             if (isSelected) {
-                uint16_t text_x = btnX + (btnW - w) / 2;
-                uint16_t text_y = btnY + (btnH - h) / 2;
                 display.drawLine(text_x, text_y + h + 1, text_x + w, text_y + h + 1, frameColor);
             }
         }
@@ -297,11 +277,13 @@ void PfeileHolenMenu::drawOptions() {
 }
 
 void PfeileHolenMenu::drawHelp() {
-    // Hilfetext unten
+    // Hilfetext unten (Portrait: mehr Platz)
     display.setTextSize(1);
     display.setTextColor(Display::COLOR_GRAY);
-    display.setCursor(10, display.height() - 15);
-    display.print(F("L/R: Auswaehlen, OK: Bestaetigen"));
+    display.setCursor(10, display.height() - 20);
+    display.print(F("L/R: Auswaehlen"));
+    display.setCursor(10, display.height() - 8);
+    display.print(F("OK: Bestaetigen"));
 }
 
 void PfeileHolenMenu::drawConnectionIcon() {
@@ -471,13 +453,13 @@ void PfeileHolenMenu::drawShooterGroupInfo() {
     // Nur bei 3-4 Schützen anzeigen
     if (shooterCount != 4) return;
 
-    // Position: Unter dem "Neustart" Button
-    const uint16_t infoY = display.height() - 65;
+    // Portrait: Position unter den 3 Buttons (60 + 3*50 = 210)
+    const uint16_t infoY = 220;
     const uint16_t infoX = 10;
-    const uint16_t lineHeight = 20; // Zeilenhöhe für Textgröße 2
+    const uint16_t lineHeight = 22;
 
     // Bereich löschen
-    display.fillRect(0, infoY, display.width(), 40, ST77XX_BLACK);
+    display.fillRect(0, infoY, display.width(), 70, ST77XX_BLACK);
 
     // Zeile 1: "Nächste: A/B" oder "Nächste: C/D"
     display.setCursor(infoX, infoY);
@@ -485,14 +467,7 @@ void PfeileHolenMenu::drawShooterGroupInfo() {
     display.setTextColor(ST77XX_WHITE);
     display.print(F("Naechste: "));
     display.setTextColor(ST77XX_YELLOW);
-    display.println(currentGroup == Groups::Type::GROUP_AB ? F("A/B") : F("C/D"));
-
-    // Zeile 2: Statischer String mit Hervorhebung
-    display.setCursor(infoX, infoY + lineHeight);
-    display.setTextSize(2);
-
-    // "{A/B -> C/D} {C/D -> A/B}"
-    // Klammern immer grau, nur Buchstaben/Slashes gelb hervorheben
+    display.print(currentGroup == Groups::Type::GROUP_AB ? F("A/B") : F("C/D"));
 
     // Bestimme welcher Teil gelb sein soll
     bool highlightAB1 = (currentGroup == Groups::Type::GROUP_AB && currentPosition == Groups::Position::POS_1);
@@ -500,7 +475,10 @@ void PfeileHolenMenu::drawShooterGroupInfo() {
     bool highlightCD2 = (currentGroup == Groups::Type::GROUP_CD && currentPosition == Groups::Position::POS_2);
     bool highlightAB2 = (currentGroup == Groups::Type::GROUP_AB && currentPosition == Groups::Position::POS_2);
 
-    // Erste Gruppe: {A/B -> C/D}
+    // Portrait: Zwei Zeilen für Gruppensequenz
+    // Zeile 2: {A/B -> C/D}
+    display.setCursor(infoX, infoY + lineHeight);
+    display.setTextSize(2);
     display.setTextColor(Display::COLOR_GRAY);
     display.print(F("{"));
     display.setTextColor(highlightAB1 ? ST77XX_YELLOW : Display::COLOR_GRAY);
@@ -510,9 +488,10 @@ void PfeileHolenMenu::drawShooterGroupInfo() {
     display.setTextColor(highlightCD2 ? ST77XX_YELLOW : Display::COLOR_GRAY);
     display.print(F("C/D"));
     display.setTextColor(Display::COLOR_GRAY);
-    display.print(F("} "));
+    display.print(F("}"));
 
-    // Zweite Gruppe: {C/D -> A/B}
+    // Zeile 3: {C/D -> A/B}
+    display.setCursor(infoX, infoY + 2 * lineHeight);
     display.setTextColor(Display::COLOR_GRAY);
     display.print(F("{"));
     display.setTextColor(highlightCD1 ? ST77XX_YELLOW : Display::COLOR_GRAY);
