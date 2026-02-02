@@ -63,6 +63,12 @@ namespace Pins {
     constexpr uint8_t BTN_DEBUG   = 7;   // J3: Debug-Taster
     constexpr uint8_t DEBUG_JUMPER = 2;  // D2: Debug-Jumper (LOW = Debug-Modus)
 
+    //-------------------------------------------------------------------------
+    // Eingänge: Analog (Helligkeitsregler)
+    //-------------------------------------------------------------------------
+    // Je nach Hardware-Version: A7 (V1) oder A4 (V2)
+    constexpr uint8_t BRIGHTNESS_POTI = A7;
+
 } // namespace Pins
 
 //=============================================================================
@@ -153,6 +159,10 @@ namespace LEDStrip {
     // Helligkeit (0-255)
     constexpr uint8_t BRIGHTNESS_NORMAL = 255;  // 100% Helligkeit
     constexpr uint8_t BRIGHTNESS_DEBUG = 64;    // 25% Helligkeit (255 * 0.25 = 64)
+
+    // Helligkeitsbereich für Poti-Steuerung (25% - 100%)
+    constexpr uint8_t BRIGHTNESS_MIN = 64;      // 25% Helligkeit (Poti links)
+    constexpr uint8_t BRIGHTNESS_MAX = 255;     // 100% Helligkeit (Poti rechts)
 
 } // namespace LEDStrip
 

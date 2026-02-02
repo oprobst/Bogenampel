@@ -36,6 +36,7 @@ BuzzerManager buzzer(Pins::BUZZER, Timing::BUZZER_FREQUENCY_HZ);
 void showRainbowEffect();
 void setTrafficLightColor(CRGB color);
 void updateAlarm();
+void updateBrightness();
 
 // State-Variablen
 uint32_t lastBlinkTime = 0;        // Für LED-Blink-Timer
@@ -65,6 +66,10 @@ bool alarmActive = false;          // Läuft gerade ein Alarm?
 uint8_t alarmBlinkCount = 0;       // Aktueller Blink-Zähler (0-7)
 bool alarmLedState = false;        // LED-Zustand (HIGH/LOW)
 uint32_t alarmLastToggle = 0;      // Zeitpunkt der letzten LED-Umschaltung
+
+// Helligkeitssteuerung (Poti)
+uint32_t lastBrightnessUpdate = 0; // Zeitpunkt der letzten Helligkeitsmessung
+uint8_t currentBrightness = LEDStrip::BRIGHTNESS_MAX;  // Aktuelle Helligkeit
 
 
 //=============================================================================
@@ -122,11 +127,17 @@ void setup() {
     // LED Strip initialisieren (WS2812E - neuere Variante)
     // WS2812E verwendet oft GRB statt RGB
     FastLED.addLeds<WS2812, Pins::LED_STRIP, GRB>(leds, LEDStrip::TOTAL_LEDS);
-    FastLED.setBrightness(debugMode ? LEDStrip::BRIGHTNESS_DEBUG : LEDStrip::BRIGHTNESS_NORMAL);
+
+    // Initiale Helligkeit aus Poti lesen
+    uint16_t potiValue = analogRead(Pins::BRIGHTNESS_POTI);
+    currentBrightness = map(potiValue, 0, 1023, LEDStrip::BRIGHTNESS_MIN, LEDStrip::BRIGHTNESS_MAX);
+    FastLED.setBrightness(currentBrightness);
+
     FastLED.clear();
     FastLED.show();
     delay(50);  // Kurze Pause nach Initialisierung
-    DEBUG_PRINTLN(F("LED Strip initialisiert"));
+    DEBUG_PRINT(F("LED Strip init, Helligkeit: "));
+    DEBUG_PRINTLN(currentBrightness);
 
     // Regenbogen-Effekt beim Start zeigen
     showRainbowEffect();
@@ -198,6 +209,9 @@ void loop() {
 
     // Prüfe Debug-Button (nicht zeitkritisch)
     checkButton();
+
+    // Helligkeit aus Poti aktualisieren (alle 200ms)
+    updateBrightness();
 
     // Kleine Pause um CPU zu entlasten
     delay(10);
@@ -416,6 +430,31 @@ void checkButton() {
                 buzzerBeep();
             }
         }
+    }
+}
+
+/**
+ * @brief Liest Poti-Wert und passt LED-Helligkeit an (25% - 100%)
+ *
+ * Wird alle 200ms aufgerufen um flackerfreie Dimmung zu gewährleisten.
+ * Poti links = 25% Helligkeit, Poti rechts = 100% Helligkeit.
+ */
+void updateBrightness() {
+    // Nur alle 200ms aktualisieren (vermeidet Flackern)
+    if (millis() - lastBrightnessUpdate < 200) return;
+    lastBrightnessUpdate = millis();
+
+    // Poti-Wert lesen (0-1023)
+    uint16_t potiValue = analogRead(Pins::BRIGHTNESS_POTI);
+
+    // Auf Helligkeitsbereich mappen (25% - 100% = 64 - 255)
+    uint8_t newBrightness = map(potiValue, 0, 1023, LEDStrip::BRIGHTNESS_MIN, LEDStrip::BRIGHTNESS_MAX);
+
+    // Nur aktualisieren wenn sich Helligkeit signifikant geändert hat (Hysterese)
+    if (abs(newBrightness - currentBrightness) > 3) {
+        currentBrightness = newBrightness;
+        FastLED.setBrightness(currentBrightness);
+        FastLED.show();
     }
 }
 
@@ -810,8 +849,32 @@ void handleCommand(RadioCommand cmd) {
         case CMD_STOP:
             DEBUG_PRINTLN(F("STOP"));
 
+            // Timer sofort stoppen
+            timerRunning = false;
+            timerRemainingSeconds = 0;
+
+            // Vorbereitungsphase auch stoppen (falls noch aktiv)
+            inPreparationPhase = false;
             preparationRemainingSeconds = 0;
             preparationDurationMs = 0;
+
+            // Rote LED an (Stop)
+            digitalWrite(Pins::LED_GREEN, LOW);
+            digitalWrite(Pins::LED_YELLOW, LOW);
+            digitalWrite(Pins::LED_RED, HIGH);
+
+            // Zeige "000" in ROT
+            display.displayTimer(0, CRGB::Red, true);
+
+            // Behalte aktuelle Gruppe sichtbar in ROT (falls vorhanden)
+            if (!groupsEnabled) {
+                display.setGroup(0, CRGB::Black);
+                display.setGroup(1, CRGB::Black);
+            } else if (currentGroup == Groups::Type::GROUP_AB) {
+                display.setGroup(0, CRGB::Red);
+            } else {
+                display.setGroup(1, CRGB::Red);
+            }
 
             // Akustisches Signal: 3x Piepen (Schießphase beendet)
             // (Alarm wird NICHT vorzeitig beendet - läuft bis zum Ende)
