@@ -131,8 +131,8 @@ namespace RF {
     // RF-Power Level (verwende RF24-Library Enums direkt)
     // RF24_PA_MAX = 0dBm (höchste Leistung, ~50m Reichweite)
     // WICHTIG: Benötigt externe 3.3V Versorgung (AMS1117) + 100µF Kondensator!
-    constexpr rf24_pa_dbm_e POWER_LEVEL = RF24_PA_MAX;
-    //RF24_PA_MIN;
+    constexpr rf24_pa_dbm_e POWER_LEVEL = RF24_PA_MIN;
+    
 
     // Pipe-Adressen (5 Bytes)
     // Sender schreibt an Pipe 0, Empfänger liest von Pipe 0
