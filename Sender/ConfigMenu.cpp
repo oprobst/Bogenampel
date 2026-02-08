@@ -76,24 +76,16 @@ void ConfigMenu::update() {
         }
     }
     else if (cursorLine == 2) {
-        // Zeile 2: Buttons ("Ändern" / "Start")
+        // Zeile 2: "Start" Button
         if (buttons.wasPressed(Button::LEFT) || buttons.wasPressed(Button::RIGHT)) {
-            // Toggle zwischen Ändern (0) und Start (1)
-            selectedButton = (selectedButton == 0) ? 1 : 0;
+            // Pfeiltasten → zurück zu Zeile 0 (Konfiguration ändern)
+            cursorLine = 0;
+            changeRequested = true;
             needsUpdate = true;
         }
         else if (buttons.wasPressed(Button::OK)) {
-            if (selectedButton == 0) {
-                // "Ändern" → zurück zu Zeile 0
-                cursorLine = 0;
-                changeRequested = true;
-                needsUpdate = true;
-                
-            }
-            else {
-                // "Start" → Menü abschließen
-                complete = true;               
-            }
+            // "Start" → Menü abschließen
+            complete = true;
         }
     }
 }
@@ -261,15 +253,14 @@ void ConfigMenu::drawShooterOption() {
 }
 
 void ConfigMenu::drawButtonOption() {
-    // Portrait: Buttons übereinander
-    const uint16_t y = 180;
-    const uint16_t buttonHeight = 35;
-    const uint16_t buttonSpacing = 10;
+    // Portrait: Nur "Start" Button
+    const uint16_t y = 200;
+    const uint16_t buttonHeight = 40;
     const uint16_t margin = 20;
     const uint16_t buttonWidth = display.width() - 2 * margin;
 
-    // Bereich löschen (beide Buttons inkl. Schatten)
-    display.fillRect(0, y, display.width(), 2 * buttonHeight + buttonSpacing + 5, ST77XX_BLACK);
+    // Bereich löschen
+    display.fillRect(0, y - 20, display.width(), buttonHeight + 25, ST77XX_BLACK);
 
     // Farben für aktive Zeile
     uint16_t activeColor = cursorLine == 2 ? ST77XX_YELLOW : ST77XX_WHITE;
@@ -278,44 +269,22 @@ void ConfigMenu::drawButtonOption() {
     int16_t x1, y1;
     uint16_t w, h;
 
-    // --- Button 1: "Aendern" (oben) ---
-    uint16_t btn1_y = y;
-
-    if (selectedButton == 0) {
-        display.fillRect(margin, btn1_y, buttonWidth, buttonHeight, fillColor);
+    // --- "Start" Button ---
+    if (cursorLine == 2) {
+        display.fillRect(margin, y, buttonWidth, buttonHeight, fillColor);
     }
-    display.drawRect(margin, btn1_y, buttonWidth, buttonHeight, activeColor);
+    display.drawRect(margin, y, buttonWidth, buttonHeight, activeColor);
 
     display.setTextSize(2);
-    display.getTextBounds(F("Aendern"), 0, 0, &x1, &y1, &w, &h);
-    uint16_t text_x = margin + (buttonWidth - w) / 2;
-    uint16_t text_y = btn1_y + (buttonHeight - h) / 2;
-
-    display.setCursor(text_x, text_y);
-    display.setTextColor(activeColor);
-    display.print(F("Aendern"));
-
-    if (selectedButton == 0) {
-        display.drawLine(text_x, text_y + h + 1, text_x + w, text_y + h + 1, activeColor);
-    }
-
-    // --- Button 2: "Start" (unten) ---
-    uint16_t btn2_y = y + buttonHeight + buttonSpacing;
-
-    if (selectedButton == 1) {
-        display.fillRect(margin, btn2_y, buttonWidth, buttonHeight, fillColor);
-    }
-    display.drawRect(margin, btn2_y, buttonWidth, buttonHeight, activeColor);
-
     display.getTextBounds(F("Start"), 0, 0, &x1, &y1, &w, &h);
-    text_x = margin + (buttonWidth - w) / 2;
-    text_y = btn2_y + (buttonHeight - h) / 2;
+    uint16_t text_x = margin + (buttonWidth - w) / 2;
+    uint16_t text_y = y + (buttonHeight - h) / 2;
 
     display.setCursor(text_x, text_y);
     display.setTextColor(activeColor);
     display.print(F("Start"));
 
-    if (selectedButton == 1) {
+    if (cursorLine == 2) {
         display.drawLine(text_x, text_y + h + 1, text_x + w, text_y + h + 1, activeColor);
     }
 }
@@ -325,7 +294,7 @@ void ConfigMenu::drawHelp() {
     display.setTextSize(1);
     display.setTextColor(Display::COLOR_GRAY);
     display.setCursor(10, display.height() - 30);
-    display.print(F("L/R: Aendern, OK: Weiter"));
+    display.print(F("Stift: Aendern  OK: Weiter"));
 
     // Alarm-Hinweis (zweite Zeile)
     display.setCursor(10, display.height() - 15);

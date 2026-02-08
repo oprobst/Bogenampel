@@ -7,8 +7,8 @@
  * - Schützenanzahl (1-2 oder 3-4)
  *
  * Navigation:
- * - LEFT/RIGHT: Werte ändern, zwischen Buttons wechseln
- * - OK: Bestätigen und zur nächsten Zeile / Menü beenden
+ * - LEFT/RIGHT: Werte ändern (bei Start: zurück zur Konfiguration)
+ * - OK: Bestätigen und zur nächsten Zeile / Turnier starten
  */
 
 #pragma once
@@ -23,7 +23,7 @@
  * Verwaltet die UI-Logik für das Konfigurationsmenü mit 3 Zeilen:
  * - Zeile 0: Zeit (120s / 240s)
  * - Zeile 1: Schützenanzahl (1-2 / 3-4)
- * - Zeile 2: Buttons (Ändern / Start)
+ * - Zeile 2: Start-Button (Stift geht zurück zu Zeile 0)
  *
  * Usage:
  * @code
