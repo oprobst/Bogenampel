@@ -89,7 +89,7 @@ pio device monitor
 - Display: CS=A0, DC=D10, RST=A1
 - Buttons: Links=D5, OK=D6, Rechts=D7
 - Buzzer: D4
-- Battery: A5 (Spannungsteiler 1:1)
+- Battery: A4 (LiPo 3.0V-4.2V direkt)
 
 ### Empfänger
 - NRF24: CE=D9, CSN=D8

@@ -24,9 +24,9 @@ PfeileHolenMenu::PfeileHolenMenu(Adafruit_ST7789& tft, ButtonManager& btnMgr)
     , currentGroup(Groups::Type::GROUP_AB)
     , currentPosition(Groups::Position::POS_1)
     , groupConfigChanged(false) {
-    // Ping-Historie mit false initialisieren (keine ACKs)
+    // Ping-Historie mit true initialisieren (optimistisch: volle Balken)
     for (uint8_t i = 0; i < 4; i++) {
-        pingHistory[i] = false;
+        pingHistory[i] = true;
     }
 }
 
@@ -39,11 +39,11 @@ void PfeileHolenMenu::begin() {
     connectionOk = false;
     lastConnectionOk = false;
 
-    // Ping-Historie zurücksetzen
+    // Ping-Historie zurücksetzen (optimistisch: volle Balken)
     pingHistoryIndex = 0;
     pingHistoryUpdated = false;
     for (uint8_t i = 0; i < 4; i++) {
-        pingHistory[i] = false;
+        pingHistory[i] = true;
     }
 
     // Batteriestatus zurücksetzen
@@ -281,7 +281,7 @@ void PfeileHolenMenu::drawHelp() {
     display.setTextSize(1);
     display.setTextColor(Display::COLOR_GRAY);
     display.setCursor(10, display.height() - 20);
-    display.print(F("L/R: Auswaehlen"));
+    display.print(F("Stift: Auswaehlen"));
     display.setCursor(10, display.height() - 8);
     display.print(F("OK: Bestaetigen"));
 }
@@ -365,19 +365,37 @@ void PfeileHolenMenu::drawBatteryIcon() {
 
     // Füllstand berechnen und zeichnen
     if (isUsbPowered) {
-        // USB-Modus: Volle Batterie (grün)
+        // USB-Modus (kein LiPo): Blitz-Symbol andeuten
         display.fillRect(iconX + 2, iconY + 2, bodyWidth - 4, bodyHeight - 4, ST77XX_GREEN);
     } else {
-        // Batteriemodus: Füllstand basierend auf Spannung
-        // Prozentsatz berechnen
+        // LiPo-Modus: Füllstand basierend auf nicht-linearer Entladekurve
+        // LiPo-Entladekurve (Lookup-Tabelle): mV -> Prozent
+        // Die Kurve ist im oberen Bereich flach und fällt dann schnell ab
         uint16_t percent = 0;
-        if (batteryVoltage >= Battery::VOLTAGE_MAX_MV) {
+        if (batteryVoltage >= 4200) {
             percent = 100;
-        } else if (batteryVoltage <= Battery::VOLTAGE_MIN_MV) {
-            percent = 0;
+        } else if (batteryVoltage >= 4150) {
+            percent = 95;
+        } else if (batteryVoltage >= 4100) {
+            percent = 90;
+        } else if (batteryVoltage >= 4000) {
+            percent = 80;
+        } else if (batteryVoltage >= 3900) {
+            percent = 65;
+        } else if (batteryVoltage >= 3800) {
+            percent = 50;
+        } else if (batteryVoltage >= 3700) {
+            percent = 35;
+        } else if (batteryVoltage >= 3600) {
+            percent = 20;
+        } else if (batteryVoltage >= 3500) {
+            percent = 15;
+        } else if (batteryVoltage >= 3400) {
+            percent = 10;
+        } else if (batteryVoltage >= 3300) {
+            percent = 5;
         } else {
-            percent = ((batteryVoltage - Battery::VOLTAGE_MIN_MV) * 100) /
-                      (Battery::VOLTAGE_MAX_MV - Battery::VOLTAGE_MIN_MV);
+            percent = 0;  // Unter 3.3V = kritisch leer
         }
 
         // Füllbalken-Breite berechnen

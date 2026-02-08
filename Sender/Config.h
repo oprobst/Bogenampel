@@ -9,7 +9,7 @@
  * - ST7789 TFT Display (240x320) über TXS0108EPW Level Shifter
  * - NRF24L01 Funkmodul
  * - 3x Taster, 3x Status-LEDs
- * - Batteriespannungsmessung (A7)
+ * - Batteriespannungsmessung (A4) - LiPo 3.0V - 4.2V direkt
  *
  * @date 2025-12-13
  * @version 1.0
@@ -80,7 +80,7 @@ namespace Pins {
     //-------------------------------------------------------------------------
     // Analoge Eingänge
     //-------------------------------------------------------------------------
-    constexpr uint8_t VOLTAGE_SENSE = A5;  // Batteriespannung (1:1 Spannungsteiler)
+    constexpr uint8_t VOLTAGE_SENSE = A4;  // LiPo-Spannung direkt (3.0V - 4.2V)
 
 } // namespace Pins
 
@@ -161,13 +161,13 @@ namespace RF {
 
 namespace Battery {
 
-    // Spannungsgrenzen (in Millivolt)
-    constexpr uint16_t VOLTAGE_MIN_MV = 6000;   // 6.0V = 0% (leer)
-    constexpr uint16_t VOLTAGE_MAX_MV = 9600;   // 9.6V = 100% (voll)
-    constexpr uint16_t VOLTAGE_LOW_MV = 6600;   // 6.6V = 20% (Low Battery Warnung)
+    // LiPo-Spannungsgrenzen (in Millivolt)
+    constexpr uint16_t VOLTAGE_MIN_MV = 3000;   // 3.0V = 0% (LiPo Cutoff)
+    constexpr uint16_t VOLTAGE_MAX_MV = 4200;   // 4.2V = 100% (LiPo voll)
+    constexpr uint16_t VOLTAGE_LOW_MV = 3300;   // 3.3V = ~10% (Low Battery Warnung)
 
-    // Spannungsteiler-Verhältnis (1:1 = 10kΩ : 10kΩ)
-    constexpr float DIVIDER_RATIO = 2.0f;  // Vbat = Vmeasured * 2.0
+    // Kein Spannungsteiler - LiPo direkt an ADC (max 4.2V < 5V Referenz)
+    constexpr float DIVIDER_RATIO = 1.0f;  // Vbat = Vmeasured * 1.0
 
     // ADC-Referenzspannung (Arduino Nano: 5V)
     constexpr float ADC_VREF = 5.0f;

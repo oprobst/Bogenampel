@@ -44,6 +44,13 @@ ISR(TIMER1_COMPA_vect) {
 //=============================================================================
 
 void setup() {
+    // WICHTIG: SPI Chip-Select Pins SOFORT auf HIGH setzen!
+    // Verhindert Störungen beim Programmieren/Bootloader
+    pinMode(Pins::TFT_CS, OUTPUT);
+    digitalWrite(Pins::TFT_CS, HIGH);
+    pinMode(Pins::NRF_CSN, OUTPUT);
+    digitalWrite(Pins::NRF_CSN, HIGH);
+
     // Serial für Debugging
     #if DEBUG_ENABLED
     Serial.begin(System::SERIAL_BAUD);
@@ -335,28 +342,29 @@ uint8_t testConnectionQuality() {
 }
 
 /**
- * @brief Misst die Batteriespannung
- * @return Spannung in Millivolt (z.B. 7200 für 7.2V)
+ * @brief Misst die LiPo-Batteriespannung
+ * @return Spannung in Millivolt (z.B. 3700 für 3.7V)
  */
 uint16_t readBatteryVoltage() {
     // Einfache ADC-Lesung ohne delays (delay() kann zu Problemen führen)
     uint16_t adcValue = analogRead(Pins::VOLTAGE_SENSE);
 
     // ADC-Wert in Spannung umrechnen (ohne Float!)
-    // Vbat_mV = (ADC / 1023) * 5000mV * 2.0 = (ADC * 10000) / 1023
-    uint16_t voltageMillivolts = ((uint32_t)adcValue * 10000UL) / Battery::ADC_MAX;
+    // LiPo direkt an ADC (kein Spannungsteiler)
+    // Vbat_mV = (ADC / 1023) * 5000mV = (ADC * 5000) / 1023
+    uint16_t voltageMillivolts = ((uint32_t)adcValue * 5000UL) / Battery::ADC_MAX;
 
     return voltageMillivolts;
 }
 
 /**
- * @brief Prüft ob USB angeschlossen ist
- * @return true wenn USB angeschlossen, false wenn Batteriebetrieb
+ * @brief Prüft ob kein LiPo angeschlossen ist (USB-only Betrieb)
+ * @return true wenn kein LiPo (USB-only), false wenn LiPo-Betrieb
  *
- * USB wird nur angezeigt, wenn die Eingangsspannung < 6V ist.
- * Das bedeutet, die externe 9V Batterie ist definitiv nicht angeschlossen.
+ * Wenn die gemessene Spannung < 2.5V ist, ist kein LiPo angeschlossen.
+ * Der Arduino wird dann über USB mit 5V versorgt (via Boost-Converter).
  */
 bool isUsbPowered() {
     uint16_t voltage = readBatteryVoltage();
-    return (voltage < 6000);  // < 6V = USB-Betrieb (externe 9V Batterie nicht angeschlossen)
+    return (voltage < 2500);  // < 2.5V = kein LiPo angeschlossen
 }
