@@ -192,7 +192,8 @@ namespace Timing {
     constexpr uint16_t QUALITY_DISPLAY_DURATION_MS = 5000;  // 5 Sekunden Qualitätsanzeige
 
     // Button Debouncing
-    constexpr uint8_t DEBOUNCE_MS = 50;  // 50ms Entprellzeit
+    constexpr uint8_t DEBOUNCE_MS = 80;          // 80ms Entprellzeit (erhöht für robustere Erkennung)
+    constexpr uint16_t MENU_LOCKOUT_MS = 400;    // 400ms Eingabesperre nach Zustandswechsel
 
     // Buzzer Click-Ton
     constexpr uint16_t CLICK_FREQUENCY_HZ = 1600;  // 1,6 kHz für satten Klick

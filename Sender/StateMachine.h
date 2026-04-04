@@ -146,7 +146,7 @@ private:
     void enterPfeileHolen();
     void exitPfeileHolen();
     void enterSchiessBetrieb();
-    void handleShootingPhaseEnd();  // Behandelt Ende der Schießphase (1-2 vs 3-4 Schützen)
+    void handleShootingPhaseEnd(bool manualStop = false);  // Behandelt Ende der Schießphase (1-2 vs 3-4 Schützen)
     void exitSchiessBetrieb();
     void enterAlarm();
     void exitAlarm();

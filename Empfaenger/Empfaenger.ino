@@ -58,8 +58,6 @@ bool inPreparationPhase = false;   // Läuft die Vorbereitungsphase?
 uint32_t preparationRemainingSeconds = 0;  // Verbleibende Sekunden Vorbereitungsphase
 uint32_t preparationDurationMs = 0; // Dauer der Vorbereitungsphase (für Kompatibilität)
 
-// Tracking für automatischen Gruppenwechsel (bei ganzer Passe POS_1)
-bool firstGroupInPass = true;      // true = erste Gruppe, false = zweite Gruppe
 
 // Alarm State-Variablen (nicht-blockierend)
 bool alarmActive = false;          // Läuft gerade ein Alarm?
@@ -545,8 +543,43 @@ void updateTimer() {
 
         DEBUG_PRINTLN(F("Timer END"));
 
-        // KEINE 3 Pieptöne hier! Diese werden nur bei CMD_STOP gesendet
-        // (wichtig für 3-4 Schützen: nur am Ende BEIDER Gruppen piepen)
+        // Autonome Entscheidung: Ende der Passe oder automatischer Gruppenwechsel
+        if (!groupsEnabled || currentPosition == Groups::Position::POS_2) {
+            // Ende der Passe: 1-2 Schützen, oder zweite Gruppe bei 3-4 Schützen
+            DEBUG_PRINTLN(F("Pass END -> 3x beep"));
+            buzzer.beep(3);
+        } else {
+            // Erste Gruppe fertig (POS_1) → automatisch zur zweiten Gruppe wechseln
+            if (currentGroup == Groups::Type::GROUP_AB) {
+                currentGroup = Groups::Type::GROUP_CD;
+                DEBUG_PRINTLN(F("Auto: AB->CD, prep start"));
+            } else {
+                currentGroup = Groups::Type::GROUP_AB;
+                DEBUG_PRINTLN(F("Auto: CD->AB, prep start"));
+            }
+            currentPosition = Groups::Position::POS_2;
+
+            // Vorbereitungsphase für zweite Gruppe starten
+            inPreparationPhase = true;
+            #if DEBUG_SHORT_TIMES
+                preparationRemainingSeconds = 5;
+            #else
+                preparationRemainingSeconds = 10;
+            #endif
+
+            // Gruppe aktualisieren (die andere Gruppe ausschalten)
+            if (currentGroup == Groups::Type::GROUP_AB) {
+                display.setGroup(0, CRGB::Red);
+                display.setGroup(1, CRGB::Black);
+            } else {
+                display.setGroup(0, CRGB::Black);
+                display.setGroup(1, CRGB::Red);
+            }
+            display.displayTimer(preparationRemainingSeconds, CRGB::Red);
+
+            // 2x Piepen (Vorbereitungsphase startet)
+            buzzer.beep(2);
+        }
     } else {
         // Begrenze auf 999 Sekunden (7-Segment-Display Maximum)
         uint32_t displaySec = (timerRemainingSeconds > 999) ? 999 : timerRemainingSeconds;
@@ -791,20 +824,11 @@ void handleCommand(RadioCommand cmd) {
         case CMD_START_240:
             DEBUG_PRINTLN(F("START"));
 
-            // Automatischer Gruppenwechsel bei ganzer Passe (POS_1)
-            if (groupsEnabled && currentPosition == Groups::Position::POS_1) {
-                if (!firstGroupInPass) {
-                    // Dies ist die zweite Gruppe in der Passe → wechsle zur anderen Gruppe
-                    if (currentGroup == Groups::Type::GROUP_AB) {
-                        currentGroup = Groups::Type::GROUP_CD;
-                        DEBUG_PRINTLN(F("Auto: AB -> CD"));
-                    } else {
-                        currentGroup = Groups::Type::GROUP_AB;
-                        DEBUG_PRINTLN(F("Auto: CD -> AB"));
-                    }
-                }
-                // Toggle für nächsten START
-                firstGroupInPass = !firstGroupInPass;
+            // Wenn Vorbereitungsphase bereits autonom gestartet wurde (z.B. nach
+            // erstem Gruppe-Ende), CMD_START ignorieren um Sync-Versatz zu vermeiden.
+            if (inPreparationPhase) {
+                DEBUG_PRINTLN(F("START ignored: prep already running"));
+                break;
             }
 
             // Timer stoppen (falls noch von vorheriger Gruppe aktiv)
@@ -886,7 +910,6 @@ void handleCommand(RadioCommand cmd) {
             currentGroup = Groups::Type::GROUP_AB;      // Gruppe A/B
             currentPosition = Groups::Position::POS_1;  // Position 1 (ganze Passe)
             groupsEnabled = true;
-            firstGroupInPass = true;  // Neue Passe beginnt mit erster Gruppe
 
             // Timer und Vorbereitung stoppen
             timerRunning = false;
@@ -909,7 +932,6 @@ void handleCommand(RadioCommand cmd) {
             currentGroup = Groups::Type::GROUP_CD;      // Gruppe C/D
             currentPosition = Groups::Position::POS_1;  // Position 1 (ganze Passe)
             groupsEnabled = true;
-            firstGroupInPass = true;  // Neue Passe beginnt mit erster Gruppe
 
             // Timer und Vorbereitung stoppen
             timerRunning = false;

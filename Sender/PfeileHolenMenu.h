@@ -118,6 +118,7 @@ private:
     // Flags
     bool needsUpdate;
     bool firstDraw;
+    uint32_t buttonLockoutUntil;  // Eingaben ignorieren bis zu diesem Zeitpunkt (millis)
 
     // Vorherige Werte für selective redraw
     uint8_t lastCursorPosition;

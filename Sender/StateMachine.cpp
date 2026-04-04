@@ -430,7 +430,7 @@ void StateMachine::handleSchiessBetrieb() {
 
             // Automatisches Ende bei Zeitablauf
             if (shootingSecondsRemaining == 0) {
-                handleShootingPhaseEnd();
+                handleShootingPhaseEnd(false);  // Kein manualStop: Empfänger piept autonom
                 return;
             }
         }
@@ -452,8 +452,8 @@ void StateMachine::handleSchiessBetrieb() {
             sendCommand(CMD_STOP);
             setState(State::STATE_PFEILE_HOLEN);
         } else {
-            // Während Schießphase: Normale Beendigung
-            handleShootingPhaseEnd();
+            // Während Schießphase: Manueller Abbruch → CMD_STOP senden
+            handleShootingPhaseEnd(true);
         }
     }
 }
@@ -466,11 +466,14 @@ void StateMachine::handleSchiessBetrieb() {
  *   - Nach erster Gruppe (A/B): Starte zweite Gruppe (C/D)
  *   - Nach zweiter Gruppe (C/D): Sende STOP, gehe zu PFEILE_HOLEN
  */
-void StateMachine::handleShootingPhaseEnd() {
+void StateMachine::handleShootingPhaseEnd(bool manualStop) {
     if (shooterCount <= 2) {
         // 1-2 Schützen: Nur eine Gruppe
-        // Sende STOP (3 Pieptöne auf Empfänger)
-        sendCommand(CMD_STOP);
+        // Bei manuellem Abbruch: STOP senden (Empfänger stoppt Timer + 3 Pieptöne)
+        // Bei natürlichem Timer-Ende: Empfänger piept autonom, kein CMD_STOP nötig
+        if (manualStop) {
+            sendCommand(CMD_STOP);
+        }
 
         // Wechsle zur nächsten Gruppe (für nächste Passe)
         advanceToNextGroup();
@@ -481,18 +484,18 @@ void StateMachine::handleShootingPhaseEnd() {
         // 3-4 Schützen: Zwei Gruppen pro Passe
         // Prüfe welche Position gerade fertig ist (BEFORE advanceToNextGroup!)
         // POS_1 = erste Gruppe der Passe → zweite Gruppe starten
-        // POS_2 = zweite Gruppe der Passe → STOP
+        // POS_2 = zweite Gruppe der Passe → Ende der Passe
         if (currentPosition == Groups::Position::POS_1) {
             // Erste Gruppe der Passe fertig → Starte zweite Gruppe
             advanceToNextGroup();  // Wechsle zur zweiten Gruppe
 
-            // Vorbereitung für zweite Gruppe manuell neu starten (Interrupt-basiert)
-            // (setState würde nicht funktionieren da wir bereits in STATE_SCHIESS_BETRIEB sind)
+            // Sender-Timer für zweite Gruppe neu starten (Interrupt-basiert)
             inPreparationPhase = true;
             preparationSecondsRemaining = Timing::PREPARATION_TIME_MS / 1000;  // 10s oder 5s
             shootingSecondsRemaining = shootingDurationMs / 1000;  // Wiederherstellen
 
-            // Sende START-Kommando (Empfänger startet eigene 10s Vorbereitungsphase)
+            // Empfänger startet zweite Gruppe autonom – CMD_START nur als Sync-Signal
+            // (wird vom Empfänger ignoriert, falls er bereits autonom in der Prep-Phase ist)
             RadioCommand startCmd = (shootingTime == 120) ? CMD_START_120 : CMD_START_240;
             sendCommand(startCmd);
 
@@ -506,8 +509,11 @@ void StateMachine::handleShootingPhaseEnd() {
             schiessBetriebMenu.draw();
         } else {
             // Zweite Gruppe der Passe fertig (POS_2) → Ende der Passe
-            // Sende STOP (3 Pieptöne auf Empfänger)
-            sendCommand(CMD_STOP);
+            // Bei manuellem Abbruch: STOP senden (Empfänger stoppt Timer + 3 Pieptöne)
+            // Bei natürlichem Timer-Ende: Empfänger piept autonom, kein CMD_STOP nötig
+            if (manualStop) {
+                sendCommand(CMD_STOP);
+            }
 
             // Wechsle zur nächsten Gruppe (für nächste Passe)
             advanceToNextGroup();

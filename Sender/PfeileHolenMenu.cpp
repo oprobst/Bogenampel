@@ -38,6 +38,9 @@ void PfeileHolenMenu::begin() {
     lastCursorPosition = 0xFF;
     connectionOk = false;
     lastConnectionOk = false;
+    // Kurze Eingabesperre: verhindert, dass ein nachprallendes OK sofort
+    // "Nächste Passe" auslöst, wenn die Passe gerade erst beendet wurde.
+    buttonLockoutUntil = millis() + Timing::MENU_LOCKOUT_MS;
 
     // Ping-Historie zurücksetzen (optimistisch: volle Balken)
     pingHistoryIndex = 0;
@@ -56,6 +59,10 @@ void PfeileHolenMenu::begin() {
 }
 
 void PfeileHolenMenu::update() {
+    // Eingabesperre: Nach Zustandswechsel kurz keine Buttons auswerten,
+    // damit nachprallende Taster keine ungewollte Aktion auslösen.
+    if (millis() < buttonLockoutUntil) return;
+
     // Anzahl sichtbarer Buttons bestimmen
     // Bei 1-2 Schützen: 2 Buttons (Nächste Passe, Neustart)
     // Bei 3-4 Schützen: 3 Buttons (Nächste Passe, Reihenfolge, Neustart)
