@@ -76,7 +76,20 @@
           "width": 0.0
         }
       ],
-      "drc_exclusions": [],
+      "drc_exclusions": [
+        [
+          "malformed_courtyard|73940267|85177000|9bfc28a9-ecf5-4812-82f1-055847bd5192|00000000-0000-0000-0000-000000000000",
+          ""
+        ],
+        [
+          "silk_edge_clearance|65504267|89057000|a78e1d9c-d7f3-4783-a00e-e4284177e3c8|d98e136d-aeb8-4b0d-aeab-5e1ddfb60d9e",
+          ""
+        ],
+        [
+          "silk_edge_clearance|65504267|97397000|a78e1d9c-d7f3-4783-a00e-e4284177e3c8|fea6c408-e752-498c-805e-a018df2443cb",
+          ""
+        ]
+      ],
       "meta": {
         "version": 2
       },
@@ -212,7 +225,8 @@
       "track_widths": [
         0.0,
         0.05,
-        0.635
+        0.3,
+        0.508
       ],
       "tuning_pattern_settings": {
         "diff_pair_defaults": {
@@ -255,7 +269,7 @@
       "internal_id": "",
       "mfg": "",
       "mpn": "",
-      "sch_revision": ""
+      "sch_revision": "3.0"
     },
     "layer_pairs": [],
     "layer_presets": [],
@@ -691,7 +705,7 @@
         "uuid": "2f5e2bd3-24fa-4ddb-a911-7a84d4c0ceae"
       }
     ],
-    "used_designators": "",
+    "used_designators": "J3-4,#FLG1-5,R15-25,IC2-3,U2,#PWR37-67,FB1,C15-20,SW3-4",
     "variants": []
   },
   "sheets": [
