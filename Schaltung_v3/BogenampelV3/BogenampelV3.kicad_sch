@@ -6925,7 +6925,7 @@
 	)
 	(text "µController"
 		(exclude_from_sim no)
-		(at 77.724 119.126 0)
+		(at 85.852 121.158 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -7429,7 +7429,7 @@
 	)
 	(wire
 		(pts
-			(xy 63.5 156.21) (xy 63.5 157.48)
+			(xy 53.34 156.21) (xy 53.34 157.48)
 		)
 		(stroke
 			(width 0)
@@ -7459,7 +7459,7 @@
 	)
 	(wire
 		(pts
-			(xy 80.01 166.37) (xy 63.5 166.37)
+			(xy 80.01 166.37) (xy 53.34 166.37)
 		)
 		(stroke
 			(width 0)
@@ -8529,7 +8529,7 @@
 	)
 	(wire
 		(pts
-			(xy 63.5 166.37) (xy 63.5 165.1)
+			(xy 53.34 166.37) (xy 53.34 165.1)
 		)
 		(stroke
 			(width 0)
@@ -11908,7 +11908,7 @@
 	)
 	(symbol
 		(lib_id "power:+3V3")
-		(at 63.5 156.21 0)
+		(at 53.34 156.21 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -11919,7 +11919,7 @@
 		(fields_autoplaced yes)
 		(uuid "1586ff77-9947-4b1e-9c76-8ac81d9f79df")
 		(property "Reference" "#PWR064"
-			(at 63.5 160.02 0)
+			(at 53.34 160.02 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -11930,7 +11930,7 @@
 			)
 		)
 		(property "Value" "+3V3"
-			(at 63.5 151.13 0)
+			(at 53.34 151.13 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -11940,7 +11940,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 63.5 156.21 0)
+			(at 53.34 156.21 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -11951,7 +11951,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 63.5 156.21 0)
+			(at 53.34 156.21 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -11962,7 +11962,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"+3V3\""
-			(at 63.5 156.21 0)
+			(at 53.34 156.21 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -20961,7 +20961,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 63.5 161.29 0)
+		(at 53.34 161.29 0)
 		(mirror y)
 		(unit 1)
 		(body_style 1)
@@ -20972,7 +20972,7 @@
 		(dnp no)
 		(uuid "d72d9ca1-dccb-4cb6-b93e-d75e0eaa565b")
 		(property "Reference" "R23"
-			(at 60.96 160.0199 0)
+			(at 50.8 160.0199 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -20983,7 +20983,7 @@
 			)
 		)
 		(property "Value" "10k"
-			(at 60.96 162.5599 0)
+			(at 50.8 162.5599 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -20994,7 +20994,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_1206_3216Metric"
-			(at 65.278 161.29 90)
+			(at 55.118 161.29 90)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -21005,7 +21005,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 63.5 161.29 0)
+			(at 53.34 161.29 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -21016,7 +21016,7 @@
 			)
 		)
 		(property "Description" "Resistor"
-			(at 63.5 161.29 0)
+			(at 53.34 161.29 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)

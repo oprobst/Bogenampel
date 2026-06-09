@@ -163,7 +163,7 @@
         "min_connection": 0.0,
         "min_copper_edge_clearance": 0.25,
         "min_groove_width": 0.0,
-        "min_hole_clearance": 0.15,
+        "min_hole_clearance": 0.25,
         "min_hole_to_hole": 0.25,
         "min_microvia_diameter": 0.2,
         "min_microvia_drill": 0.1,
@@ -175,7 +175,7 @@
         "min_track_width": 0.0,
         "min_via_annular_width": 0.1,
         "min_via_diameter": 0.5,
-        "solder_mask_to_copper_clearance": 0.0,
+        "solder_mask_to_copper_clearance": 0.25,
         "use_height_for_length_calcs": true
       },
       "teardrop_options": [
@@ -705,7 +705,7 @@
         "uuid": "2f5e2bd3-24fa-4ddb-a911-7a84d4c0ceae"
       }
     ],
-    "used_designators": "J3-4,#FLG1-5,R15-25,IC2-3,U2,#PWR37-67,FB1,C15-20,SW3-4",
+    "used_designators": "",
     "variants": []
   },
   "sheets": [
