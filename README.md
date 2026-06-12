@@ -1,9 +1,56 @@
 # Bogenampel
 
-Eine funkgesteuerte Timer-Anzeige für Bogenschießplätze, basierend auf zwei Arduino Nanos mit nRF24L01+ Funkmodulen.
-Sie funktioniert möglichst einfach, mit minimalen Benutzereingaben.
-An der Anzeigeeinheit wird der Modus (120 oder 240 Sekunden) vorausgewählt.
-Die Bedieneinheit übermittelt per Taster das Start oder Stop Signal.
+Eine funkgesteuerte Timer-Anzeige für Bogenschießplätze.
+Sie funktioniert möglichst einfach, mit minimalen Benutzereingaben:
+An der Bedieneinheit wird der Modus (120 oder 240 Sekunden, 1-2 oder 3-4 Schützen)
+vorausgewählt, danach steuern zwei Taster den kompletten Turnierablauf.
+
+> **Aktuelle Hardware-Generation: V3 (ESP32)** — siehe [Version 3](#version-3-aktuell).
+> Die Arduino-Nano-Generation V2 ist weiter unten als eingefrorener Legacy-Stand
+> dokumentiert (`Sender/`, `Empfaenger/`, `Schaltung/`).
+
+## Version 3 (aktuell)
+
+| | Sender (Bedieneinheit) | Empfänger (Anzeigeeinheit) |
+|---|---|---|
+| **Controller** | ESP32-S3-WROOM-1U-N16R8 | Seeed XIAO ESP32C3 |
+| **Anzeige** | 1.54″ e-Paper (SSD1681, 200×200) | WS2812B-Strip, 158 LEDs (unverändert) |
+| **Funk** | ESP-NOW (integriert, Kanal 1) | ESP-NOW (integriert, Kanal 1) |
+| **Versorgung** | LiPo + MCP73837-Lader, USB-C | 5 V USB oder 12 V (Jumper); LED-Strip immer extern |
+| **Bedienung** | 2 Taster: BTN1 = Power/OK, BTN2 = Weiter | Debug-Taster, 3 Potis (Lautstärke, Helligkeit, Lüfter) |
+| **Firmware** | `SenderV3/` | `EmpfaengerV3/` |
+| **Schaltplan** | `Schaltung_v3/BogenampelV3/BogenampelV3.kicad_sch` | `Schaltung_v3/BogenampelV3/Zusatzplatine-Empfänger.kicad_sch` |
+
+Neu in V3 gegenüber V2:
+
+- **ESP-NOW statt NRF24**: kein Funkmodul mehr, Discovery zur Laufzeit (kein Pairing),
+  6-Byte-Frames mit magic + Checksumme + Sequenznummer (Dedup bei Retries)
+- **One-Button-Power**: BTN1 schaltet ein (Power-Latch), 3 s halten schaltet geordnet ab;
+  Konfiguration bleibt in NVS erhalten
+- **e-Paper-UI**: 1-Hz-Countdown per Partial-Refresh (kein Vollbild-Blitzen),
+  Statuszeile mit Akku-/Lade-/Funkstatus
+- **Lokalregler am Empfänger**: Lautstärke- (D0), Helligkeits- (D1) und Lüfter-Poti (D2)
+  wirken live; Lüfter-PWM 25 kHz
+- **Unverändert**: die 11 Funk-Kommandos, der WA-Timer-Ablauf, der Gruppen-4-Zyklus und
+  das **autonome Passenende des Empfängers** (Zeitablauf braucht keinen Funk)
+
+Build & Flash, Hardware-Voraussetzungen und die komplette Abnahme-Checkliste:
+[`specs/004-v3-esp32-port/quickstart.md`](specs/004-v3-esp32-port/quickstart.md).
+Verbindliche Pin-Belegung: [`specs/004-v3-esp32-port/contracts/hardware-pins.md`](specs/004-v3-esp32-port/contracts/hardware-pins.md).
+
+```bash
+# PlatformIO (einziger unterstützter Build-Pfad, Libraries via lib_deps)
+cd SenderV3 && pio run -t upload      # ESP32-S3, natives USB
+cd EmpfaengerV3 && pio run -t upload  # XIAO ESP32C3
+```
+
+---
+
+## Version 2 (Legacy: Arduino Nano + NRF24)
+
+Basierend auf zwei Arduino Nanos mit nRF24L01+ Funkmodulen.
+Die Verzeichnisse `Sender/`, `Empfaenger/` und `Schaltung/` bleiben unverändert
+als Referenz erhalten.
 
 ## Projektbeschreibung
 

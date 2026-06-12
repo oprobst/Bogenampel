@@ -1,4 +1,68 @@
-# Hardware-Spezifikation: Bogenampel Sender
+# Hardware-Spezifikation: Bogenampel
+
+> **Aktuelle Generation: V3 (ESP32)** — siehe direkt unten.
+> Die V2-Spezifikation (Arduino Nano) folgt weiter unten als eingefrorener
+> Legacy-Stand.
+
+## Hardware V3 (aktuell)
+
+Autoritative Quelle ist der KiCad-Schaltplan in `Schaltung_v3/BogenampelV3/`
+(Constitution V: „Schaltplan zuerst, dann Code"); die daraus extrahierte,
+verbindliche Pin-Tabelle für beide Firmwares steht in
+[`specs/004-v3-esp32-port/contracts/hardware-pins.md`](specs/004-v3-esp32-port/contracts/hardware-pins.md).
+
+### Sender V3 („Universal-Fernbedienung")
+
+- **ESP32-S3-WROOM-1U-N16R8** (16 MB Flash, 8 MB Octal-PSRAM → GPIO35-37 reserviert)
+- **1.54″ e-Paper** Waveshare V2 (GDEH0154D67/SSD1681, 200×200) als rohes Panel an J1
+  (24-pol FPC) mit diskretem Boost (Si1308EDL + MBR0530)
+- **Power**: TPS62742 mit Latch (GPIO16 hält das Gerät an, LOW = Selbstabschaltung),
+  LOAD-Rail (GPIO7) schaltet die Display-Versorgung
+- **Akku**: LiPo mit MCP73837-Lader (STAT1/STAT2/PG an GPIO11/12/17),
+  Spannungsmessung über Teiler 150k/100k an GPIO10 (ADC1, ×2,5)
+- **Taster**: BTN1 = SW2/GPIO15, aktiv HIGH über Teiler R2=47k/R7=240k an +BATT
+  (Power-On + OK + Gesten); BTN2 = SW1/GPIO9 gegen GND (Weiter)
+- **Funk**: ESP-NOW (integrierte Antenne U.FL — WROOM-1U)
+
+| Funktion | GPIO | | Funktion | GPIO |
+|---|---|---|---|---|
+| LATCH (Power halten) | 16 | | e-Paper CS | 21 |
+| LOAD (Display-Rail) | 7 | | e-Paper DC | 47 |
+| BTN1 (Power/OK, aktiv HIGH) | 15 | | e-Paper RES | 48 |
+| BTN2 (Weiter, aktiv LOW) | 9 | | e-Paper BUSY | 38 |
+| ADC_BAT (ADC1, ×2,5) | 10 | | SPI CLK | 14 |
+| USB_CON (aktiv HIGH) | 8 | | SPI MOSI | 13 |
+| Lader ST1 / ST2 / PG / PRG | 11 / 12 / 17 / 18 | | USB D-/D+ | 19/20 |
+
+### Empfänger V3 (Zusatzplatine/Lochraster)
+
+- **Seeed XIAO ESP32C3** (4 MB Flash), Versorgung 5 V USB (J1) oder 12 V Boost (J4)
+  → TSR 0.5-2433 → 3V3; **LED-Strip immer extern** (5 V/12 V via Jumper JP1/JP2)
+- **WS2812B-Strip** 158 LEDs (Layout unverändert aus V2: 2×16 Gruppen + 3×42 Ziffern)
+- **Piezo**: 12-V-Transducer über BC337 (R3 2k2, R4 10k Basis-Pulldown), LEDC-PWM
+  (2,7 kHz, Lautstärke = Duty 0-50 %)
+- **Lüfter**: 2N7002 Low-Side, LEDC-PWM 25 kHz, Drehzahl per Poti; Tacho bewusst
+  unbeschaltet (R5 = Gate-Pull-up → Lüfter läuft beim Boot kurz voll)
+- **ESP32-C3-Strapping-Fixes** (alle im Schaltplan umgesetzt, 2026-06-10):
+  GPIO2 (Lautstärke-Poti) → Fußpunkt an D4/GPIO6 statt GND („POTI_GND");
+  GPIO9 (Status-LED) → aktiv LOW (3V3 → LED → R6 → Pin); GPIO8 frei (kein Tacho)
+
+| Funktion | XIAO-Pin | GPIO |
+|---|---|---|
+| Poti Lautstärke (J2, Fußpunkt an D4!) | D0 | 2 |
+| Poti Helligkeit (J3) | D1 | 3 |
+| Poti Lüfter-Drehzahl (J8) | D2 | 4 |
+| Piezo (J6, über BC337) | D3 | 5 |
+| POTI_GND (geschalteter Fußpunkt) | D4 | 6 |
+| Lüfter-PWM (J9, 2N7002) | D6 | 21 |
+| Debug-Taster (J5, aktiv LOW) | D7 | 20 |
+| Status-LED (**aktiv LOW**) | D9 | 9 |
+| WS2812B Data (J7) | D10 | 10 |
+| frei / Reserve | D5, D8 | 7, 8 |
+
+---
+
+# Hardware-Spezifikation V2 (Legacy): Bogenampel Sender
 
 ## Übersicht
 

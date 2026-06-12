@@ -1,21 +1,35 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version Change: 1.0.0 → 1.1.0
-Rationale: Added authoritative pin assignments from KiCad schematic (/Schaltung/Schaltplan.pdf)
+Version Change: 1.1.0 → 2.0.0 → 2.1.0 (2026-06-10) → 2.2.0 (2026-06-11)
+
+2.0.0 — Rationale: Hardware-Generationswechsel V2 → V3 (ESP32 statt Arduino Nano, ESP-NOW
+statt NRF24L01, e-Paper statt TFT). Autoritative Hardware-Quelle ist jetzt das KiCad-Projekt
+`Schaltung_v3/BogenampelV3/`. MAJOR-Bump wegen grundlegender Neudefinition der
+Hardware-Standards-Sektion (Versioning-Richtlinie).
+
+2.1.0 — Rationale: USB-Strombegrenzungs-Regel (Entwicklungsmodus, Prinzip I) entfernt —
+in V3 wird der LED-Strip immer aus einer externen Quelle versorgt (5 V oder 12 V per Jumper
+im Empfänger), nie aus dem USB-Port des MCU-Boards; die Schutzanforderung ist gegenstandslos.
+Entscheidung des Projektverantwortlichen vom 2026-06-10.
+
+2.2.0 — Rationale: Arduino-IDE-Kompatibilitätsanforderung (Prinzip III) entfernt — das
+Projekt migriert mit V3 vollständig auf PlatformIO + ESP32; `pio run` ist der einzige
+unterstützte und verifizierte Build-Pfad. Die eingefrorene V2 (Arduino Nano) bleibt davon
+unberührt. Entscheidung des Projektverantwortlichen vom 2026-06-11.
 
 Changes Made:
-- Added complete pin assignment reference section
-- Linked to authoritative hardware source (/Schaltung/)
-- Enhanced Principle III with mandatory schematic compliance
-- Enhanced Principle V with schematic synchronization requirement
+- Hardware-Anforderungen vollständig auf V3 umgestellt (ESP32-S3-Sender, XIAO-ESP32C3-Empfänger)
+- Betriebsparameter aktualisiert (Initialisierungszeit < 10 s wegen e-Paper + Funktest)
+- Pin-Belegungen: autoritative Quelle jetzt `Schaltung_v3/BogenampelV3/` (KiCad);
+  eingefrorener Pin-Contract in `specs/004-v3-esp32-port/contracts/hardware-pins.md`
+- V2-Hardware (Arduino Nano, NRF24, `/Schaltung/`) als eingefrorenes Legacy dokumentiert
+- USB-Strombegrenzungs-Bullet aus Prinzip I entfernt (v2.1.0, siehe oben)
 
 Modified Principles:
-- III. Embedded-Hardware-Standards - Added "Pin-Belegungen MÜSSEN mit /Schaltung/Schaltplan.pdf übereinstimmen"
-- V. Wartbarkeit & Dokumentation - Added "Änderungen an Pin-Belegungen MÜSSEN in KiCad-Schaltplan unter /Schaltung/ dokumentiert werden"
-
-Sections Added:
-- Pin-Belegungen (Pin Assignments) - Complete reference from KiCad schematic
+- I. Sicherheit Zuerst — Entwicklungsmodus-Strombegrenzung entfernt (obsolet durch externe LED-Versorgung)
+- III. Embedded-Hardware-Standards — autoritative Schaltplan-Quelle pro Hardware-Generation
+- V. Wartbarkeit & Dokumentation — Schaltplan-Pfad auf `Schaltung_v3/` aktualisiert
 
 Templates Status:
 ✅ plan-template.md - Verified alignment
@@ -33,11 +47,10 @@ Follow-up TODOs: None
 
 **NON-NEGOTIABLE**: Sicherheit hat absolute Priorität in allen Designentscheidungen.
 
-- Das System MUSS bei Kommunikationsausfall in einen sicheren Zustand übergehen (Fail-Safe-Prinzip)
+- Das System MUSS bei Kommunikationsausfall in einen sicheren Zustand übergehen (Fail-Safe-Prinzip); eine gestartete Passe MUSS auf dem Empfänger autonom korrekt zu Ende laufen, ohne dass dafür ein Funkkommando nötig ist
 - Alle Zustandsübergänge MÜSSEN vorhersehbar und deterministisch sein
 - Rote Ampelphase (Stopp-Signal) MUSS eindeutig erkennbar sein und darf nicht mit anderen Zuständen verwechselbar sein
-- Funksignale MÜSSEN validiert werden - keine ungeprüfte Ausführung empfangener Befehle
-- Entwicklungsmodus MUSS USB-Port-Beschädigung durch Strombegrenzung verhindern
+- Funksignale MÜSSEN validiert werden - keine ungeprüfte Ausführung empfangener Befehle (Magic + Checksumme + Duplikat-Unterdrückung)
 
 **Rationale**: Die Bogenampel ist ein Sicherheitssystem für Bogenschießplätze. Fehlfunktionen könnten zu gefährlichen Situationen führen, wenn Schützen fälschlicherweise annehmen, das Schießen sei erlaubt oder verboten.
 
@@ -47,9 +60,9 @@ Minimale Benutzereingaben, maximale Betriebssicherheit.
 
 - Code MUSS einfach und verständlich sein - keine unnötige Komplexität
 - Ein-Knopf-Bedienung für Hauptfunktionen (Start/Stop) MUSS erhalten bleiben
-- System MUSS ohne Konfiguration oder Setup sofort betriebsbereit sein (Plug-and-Play)
+- System MUSS ohne Konfiguration oder Setup sofort betriebsbereit sein (Plug-and-Play, kein Pairing-Menü)
 - Hardware-Komponenten MÜSSEN standardisiert und leicht austauschbar sein
-- Energieverwaltung MUSS Batterielaufzeit maximieren (Sleep-Modi nutzen)
+- Energieverwaltung MUSS Batterielaufzeit maximieren (Soft-Power-Latch, vollständiges Abschalten)
 
 **Rationale**: Das Bedienkonzept basiert auf "möglichst einfach, mit minimalen Benutzereingaben". Komplexität erhöht Fehlerrisiko und senkt Benutzerakzeptanz.
 
@@ -57,12 +70,15 @@ Minimale Benutzereingaben, maximale Betriebssicherheit.
 
 Arduino-Platform und etablierte Standards nutzen.
 
-- Code MUSS mit Arduino IDE und PlatformIO kompatibel sein
+- Code MUSS mit PlatformIO baubar sein (`pio run` pro Firmware-Ordner = verifizierter
+  Build-Pfad); Arduino-IDE-Kompatibilität ist seit v2.2.0 (2026-06-11) KEINE Anforderung
+  mehr — V3 ist vollständig auf PlatformIO migriert (V2-Legacy bleibt Arduino-IDE-basiert)
 - Verwendete Bibliotheken MÜSSEN stabil, wartbar und Open Source sein
 - Pin-Belegungen MÜSSEN dokumentiert und im Code als Konstanten definiert sein
-- **Pin-Belegungen MÜSSEN exakt mit dem KiCad-Schaltplan unter `/Schaltung/Schaltplan.pdf` übereinstimmen (NON-NEGOTIABLE)**
+- **Pin-Belegungen MÜSSEN exakt mit dem KiCad-Schaltplan der jeweiligen Hardware-Generation übereinstimmen (NON-NEGOTIABLE)**: V3-Firmware (`SenderV3/`, `EmpfaengerV3/`) gegen `Schaltung_v3/BogenampelV3/`; eingefrorene V2-Firmware (`Sender/`, `Empfaenger/`) gegen `/Schaltung/Schaltplan.pdf`
 - Hardware-Schnittstellen MÜSSEN gegen Fehlbeschaltung geschützt sein (Pull-up/Pull-down Widerstände)
-- Stromversorgung MUSS innerhalb spezifizierter Grenzen bleiben (USB: 0,5-3A, Powerbank: bis 12A)
+- Analoge Eingänge MÜSSEN auf ADC1-Pins liegen (ESP32: ADC2 ist bei aktivem Funk unbrauchbar)
+- Stromversorgung MUSS innerhalb spezifizierter Grenzen bleiben (USB: 0,5-3A, Powerbank/Netzteil: bis 12A)
 
 **Rationale**: Standardisierung erleichtert Wartung, Reparatur und Weiterentwicklung. Arduino-Ökosystem bietet bewährte Komponenten und Community-Support. Der KiCad-Schaltplan ist die Single Source of Truth für alle Hardware-Verbindungen.
 
@@ -83,89 +99,72 @@ Alle Funktionen MÜSSEN testbar und validierbar sein.
 Code und Hardware MÜSSEN vollständig dokumentiert sein.
 
 - Alle Pin-Belegungen MÜSSEN im Code und in Hardware-Dokumentation übereinstimmen
-- **Änderungen an Pin-Belegungen MÜSSEN zuerst im KiCad-Schaltplan unter `/Schaltung/` vorgenommen werden, bevor Code angepasst wird**
+- **Änderungen an Pin-Belegungen MÜSSEN zuerst im KiCad-Schaltplan (V3: `Schaltung_v3/BogenampelV3/`) vorgenommen werden, bevor Code angepasst wird**
 - Funktionen MÜSSEN klare, selbsterklärende Namen haben
 - Zustandsübergänge MÜSSEN mit Kommentaren erklärt sein
 - Hardware-Komponenten MÜSSEN mit Teilenummern und Spezifikationen dokumentiert sein
 - Schaltpläne und Verkabelungsdiagramme MÜSSEN aktuell gehalten werden
 - Code-Kommentare MÜSSEN auf entsprechende Connector-Bezeichner im Schaltplan verweisen (z.B. J1, J8, RV1)
 
-**Rationale**: Das System muss von anderen gewartet werden können. Fehlende Dokumentation führt zu Ausfallzeiten und Fehlern bei Reparaturen. Der KiCad-Schaltplan unter `/Schaltung/` ist die autoritative Quelle für Hardware-Designs.
+**Rationale**: Das System muss von anderen gewartet werden können. Fehlende Dokumentation führt zu Ausfallzeiten und Fehlern bei Reparaturen. Der KiCad-Schaltplan ist die autoritative Quelle für Hardware-Designs.
 
 ## Hardware-Anforderungen
 
-### Komponenten-Spezifikationen
+### Komponenten-Spezifikationen (V3, aktuell)
 
-- **Mikrocontroller**: Arduino Nano (ATmega328P, 5V/16MHz)
-- **Funkmodul**: nRF24L01+ mit PCB-Antenne (2.4 GHz, bis 100m Reichweite)
-- **LED-Anzeige**: WS2812B LED-Strip (~155 LEDs für 3x 7-Segment)
-- **Audio**: Passiver Piezo-Buzzer KY-006
-- **Stromversorgung Sender**: 9V Block-Batterie oder 5V USB
-- **Stromversorgung Empfänger**: 5V USB-Powerbank (mindestens 10.000 mAh für 8h Betrieb)
+- **Sender (Bedieneinheit)**: ESP32-S3-WROOM-1U-N16R8 (16 MB Flash, 8 MB Octal-PSRAM); 1.54″ e-Paper 200×200 monochrom (SSD1681, Waveshare-1.54-V2-Rohpanel); LiPo-Akku 3,0–4,2 V mit MCP73837-Lader und USB-C; Ein-Knopf-Soft-Power (Power-Latch)
+- **Empfänger (Anzeigeeinheit)**: Seeed XIAO ESP32C3; WS2812B LED-Strip (158 LEDs: 2× Gruppenanzeige + 3× 7-Segment); Piezo-Transducer 12 V über Transistorstufe mit Lautstärke-Poti; Gehäuselüfter mit Tacho; Helligkeits-Poti
+- **Funk**: integriertes 2,4-GHz-Funkmodul der ESP32-Chips via ESP-NOW — KEIN externes Funkmodul
+- **Stromversorgung Sender**: LiPo-Akku, Laden über USB-C
+- **Stromversorgung Empfänger**: extern 12 V oder USB 5 V (keine Akku-Verwaltung)
+
+### Legacy-Hardware (V2, eingefroren)
+
+Die V2-Firmware (`Sender/`, `Empfaenger/`) und ihre Hardware (Arduino Nano ATmega328P,
+nRF24L01+, ST7789-TFT, `/Schaltung/Schaltplan.pdf`) bleiben unverändert im Repository und
+werden nicht weiterentwickelt. Für V2-Code gilt weiterhin `/Schaltung/` als autoritative Quelle.
 
 ### Betriebsparameter
 
-- **Funkreichweite**: 20-50m Indoor, bis 100m Freifeld
+- **Funkreichweite**: mindestens 30 m Freifeld (volle Schießplatz-Distanz); Startup-Qualitätstest ≥ 90 %
 - **Timer-Genauigkeit**: ±1 Sekunde über 240 Sekunden
-- **LED-Helligkeit**: Volle Helligkeit im Powerbank-Betrieb, 3% im Development-Modus
-- **Batterielaufzeit**: Mindestens 8 Stunden bei normaler Nutzung
-- **Initialisierungszeit**: Unter 5 Sekunden von Einschalten bis Betriebsbereit
+- **LED-Helligkeit**: 25–100 % über Helligkeits-Poti (LED-Versorgung immer extern: 5 V oder 12 V je nach Jumper im Empfänger — keine USB-Schutzbegrenzung nötig)
+- **Batterielaufzeit Sender**: mindestens 8 Stunden bei normaler Nutzung; im Aus-Zustand nur Hardware-Leckströme (Latch vollständig gelöst)
+- **Initialisierungszeit Sender**: unter 10 Sekunden vom Einschalten bis zum bedienbaren Konfigurationsmenü (e-Paper-Voll-Refresh + Funk-Qualitätstest eingerechnet)
 
 ### Pin-Belegungen
 
-**AUTORITATIVE QUELLE**: `/Schaltung/Schaltplan.pdf` (KiCad-Projekt unter `/Schaltung/`)
+**AUTORITATIVE QUELLE**: KiCad-Projekt `Schaltung_v3/BogenampelV3/`
+(Sender: `BogenampelV3.kicad_sch`, Empfänger: `Zusatzplatine-Empfänger.kicad_sch`)
 
 **Alle Pin-Zuweisungen im Code MÜSSEN exakt mit dem Schaltplan übereinstimmen.**
+Der aus den KiCad-Netzlisten eingefrorene, verbindliche Pin-Contract liegt in
+`specs/004-v3-esp32-port/contracts/hardware-pins.md` (inkl. Connector-Referenzen und
+dokumentierter Hardware-Reworks: Helligkeits-Poti D5→D1, BTN1-Teiler R7 47k→240k).
 
-#### Anschlüsse & Komponenten (Connector-Referenzen aus Schaltplan)
+#### Sender (ESP32-S3, GPIO-Nummern)
 
-- **J1**: Input 1 (Taster/Eingang)
-- **J2**: Input 2 (Taster/Eingang)
-- **J3**: Input 3 (Taster/Eingang)
-- **J5**: Eingangstasche (Taster 120/240 sec, Gruppe A/B, etc.)
-- **J6**: Anschluss Powerbank (Klemmen)
-- **J7**: Batterie 9V (Sender)
-- **J8**: Anschluss LED-Stripe / KY-006 Debug Jumper
-- **J9**: WS2812B Stripe Timer
-- **RV1**: 6_Potentiometer (Lautstärke-Regelung)
-- **RV2**: Optionaler Analog Input
+- **e-Paper**: BUSY=38, RES=48, DC=47, CS=21, CLK=14, MOSI=13
+- **Power**: LATCH=16 (HIGH = an halten), Display-Rail LOAD=7
+- **Akku/Lader**: ADC_BAT=10 (Teiler 150k/100k, ×2,5), USB_CON=8, C_ST1=11, C_ST2=12, C_PG=17, C_PRG=18
+- **Taster**: BTN1 (Power/OK)=15 (aktiv HIGH), BTN2 (Weiter)=9 (INPUT_PULLUP, aktiv LOW)
+- **Reserviert**: GPIO 35–37 (Octal-PSRAM des Moduls)
 
-#### Arduino Nano Pin-Zuweisungen
+#### Empfänger (XIAO ESP32C3, D-Nummern)
 
-**Digital Pins:**
-- **D0**: RX (Seriell)
-- **D1**: TX (Seriell)
-- **D2-D13**: GPIO-Pins (siehe Schaltplan für spezifische Zuweisungen)
-
-**Analog Pins:**
-- **A0-A7**: Analog-Eingänge (siehe Schaltplan für spezifische Zuweisungen)
-
-**nRF24L01+ Funkmodul (U1):**
-- **VCC**: 3.3V Versorgung
-- **GND**: Ground
-- **CE**: Chip Enable
-- **CSN**: Chip Select Not
-- **SCK**: SPI Clock
-- **MOSI**: Master Out Slave In
-- **MISO**: Master In Slave Out
-- **IRQ**: Interrupt Request (optional)
-
-**Stromversorgung:**
-- **USB_C_Receptacle_PowerOnly_6P (US01)**: USB-C Port für Programmierung (Empfänger)
-- **VBUS**: USB 5V
-- **CC1, CC2**: Configuration Channel
-- **SHIELD, GND**: Ground-Verbindungen
-
-**Hinweis**: Für detaillierte Verbindungen zwischen Arduino-Pins und Komponenten siehe `/Schaltung/Schaltplan.pdf`. Der Schaltplan zeigt die exakten Pin-Nummern für alle Verbindungen (z.B. welcher Arduino-Pin mit welchem nRF24-Pin verbunden ist).
+- **WS2812B-Daten**: D10
+- **Taster (Debug)**: D7; **Status-LED**: D9
+- **Piezo (PWM)**: D2; **Lautstärke-Poti**: D0 (ADC1); **Helligkeits-Poti**: D1 (ADC1, nach Rework von D5)
+- **Lüfter**: PWM=D6, Tacho=D8
 
 ## Entwicklungs-Workflow
 
 ### Code-Standards
 
-- Alle Zustandsvariablen MÜSSEN volatile deklariert sein, wenn in Interrupts verwendet
+- Alle Zustandsvariablen MÜSSEN volatile deklariert sein, wenn in Interrupts/Timer-Callbacks verwendet
 - Magic Numbers MÜSSEN durch benannte Konstanten ersetzt werden
 - Globale Variablen MÜSSEN minimiert und klar dokumentiert sein
-- Timer-Interrupts MÜSSEN korrekt konfiguriert und dokumentiert sein
+- Timer-Interrupts/esp_timer-Callbacks MÜSSEN korrekt konfiguriert und dokumentiert sein
 
 ### Test-Workflow
 
@@ -177,7 +176,7 @@ Code und Hardware MÜSSEN vollständig dokumentiert sein.
 
 ### Review-Anforderungen
 
-- Code-Reviews MÜSSEN Pin-Belegungen gegen `/Schaltung/Schaltplan.pdf` prüfen
+- Code-Reviews MÜSSEN Pin-Belegungen gegen den KiCad-Schaltplan der jeweiligen Hardware-Generation prüfen (V3: `Schaltung_v3/BogenampelV3/`)
 - Code-Kommentare MÜSSEN Connector-Bezeichner aus dem Schaltplan referenzieren (z.B. "// J9: WS2812B Stripe Timer")
 - Alle Änderungen an Zustandsmaschine MÜSSEN State-Diagramm-Updates beinhalten
 - Stromverbrauchsänderungen MÜSSEN neu gemessen werden
@@ -211,7 +210,8 @@ Code und Hardware MÜSSEN vollständig dokumentiert sein.
 
 Für detaillierte Implementierungsrichtlinien siehe:
 - **README.md**: Projektübersicht und Funktionsbeschreibung
-- **/Schaltung/Schaltplan.pdf**: Autoritative Hardware-Pin-Belegungen (KiCad)
-- **/Schaltung/**: Vollständiges KiCad-Projekt für Hardware-Modifikationen
+- **Schaltung_v3/BogenampelV3/**: Autoritative Hardware-Pin-Belegungen V3 (KiCad)
+- **specs/004-v3-esp32-port/contracts/hardware-pins.md**: Eingefrorener Pin-Contract V3
+- **/Schaltung/**: KiCad-Projekt der eingefrorenen V2-Hardware
 
-**Version**: 1.1.0 | **Ratifiziert**: 2025-12-04 | **Zuletzt geändert**: 2025-12-04
+**Version**: 2.2.0 | **Ratifiziert**: 2025-12-04 | **Zuletzt geändert**: 2026-06-11

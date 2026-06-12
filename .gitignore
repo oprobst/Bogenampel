@@ -3,6 +3,23 @@ Schaltung/fp-info-cache
 Schaltung/Bogenampel-backups/*
 Schaltung/**/*.*-bak
 
+Schaltung_v3/**/*.lck
+Schaltung_v3/**/fp-info-cache
+Schaltung_v3/**/*-backups/
+Schaltung_v3/**/*.*-bak
+
+# PlatformIO (V3-Firmware)
+.pio/
+SenderV3/.pio/
+EmpfaengerV3/.pio/
+
+# KiCad temporäre Dateien
+Schaltung_v3/**/*.recovered.*.kicad_pcb
+
+# WiFi-Zugangsdaten (lokal, nicht einchecken)
+wifi_credentials.h
+**/.vscode/
+
 .claude/sessions/
 .claude/cache/
 .claude/.env
