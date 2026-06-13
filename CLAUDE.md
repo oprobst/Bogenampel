@@ -18,6 +18,8 @@ Bogenampel ist eine funkgesteuerte Timer-Anzeige für Bogenschießplätze.
 ## Active Technologies
 - C++ (Arduino core for ESP32 / arduino-esp32 3.x, C++17; V2 logic is C++11 and ports without changes) (004-v3-esp32-port)
 - ESP32 NVS via `Preferences` (replaces AVR EEPROM), namespace `bogenampel` (004-v3-esp32-port)
+- C++17, Arduino core for ESP32 (arduino-esp32 3.3.7) + WiFi, ArduinoOTA, ESPmDNS (Arduino-ESP32 built-ins), FastLED (already used); ESP-NOW via `esp_now`/`esp_wifi` (normal path only) (005-ota-maintenance-mode)
+- N/A — no new persistence. WiFi credentials remain compile-time (`wifi_credentials.h`, gitignored); no NVS changes. (005-ota-maintenance-mode)
 
 - **C++** (V3: arduino-esp32/PlatformIO; V2-Legacy: Arduino Nano, C++11)
 - **Libraries**:
@@ -125,13 +127,12 @@ Verbindlich: `specs/004-v3-esp32-port/contracts/hardware-pins.md` (aus KiCad-Net
 - Empfänger: NRF24 CE=D9/CSN=D8; LED-Strip D3; Buzzer D4; Debug D7/D2; Status-LEDs A2-A4
 
 ## Recent Changes
+- 005-ota-maintenance-mode: Added C++17, Arduino core for ESP32 (arduino-esp32 3.3.7) + WiFi, ArduinoOTA, ESPmDNS (Arduino-ESP32 built-ins), FastLED (already used); ESP-NOW via `esp_now`/`esp_wifi` (normal path only)
 - 2026-06-11: **V3-Firmware implementiert** (`SenderV3/`, `EmpfaengerV3/`): ESP-NOW-Transport,
   e-Paper-UI, Soft-Power, NVS, Lokalregler — beide Firmwares bauen mit PlatformIO
   (arduino-esp32 3.3.7); HIL-Abnahme offen (quickstart.md #1-#21)
 - 004-v3-esp32-port: Added C++ (Arduino core for ESP32 / arduino-esp32 3.x, C++17; V2 logic is C++11 and ports without changes)
 
-- 2025-12-25: Dokumentation aktualisiert (README, HARDWARE, Sender/README)
-- 2025-12-22: Alarm-System mit Pfeiltasten-Trigger implementiert
 
 <!-- MANUAL ADDITIONS START -->
 Kommunikationssprache ist deutsch, informell und immer per Du

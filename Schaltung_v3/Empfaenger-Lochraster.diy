@@ -884,6 +884,21 @@
       <holeSpacing value="0.1" unit="in"/>
       <point x="2.5" y="3.1"/>
     </diylc.connectivity.TraceCut>
+    <diylc.connectivity.TraceCut>
+      <id>69e8646b-bbfb-490f-ba77-2f46063082bd</id>
+      <name>Cut24</name>
+      <alphaPercent>
+        <value>100</value>
+      </alphaPercent>
+      <size value="0.08" unit="in"/>
+      <fillColor hex="ffffff"/>
+      <borderColor hex="ff0000"/>
+      <boardColor hex="f8ebb3"/>
+      <cutBetweenHoles>false</cutBetweenHoles>
+      <orientation>VERTICAL</orientation>
+      <holeSpacing value="0.1" unit="in"/>
+      <point x="2.3" y="3.0"/>
+    </diylc.connectivity.TraceCut>
     <diylc.electromechanical.PinHeader>
       <id>e52cf2db-6293-4297-8254-6763b48e3629</id>
       <name>PH1</name>

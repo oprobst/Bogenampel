@@ -24,9 +24,10 @@ RadioManager::RadioManager()
 bool RadioManager::begin() {
     instance = this;
 
-    // WLAN in AP_STA-Modus, fester Kanal (R-3); AP_STA erlaubt SoftAP (OTA) und
-    // ESP-NOW gleichzeitig auf Kanal 1
-    WiFi.mode(WIFI_AP_STA);
+    // WLAN reiner STA-Modus, fester Kanal 1 für ESP-NOW (R-3). Kein AP_STA/SoftAP
+    // mehr: OTA läuft im separaten Wartungsmodus (Taster beim Boot), nie parallel
+    // zu ESP-NOW (Single-Radio-Kanalkonflikt, FR-006).
+    WiFi.mode(WIFI_STA);
     esp_wifi_set_channel(Radio::CHANNEL, WIFI_SECOND_CHAN_NONE);
 
     if (esp_now_init() != ESP_OK) {

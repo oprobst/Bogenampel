@@ -96,7 +96,7 @@ constexpr uint8_t STATUS_LED_ON  = LOW;
 constexpr uint8_t STATUS_LED_OFF = HIGH;
 
 //=============================================================================
-// OTA (WiFi SoftAP + ArduinoOTA)
+// OTA (WiFi-Station + ArduinoOTA, nur im OTA-Wartungsmodus)
 //=============================================================================
 
 // wifi_credentials.h (gitignored) definiert WIFI_SSID_OVERRIDE + WIFI_PASS_OVERRIDE.
@@ -108,13 +108,12 @@ constexpr uint8_t STATUS_LED_OFF = HIGH;
 namespace OTA {
 
     constexpr const char* HOSTNAME = "bogenampel-empfaenger";
-    constexpr const char* AP_SSID  = "Bogenampel-Empfaenger";
-    // AP/OTA-Passwort (WPA2, min. 8 Zeichen)
+    // OTA-Passwort (WPA2, min. 8 Zeichen) — ArduinoOTA-Auth (FR-012)
     constexpr const char* PASSWORD = "bogenampel";
 
-    // Heimnetz-WLAN für OTA — aus wifi_credentials.h, sonst SoftAP-Fallback.
-    // Kanal-Hinweis: ESP-NOW läuft auf Kanal 1; wenn der Router einen anderen
-    // Kanal verwendet, ist ESP-NOW während des OTA-Flashens nicht aktiv.
+    // Heimnetz-WLAN für den OTA-Wartungsmodus — aus wifi_credentials.h. Ohne
+    // Zugangsdaten bleibt das Gerät im Wartungsmodus im CONNECTING-Blinken
+    // (kein SoftAP-Fallback mehr, FR-009). ESP-NOW läuft im Wartungsmodus nicht.
 #ifdef WIFI_SSID_OVERRIDE
     constexpr const char* WIFI_SSID = WIFI_SSID_OVERRIDE;
     constexpr const char* WIFI_PASS = WIFI_PASS_OVERRIDE;
@@ -122,9 +121,28 @@ namespace OTA {
     constexpr const char* WIFI_SSID = "";
     constexpr const char* WIFI_PASS = "";
 #endif
-    constexpr uint16_t WIFI_TIMEOUT = 10000;  // ms bis Fallback auf SoftAP
+    constexpr uint16_t WIFI_TIMEOUT = 10000;  // ms bis zum erneuten WiFi-Connect-Versuch (OTA-Wartungsmodus)
 
 } // namespace OTA
+
+//=============================================================================
+// OTA-WARTUNGSMODUS — Status-LED-Signalmuster (D9, aktiv LOW)
+// Drei unterscheidbare Muster, alle Zeiten sind Zielwerte (±~50 ms Toleranz):
+//   CONNECTING (FR-004a): schnelles kurzes Blitzen      (100 ms an / 500 ms aus)
+//   READY      (FR-004b): langsames gleichmäßiges Blinken (500 ms an / 500 ms aus)
+//   UPDATING   (FR-004c): leuchtet, alle 500 ms kurz aus  (500 ms an / 100 ms aus)
+//=============================================================================
+
+namespace OtaSignal {
+
+    constexpr uint16_t CONNECTING_PERIOD_MS = 600;   // FR-004a
+    constexpr uint16_t CONNECTING_ON_MS     = 100;
+    constexpr uint16_t READY_PERIOD_MS      = 1000;  // FR-004b
+    constexpr uint16_t READY_ON_MS          = 500;
+    constexpr uint16_t UPDATING_PERIOD_MS   = 600;   // FR-004c
+    constexpr uint16_t UPDATING_ON_MS       = 500;
+
+} // namespace OtaSignal
 
 //=============================================================================
 // FUNK (ESP-NOW)

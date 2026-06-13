@@ -52,6 +52,17 @@ void checkButton();
 void updatePreparation();
 void updateTimer();
 
+// Boot-Modus (FR-001): einmal beim Start entschieden, danach fix (FR-007).
+//   true  = OTA-Wartungsmodus (Taster D7 beim Boot gehalten): WiFi + ArduinoOTA,
+//           KEIN ESP-NOW, kein Timer (FR-002).
+//   false = Normalbetrieb (ESP-NOW), KEIN WiFi/AP (FR-005).
+bool bootOtaMode = false;
+bool readOtaModeButton();
+void setupNormal();
+void setupOta();
+void loopNormal();
+void loopOta();
+
 // State-Variablen
 uint8_t lastButtonReading = HIGH;  // Letzter gelesener Pin-Zustand
 uint8_t buttonState = HIGH;        // Stabiler Button-Zustand nach Debouncing
@@ -81,6 +92,7 @@ uint32_t alarmLastToggle = 0;      // Zeitpunkt der letzten Umschaltung
 // Lokalregler (Potis, US4)
 uint32_t lastPotiUpdate = 0;       // Zeitpunkt der letzten Poti-Messung
 uint8_t currentBrightness = LEDStrip::BRIGHTNESS_MAX;  // Aktuelle Helligkeit
+uint8_t lastVolumeDuty = 0;        // Letzter Lautstärke-Duty (für Feedback-Erkennung)
 
 // Status-LED (D9, aktiv LOW): an = bereit, kurzes Aus-Blinken bei Frame-Empfang
 uint32_t lastFrameCount = 0;       // Letzter Stand des Frame-Zählers
@@ -102,6 +114,8 @@ void onSecondTick(void* /*arg*/) {
 //=============================================================================
 
 void setup() {
+    // ----- Gemeinsamer, hardware-sicherer Frühstart (BEIDE Modi) -----
+
     // FRÜH: Poti-Fußpunkt aktivieren (Strapping-Fix Befund 2) — D4 war beim
     // Reset hochohmig, damit GPIO2 HIGH bootet; ab jetzt arbeitet der
     // Lautstärke-Poti-Teiler normal
@@ -109,12 +123,17 @@ void setup() {
     digitalWrite(Pins::POTI_GND, LOW);
 
     // FRÜH: Lüfter-PWM übernehmen (R5-Pull-up hielt die PWM-Leitung LOW →
-    // Lüfter lief bis jetzt auf Minimaldrehzahl, Befund 6)
+    // Lüfter lief bis jetzt auf Minimaldrehzahl, Befund 6). Auch im
+    // OTA-Wartungsmodus nötig (Hardware-Safety, Constitution III).
     fan.begin();
 
-    // Status-LED (aktiv LOW): erst mal aus, "bereit" kommt am Ende von setup()
+    // Status-LED (D9, aktiv LOW): erst mal aus
     pinMode(Pins::STATUS_LED, OUTPUT);
     digitalWrite(Pins::STATUS_LED, STATUS_LED_OFF);
+
+    // Debug-Taster (J5, D7, INPUT_PULLUP, aktiv LOW) — wird gleich für die
+    // Boot-Modus-Entscheidung gelesen
+    pinMode(Pins::BTN_DEBUG, INPUT_PULLUP);
 
     // Serial für Debugging
     #if DEBUG_ENABLED
@@ -127,9 +146,41 @@ void setup() {
     DEBUG_PRINTF("Build: %s %s\n", __DATE__, __TIME__);
     #endif
 
-    // Debug-Taster als Eingang mit Pull-Up
-    pinMode(Pins::BTN_DEBUG, INPUT_PULLUP);
+    // ----- Boot-Modus-Entscheidung (FR-001): genau einmal, hier -----
+    bootOtaMode = readOtaModeButton();
 
+    if (bootOtaMode) {
+        DEBUG_PRINTLN("Boot-Modus: OTA-WARTUNG (Taster gehalten)");
+        setupOta();
+    } else {
+        DEBUG_PRINTLN("Boot-Modus: Normalbetrieb");
+        setupNormal();
+    }
+}
+
+/**
+ * @brief Liest den Debug-Taster (J5/D7, aktiv LOW) entprellt beim Boot.
+ *
+ * Verlangt stabiles LOW über mehrere Abtastungen (~25 ms), damit ein einzelner
+ * Störimpuls die Boot-Entscheidung nicht kippt (SC-001).
+ * @return true, wenn der Taster stabil gedrückt ist → OTA-Wartungsmodus.
+ */
+bool readOtaModeButton() {
+    constexpr uint8_t SAMPLES = 5;
+    for (uint8_t i = 0; i < SAMPLES; i++) {
+        if (digitalRead(Pins::BTN_DEBUG) != LOW) {
+            return false;  // einmal nicht gedrückt → Normalbetrieb
+        }
+        delay(5);
+    }
+    return true;  // ~25 ms stabil LOW
+}
+
+/**
+ * @brief Normalbetrieb-Setup: ESP-NOW + Timer/Anzeige (FR-005/FR-006).
+ *        KEIN WiFi, KEIN SoftAP, kein ArduinoOTA.
+ */
+void setupNormal() {
     // Buzzer initialisieren (LEDC, stumm — R4-Basis-Pulldown hält den BC337
     // schon beim Boot gesperrt)
     buzzer.begin();
@@ -153,7 +204,7 @@ void setup() {
     // Regenbogen-Effekt beim Start zeigen
     showRainbowEffect();
 
-    // ESP-NOW initialisieren
+    // ESP-NOW initialisieren (KEIN WiFi-Join, KEIN SoftAP — FR-005/FR-006)
     DEBUG_PRINTLN("Initialisiere ESP-NOW...");
     if (!radio.begin()) {
         DEBUG_PRINTLN("FEHLER: ESP-NOW init fehlgeschlagen!");
@@ -165,9 +216,6 @@ void setup() {
             delay(100);
         }
     }
-
-    // OTA-SoftAP starten (nach radio.begin, WiFi ist bereits im AP_STA-Modus)
-    OTAManager::begin();
 
     // 1-Hz-Zeitbasis starten (esp_timer, R-7)
     const esp_timer_create_args_t timerArgs = {
@@ -187,14 +235,50 @@ void setup() {
     DEBUG_PRINTLN("Warte auf Kommandos vom Sender...");
 }
 
+/**
+ * @brief OTA-Wartungsmodus-Setup: reiner WiFi-Station-Betrieb + ArduinoOTA
+ *        (FR-002/FR-003). KEIN ESP-NOW, kein Timer, kein Regenbogen/Buzzer.
+ *        Die große LED-Anzeige bleibt dunkel; die Status-LED (D9) signalisiert
+ *        den Zustand (OTAManager, FR-004a-c).
+ */
+void setupOta() {
+    // Große Anzeige im Wartungsmodus dunkel halten (nur Status-LED + Netzwerk aktiv)
+    FastLED.addLeds<WS2812, Pins::LED_STRIP, GRB>(leds, LEDStrip::TOTAL_LEDS);
+    FastLED.clear(true);  // löschen + anzeigen (alle aus)
+
+    // WiFi-Station + ArduinoOTA (kein SoftAP, kein ESP-NOW)
+    OTAManager::begin();
+}
+
 //=============================================================================
 // Loop
 //=============================================================================
 
 void loop() {
-    // OTA bedienen (muss vor allem anderen laufen, damit der Upload nicht abbricht)
-    OTAManager::handle();
+    // Boot-Modus-Fork (FR-001/FR-007): genau einer der beiden Pfade läuft
+    if (bootOtaMode) {
+        loopOta();
+    } else {
+        loopNormal();
+    }
+}
 
+/**
+ * @brief OTA-Wartungsmodus-Loop: ausschließlich OTA bedienen (FR-002).
+ *
+ * OTAManager::handle() erledigt WiFi-Reconnect-Retry, ArduinoOTA und das
+ * Status-LED-Signal (FR-004a-c). KEIN delay() hier, damit ArduinoOTA.handle()
+ * den laufenden Flash nicht aushungert (FR-004c läuft währenddessen).
+ */
+void loopOta() {
+    OTAManager::handle();
+}
+
+/**
+ * @brief Normalbetrieb-Loop: ESP-NOW + Timer/Anzeige (unverändert aus V2).
+ *        Es wird KEIN OTAManager::handle() aufgerufen (FR-006).
+ */
+void loopNormal() {
     // Discovery-Antworten bedienen (FT_HELLO → FT_HELLO_ACK)
     radio.update();
 
@@ -315,6 +399,16 @@ void updatePotis() {
         (uint8_t)((rawVol * rawVol * (uint32_t)(BuzzerManager::DUTY_MAX - BuzzerManager::DUTY_MIN))
                   / (4095UL * 4095UL));
     buzzer.setVolume(duty);
+
+    // Lautstärke-Feedback: 3 Pieptöne wenn Poti bewegt wurde (Hysterese 4 Stufen,
+    // nur wenn kein anderes Signal läuft — nicht unterbrechen)
+    uint8_t delta = (duty > lastVolumeDuty) ? duty - lastVolumeDuty : lastVolumeDuty - duty;
+    if (delta >= 4 && !buzzer.isActive()) {
+        buzzer.beep(3);
+    }
+    if (delta >= 4) {
+        lastVolumeDuty = duty;
+    }
 
     // --- Helligkeit (D1, linear 25-100 %) ---
     uint16_t rawBright = analogRead(Pins::BRIGHTNESS_POTI);
