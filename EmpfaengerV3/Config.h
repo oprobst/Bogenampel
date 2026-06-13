@@ -242,10 +242,8 @@ namespace LEDStrip {
 
 namespace Fan {
 
-    constexpr uint32_t PWM_FREQUENCY_HZ = 1000;   // 1 kHz: 25 kHz kam über den Open-Drain
-                                                  // (2N7002) am 4-Draht-Lüfter nicht sauber an
-                                                  // (keine Drehzahländerung). PWM-Pin ist nur ein
-                                                  // Logik-Eingang → kein Pfeifen. Bei Bedarf tunbar.
+    constexpr uint32_t PWM_FREQUENCY_HZ = 25000;  // ≥ 25 kHz (4-Draht-Lüfter-Spec,
+                                                  // außerhalb des Hörbereichs)
     constexpr uint8_t PWM_RESOLUTION_BITS = 8;    // Duty 0-255
 
     // Lüfter-Poti (D2) verpolt → in Software invertiert (ADC klein = volle Drehzahl).
