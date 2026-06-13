@@ -386,18 +386,27 @@ void checkButton() {
 /**
  * @brief Liest Lautstärke- und Helligkeits-Poti und wendet die Werte live an
  *
- * Lautstärke: quadratische (wahrnehmungsfreundliche) Kennlinie → LEDC-Duty
- * 0…50 % mit hörbarem Minimum (R-9). Helligkeit: linear 25-100 % wie V2.
+ * Lautstärke: Poti verpolt → in Software invertiert (ADC klein = laut, groß = aus).
+ * Quadratische Kennlinie über den invertierten Wert; ab Volume::OFF_THRESHOLD stumm.
+ * Helligkeit: linear 25-100 % wie V2.
  */
 void updatePotis() {
     if (millis() - lastPotiUpdate < Timing::POTI_UPDATE_INTERVAL_MS && lastPotiUpdate != 0) return;
     lastPotiUpdate = millis();
 
-    // --- Lautstärke (D0, quadratische Kurve) ---
+    // --- Lautstärke (D0) — Poti verpolt: ADC klein = laut, ADC groß = aus.
+    // Quadratische Kennlinie über den INVERTIERTEN Rohwert (gleiche Steilheit wie
+    // bisher); ab Volume::OFF_THRESHOLD (nahe Maximum) komplett stumm (duty 0).
     uint32_t rawVol = analogRead(Pins::VOLUME_POTI);
-    uint8_t duty = BuzzerManager::DUTY_MIN +
-        (uint8_t)((rawVol * rawVol * (uint32_t)(BuzzerManager::DUTY_MAX - BuzzerManager::DUTY_MIN))
-                  / (4095UL * 4095UL));
+    uint8_t duty;
+    if (rawVol >= Volume::OFF_THRESHOLD) {
+        duty = 0;  // Poti am Maximum → Buzzer aus
+    } else {
+        uint32_t inv = (uint32_t)Volume::OFF_THRESHOLD - rawVol;  // groß = laut, 0 = leise
+        duty = BuzzerManager::DUTY_MIN +
+            (uint8_t)((inv * inv * (uint32_t)(BuzzerManager::DUTY_MAX - BuzzerManager::DUTY_MIN))
+                      / ((uint32_t)Volume::OFF_THRESHOLD * Volume::OFF_THRESHOLD));
+    }
     buzzer.setVolume(duty);
 
     // Lautstärke-Feedback: 3 Pieptöne wenn Poti bewegt wurde (Hysterese 4 Stufen,
@@ -410,9 +419,9 @@ void updatePotis() {
         lastVolumeDuty = duty;
     }
 
-    // --- Helligkeit (D1, linear 25-100 %) ---
+    // --- Helligkeit (D1, linear 15-100 %, Poti verpolt → invertiert: ADC klein = hell) ---
     uint16_t rawBright = analogRead(Pins::BRIGHTNESS_POTI);
-    uint8_t newBrightness = map(rawBright, 0, 4095, LEDStrip::BRIGHTNESS_MIN, LEDStrip::BRIGHTNESS_MAX);
+    uint8_t newBrightness = map(rawBright, 0, 4095, LEDStrip::BRIGHTNESS_MAX, LEDStrip::BRIGHTNESS_MIN);
 
     // Nur aktualisieren wenn sich Helligkeit signifikant geändert hat (Hysterese)
     if (abs((int)newBrightness - (int)currentBrightness) > 3) {

@@ -50,9 +50,12 @@ void BuzzerManager::setTone(bool on) {
 }
 
 void BuzzerManager::setVolume(uint8_t duty) {
-    // Begrenzen auf hörbares Minimum bis 50 % Duty (FR-021)
-    if (duty < DUTY_MIN) duty = DUTY_MIN;
-    if (duty > DUTY_MAX) duty = DUTY_MAX;
+    // 0 = komplett stumm (Poti am "Aus"-Ende); sonst auf hörbares Fenster
+    // DUTY_MIN…50 % Duty begrenzen (FR-021)
+    if (duty != 0) {
+        if (duty < DUTY_MIN) duty = DUTY_MIN;
+        if (duty > DUTY_MAX) duty = DUTY_MAX;
+    }
     volumeDuty = duty;
 
     // Lautstärke wirkt live, auch während eines laufenden Tons

@@ -44,12 +44,14 @@ void FanManager::update() {
 }
 
 void FanManager::applyPotiValue() {
-    // Poti-Wert lesen (0-4095) und INVERTIERT auf den Gate-Duty abbilden:
-    // Q2 ist Open-Drain-Treiber auf der PWM-Leitung — Gate HIGH zieht die
-    // Leitung LOW (Lüfter langsam). Poti rechts (4095) → Gate-Duty 0 →
-    // PWM-Leitung HIGH → volle Drehzahl.
+    // Poti verpolt → invertiert auf den Gate-Duty (Q2 Open-Drain: Gate HIGH zieht
+    // die PWM-Leitung LOW = Lüfter langsam). Poti am ADC-Minimum (0) = volle
+    // Drehzahl (Gate-Duty 0 → Leitung HIGH). Ab Fan::OFF_THRESHOLD (nahe Maximum)
+    // Lüfter aus (Gate-Duty 255 → Leitung dauerhaft LOW; bei 4-Draht-Lüftern nur
+    // Minimaldrehzahl, da PWM 0 % nicht vollständig stoppt).
     uint16_t raw = analogRead(potiPin);
-    uint8_t newDuty = (uint8_t)map(raw, 0, 4095, 255, 0);
+    uint16_t clamped = (raw > Fan::OFF_THRESHOLD) ? Fan::OFF_THRESHOLD : raw;
+    uint8_t newDuty = (uint8_t)map(clamped, 0, Fan::OFF_THRESHOLD, 0, 255);
 
     // Kleine Hysterese gegen ADC-Rauschen
     if (newDuty != duty && (newDuty > duty ? newDuty - duty : duty - newDuty) >= 2) {

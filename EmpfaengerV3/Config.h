@@ -64,7 +64,10 @@ namespace Pins {
     // Ausgänge: Signalgeber und Lüfter
     //-------------------------------------------------------------------------
     constexpr uint8_t BUZZER  = 5;   // D3/GPIO5 (LEDC): Piezo 12V-Transducer (J6) über
-                                     // R3 2k2 → BC337 (Q1), R4 10k Basis-Pulldown
+                                     // R3 2k2 → BC337 (Q1), R4 10k Basis-Pulldown;
+                                     // R8 470Ω parallel zum Piezo (Entlade-Pfad am Collector —
+                                     // ohne den schwingt der Piezo nicht, nur Brummen; 470Ω
+                                     // für max. Lautstärke, ~25 mA → 0,5-W-Typ)
                                      // (GPIO5 ist ADC2, wird aber rein digital genutzt)
     constexpr uint8_t FAN_PWM = 21;  // D6/GPIO21 (LEDC): Gate des 2N7002 (Q2, J9);
                                      // Q2 invertiert (Open-Drain auf der PWM-Leitung):
@@ -179,6 +182,19 @@ namespace Timing {
 } // namespace Timing
 
 //=============================================================================
+// LAUTSTÄRKE-POTI (D0) — verpolt verbaut, in Software invertiert
+//=============================================================================
+
+namespace Volume {
+
+    // ESP32-C3-ADC ist 12-bit (0…4095). Ab diesem Rohwert (nahe Maximum) ist der
+    // Buzzer KOMPLETT STUMM; darunter quadratische Kennlinie bis volle Lautstärke
+    // bei ADC = 0. (Poti verpolt → Invertierung in updatePotis().)
+    constexpr uint16_t OFF_THRESHOLD = 4000;  // nahe Maximum (4095)
+
+} // namespace Volume
+
+//=============================================================================
 // LED STRIP KONFIGURATION (WS2812B, unverändert aus V2)
 //=============================================================================
 
@@ -212,10 +228,10 @@ namespace LEDStrip {
     constexpr uint8_t DIGIT_10_START = DIGIT_START + LEDS_PER_DIGIT;            // 10er-Stelle (mitte)
     constexpr uint8_t DIGIT_100_START = DIGIT_START + (2 * LEDS_PER_DIGIT);     // 100er-Stelle (rechts)
 
-    // Helligkeitsbereich für Poti-Steuerung (25% - 100%, FR-022)
+    // Helligkeitsbereich für Poti-Steuerung (15% - 100%, FR-022)
     // Hinweis: kein BRIGHTNESS_DEBUG-Deckel mehr — der Strip wird in V3 immer
     // extern versorgt (5V/12V per Jumper), nie über USB (Constitution v2.1.0)
-    constexpr uint8_t BRIGHTNESS_MIN = 64;      // 25% Helligkeit (Poti links)
+    constexpr uint8_t BRIGHTNESS_MIN = 38;      // 15% Helligkeit (weiter herunterdimmbar)
     constexpr uint8_t BRIGHTNESS_MAX = 255;     // 100% Helligkeit (Poti rechts)
 
 } // namespace LEDStrip
@@ -226,8 +242,16 @@ namespace LEDStrip {
 
 namespace Fan {
 
-    constexpr uint32_t PWM_FREQUENCY_HZ = 25000;  // ≥ 25 kHz (außerhalb des Hörbereichs)
+    constexpr uint32_t PWM_FREQUENCY_HZ = 1000;   // 1 kHz: 25 kHz kam über den Open-Drain
+                                                  // (2N7002) am 4-Draht-Lüfter nicht sauber an
+                                                  // (keine Drehzahländerung). PWM-Pin ist nur ein
+                                                  // Logik-Eingang → kein Pfeifen. Bei Bedarf tunbar.
     constexpr uint8_t PWM_RESOLUTION_BITS = 8;    // Duty 0-255
+
+    // Lüfter-Poti (D2) verpolt → in Software invertiert (ADC klein = volle Drehzahl).
+    // Ab diesem Rohwert (nahe Maximum) Lüfter aus (bzw. Minimaldrehzahl bei 4-Draht-
+    // Lüftern, die per PWM nicht vollständig stoppen).
+    constexpr uint16_t OFF_THRESHOLD = 4000;
 
 } // namespace Fan
 

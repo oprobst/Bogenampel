@@ -4,7 +4,9 @@
  *
  * NEU in V3: Der Gehäuselüfter hängt über einen 2N7002 (Q2, Low-Side) an D6;
  * die Drehzahl folgt dem Lüfter-Poti an D2 (GPIO4, ADC1_CH4).
- * - PWM-Frequenz ≥ 25 kHz (außerhalb des Hörbereichs, Lüfter pfeift nicht)
+ * - PWM-Frequenz 1 kHz: 25 kHz kam über den Open-Drain-Treiber am 4-Draht-
+ *   Lüfter nicht sauber an (keine Drehzahländerung). Der PWM-Pin ist nur ein
+ *   Logik-Eingang → kein Pfeifen trotz hörbarer Frequenz.
  * - Kein Tacho: bewusst nicht angeschlossen (Low-Side-PWM zerhackt das
  *   Open-Collector-Signal; D8/GPIO8 ist Strapping-Pin)
  * - R5 ist Gate-Pull-up an 3V3 → Lüfter läuft hardware-default voll, bis die
