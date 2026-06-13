@@ -56,7 +56,7 @@ running ArduinoOTA).
 | 6 | After flash | Device reboots; button released → normal operation | FR-008 |
 | 7 | In OTA mode, disable the AP / wrong credentials | Stays in maintenance mode, keeps fast flash, never opens own AP, never starts ESP-NOW | FR-009 |
 | 8 | Interrupt a transfer (cancel upload mid-way) | Old firmware still runs; device still reachable in maintenance mode | FR-010 |
-| 9 | Attempt OTA with wrong password | Rejected | FR-012 |
+| 9 | Confirm OTA mode is unreachable without the button | A normal boot (no button) never joins WiFi / answers OTA; access requires the physical button-at-boot gate (no network password) | FR-012 |
 
 ## Build sanity
 

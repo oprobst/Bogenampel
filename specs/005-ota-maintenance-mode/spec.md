@@ -133,7 +133,7 @@ pattern; confirm normal operation never produces that same pattern.
 - **FR-002**: When the button is held at startup, the receiver MUST enter OTA maintenance mode and
   MUST NOT start normal timer/display operation and MUST NOT start the ESP-NOW radio link.
 - **FR-003**: In OTA maintenance mode, the receiver MUST join the configured home WiFi network and
-  MUST become reachable for an authenticated over-the-air firmware update.
+  MUST become reachable for an over-the-air firmware update.
 - **FR-004**: In OTA maintenance mode, the receiver MUST continuously signal its sub-state with the
   status LED (D9, active-low) using three distinct, recognizable patterns (timings are target values; small
   tolerance is acceptable):
@@ -158,8 +158,11 @@ pattern; confirm normal operation never produces that same pattern.
   failed transfer leaves the device able to boot the previously working firmware.
 - **FR-011**: The OTA-mode blink pattern MUST be visually distinct from the normal "ready"
   indication and from the brief receive-blink used in normal operation.
-- **FR-012**: The OTA update MUST require the configured authentication so that an unauthorized
-  party on the network cannot flash the device.
+- **FR-012**: Access to OTA maintenance mode MUST be gated by **physical access**: it is reachable
+  only by holding the button during boot (FR-002). This button-at-boot gate is the security control;
+  the firmware therefore does NOT require a network OTA password. (Rationale: the ArduinoOTA password
+  hash is incompatible with the PlatformIO flash tool, and a person able to power-cycle the device
+  while holding the button already has physical access. See research R7.)
 
 ### Key Entities
 

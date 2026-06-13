@@ -109,3 +109,24 @@ the next maintainer from misdiagnosing it as a bootloader/connect problem.
 
 **Alternatives considered**: Enabling Windows long-path / changing console codepage globally —
 rejected as environment-specific; the per-invocation env var is the minimal reliable fix.
+
+## R7 — No OTA password; physical button-at-boot is the access gate (FR-012)
+
+**Decision**: Do not set an ArduinoOTA password. OTA maintenance mode is reachable only by holding
+the button while powering on, so physical access is the security control.
+
+**Rationale**: Two findings during bring-up:
+1. With `ArduinoOTA.setPassword(...)`, the espota handshake reproducibly failed at
+   `Authenticating (PBKDF2-HMAC-SHA256)... No response from device` — the device silently rejected
+   the auth. The ArduinoOTA password hashing in arduino-esp32 3.3.7 is incompatible with the espota.py
+   bundled in PlatformIO (tool-esptoolpy 5.1.2). Removing the password makes the handshake succeed.
+2. Anyone who can power-cycle the receiver while holding its button already has physical access, so a
+   network password adds little over the physical gate for this device.
+
+The flash itself was ultimately confirmed working once a **firewall on the flashing host/path was
+adjusted** — the earlier "No response" at the invitation/transfer stage over the routed LAN↔WLAN
+path was a firewall block, not a firmware fault.
+
+**Alternatives considered**: (a) Find a matching espota.py / downgrade — rejected as brittle tool
+coupling. (b) Custom auth over the OTA channel — rejected as unjustified complexity for a
+physically-gated maintenance mode.

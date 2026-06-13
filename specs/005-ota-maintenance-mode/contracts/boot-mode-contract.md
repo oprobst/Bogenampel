@@ -40,15 +40,15 @@ When `bootOtaMode == true`, the receiver MUST:
   or the poti loops.
 - Set the radio to `WIFI_STA` (station only — no access point) and join the configured home network
   using the compile-time credentials, with auto-reconnect and indefinite retry (no SoftAP fallback).
-- Start ArduinoOTA with the configured hostname and password; the OTA endpoint MUST require that
-  password (reject unauthenticated flashes).
+- Start ArduinoOTA with the configured hostname. No network OTA password is set — access is gated by
+  the physical button-at-boot requirement instead (FR-012).
 - Drive the status LED via the OTA LED contract (see `ota-led-signal-contract.md`).
 - Remain in this mode until reset/power-cycle even if WiFi never connects (keep retrying + keep
   blinking) — it MUST NOT fall through to NORMAL/ESP-NOW.
 
 Observable acceptance: with the button held at power-on, within 20 s under normal network conditions
-the device answers the ArduinoOTA UDP handshake at its assigned IP (SC-002); a full authenticated
-flash succeeds and the device reboots (US1).
+the device answers the ArduinoOTA UDP handshake at its assigned IP (SC-002); a full flash succeeds
+and the device reboots (US1).
 
 ## C4 — Mutual exclusion (FR-006)
 
