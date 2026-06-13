@@ -168,7 +168,10 @@ namespace Timing {
     constexpr uint8_t DEBOUNCE_MS = 50;  // 50ms Entprellzeit
 
     // Buzzer-Feedback
-    constexpr uint16_t BUZZER_FREQUENCY_HZ = 2700;  // Frequenz des Piezo-Tons
+    // Resonanzfrequenz des Transducers (Datenblatt CPS-4013-110PM, rated 3250 Hz):
+    // ein Piezo ist GENAU bei seiner Resonanz am lautesten — daneben (vorher 2700 Hz)
+    // kaum hörbar. Das ist der Lautstärke-Hebel.
+    constexpr uint16_t BUZZER_FREQUENCY_HZ = 3250;
 
     // Poti-Abtastung (alle Regler live, ≥ 10 Hz — FR-021/FR-022/FR-023)
     constexpr uint16_t POTI_UPDATE_INTERVAL_MS = 100;  // 10 Hz

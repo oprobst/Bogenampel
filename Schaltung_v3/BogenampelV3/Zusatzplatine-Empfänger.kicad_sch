@@ -2999,6 +2999,18 @@
 		(uuid "6c4ff063-81cd-4c53-96de-96e890d74a33")
 	)
 	(junction
+		(at 148.59 142.24)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "6fb33943-23c5-4797-b194-ae0cb6b8c698")
+	)
+	(junction
+		(at 139.7 158.75)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "7bd73539-6039-4d6d-abb2-b3ebd69dd5fd")
+	)
+	(junction
 		(at 118.11 125.73)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -3100,6 +3112,16 @@
 	)
 	(wire
 		(pts
+			(xy 139.7 147.32) (xy 139.7 142.24)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "1b6961b5-d887-444c-bdda-9a19b6969d51")
+	)
+	(wire
+		(pts
 			(xy 257.81 100.33) (xy 257.81 90.17)
 		)
 		(stroke
@@ -3160,6 +3182,26 @@
 	)
 	(wire
 		(pts
+			(xy 139.7 142.24) (xy 148.59 142.24)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "2c7471be-07e6-4f56-9ab3-938c4c3595bd")
+	)
+	(wire
+		(pts
+			(xy 139.7 154.94) (xy 139.7 158.75)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "2f00143e-9747-43fb-92cd-8bfafd351c72")
+	)
+	(wire
+		(pts
 			(xy 111.76 125.73) (xy 118.11 125.73)
 		)
 		(stroke
@@ -3210,7 +3252,7 @@
 	)
 	(wire
 		(pts
-			(xy 102.87 158.75) (xy 148.59 158.75)
+			(xy 102.87 158.75) (xy 139.7 158.75)
 		)
 		(stroke
 			(width 0)
@@ -3467,6 +3509,16 @@
 			(type default)
 		)
 		(uuid "725823dd-1cf5-421a-aa4e-8719ce1b2232")
+	)
+	(wire
+		(pts
+			(xy 139.7 158.75) (xy 148.59 158.75)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "75637b87-3b83-42d7-999b-8b10df4ecb43")
 	)
 	(wire
 		(pts
@@ -3890,6 +3942,16 @@
 	)
 	(wire
 		(pts
+			(xy 148.59 142.24) (xy 148.59 156.21)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "df837a62-0e9c-4a35-871b-aa89e89b1d87")
+	)
+	(wire
+		(pts
 			(xy 111.76 93.98) (xy 123.19 93.98)
 		)
 		(stroke
@@ -3900,7 +3962,7 @@
 	)
 	(wire
 		(pts
-			(xy 148.59 118.11) (xy 148.59 156.21)
+			(xy 148.59 118.11) (xy 148.59 142.24)
 		)
 		(stroke
 			(width 0)
@@ -5572,6 +5634,89 @@
 			(project "Zusatzplatine-Empfänger"
 				(path "/2f5e2bd3-24fa-4ddb-a911-7a84d4c0ceae"
 					(reference "#PWR015")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 139.7 151.13 0)
+		(mirror x)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "60ae29b4-c63e-4f65-b935-2254b4e71b74")
+		(property "Reference" "R8"
+			(at 137.16 149.8599 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Value" "470"
+			(at 137.16 152.3999 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Footprint" ""
+			(at 137.922 151.13 90)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 139.7 151.13 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Resistor"
+			(at 139.7 151.13 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "2"
+			(uuid "9551ad60-2041-4dd8-b89a-2101d74df1e5")
+		)
+		(pin "1"
+			(uuid "133e9587-169a-494c-bd47-e89f2e286e16")
+		)
+		(instances
+			(project "Zusatzplatine-Empfänger"
+				(path "/2f5e2bd3-24fa-4ddb-a911-7a84d4c0ceae"
+					(reference "R8")
 					(unit 1)
 				)
 			)

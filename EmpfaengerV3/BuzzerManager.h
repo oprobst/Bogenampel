@@ -5,7 +5,8 @@
  * PORT aus V2 (Empfaenger/BuzzerManager.h): API unverändert (beep/update/stop),
  * intern ersetzt LEDC-PWM das AVR-digitalWrite — V3 treibt einen 12-V-Piezo-
  * Transducer über BC337 (R-9):
- * - Tonfrequenz = LEDC-Frequenz (2,7 kHz wie V2)
+ * - Tonfrequenz = LEDC-Frequenz = Resonanzfrequenz des Transducers
+ *   (Config::BUZZER_FREQUENCY_HZ; am lautesten genau bei Resonanz)
  * - Lautstärke = Duty-Cycle 0…50 % (setVolume, vom Lautstärke-Poti — FR-021)
  */
 
@@ -28,9 +29,9 @@ public:
     /**
      * @brief Konstruktor
      * @param pin GPIO-Pin für Buzzer (LEDC-fähig)
-     * @param frequency Frequenz des Piezo-Tons in Hz (Standard: 2700Hz)
+     * @param frequency Frequenz des Piezo-Tons in Hz = Transducer-Resonanz (Standard: 3250Hz)
      */
-    BuzzerManager(uint8_t pin, uint16_t frequency = 2700);
+    BuzzerManager(uint8_t pin, uint16_t frequency = 3250);
 
     /**
      * @brief Initialisiert den Buzzer (LEDC-Kanal konfigurieren, stumm)
