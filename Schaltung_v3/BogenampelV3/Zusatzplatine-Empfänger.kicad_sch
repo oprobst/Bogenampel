@@ -3016,6 +3016,12 @@
 		(color 0 0 0 0)
 		(uuid "e562a594-7d7a-4e52-a95c-5eca754f1350")
 	)
+	(junction
+		(at 236.22 142.24)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "ffd05889-6d94-431f-aeae-841db6c7a33c")
+	)
 	(no_connect
 		(at 158.75 71.12)
 		(uuid "00c44e3e-c016-4526-a783-df7b202bae76")
@@ -3192,6 +3198,16 @@
 	)
 	(wire
 		(pts
+			(xy 236.22 142.24) (xy 254 142.24)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "2dc181d6-2e38-4f2a-95dd-d452ce0ed8b8")
+	)
+	(wire
+		(pts
 			(xy 139.7 154.94) (xy 139.7 158.75)
 		)
 		(stroke
@@ -3199,6 +3215,16 @@
 			(type default)
 		)
 		(uuid "2f00143e-9747-43fb-92cd-8bfafd351c72")
+	)
+	(wire
+		(pts
+			(xy 236.22 138.43) (xy 236.22 142.24)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "316b8c6c-131c-4a16-a787-6be5ab687ccb")
 	)
 	(wire
 		(pts
@@ -3602,6 +3628,16 @@
 	)
 	(wire
 		(pts
+			(xy 236.22 128.27) (xy 236.22 130.81)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "898a9fa8-8dd8-449c-82b4-cdae333e2906")
+	)
+	(wire
+		(pts
 			(xy 219.71 143.51) (xy 219.71 149.86)
 		)
 		(stroke
@@ -3642,7 +3678,7 @@
 	)
 	(wire
 		(pts
-			(xy 231.14 142.24) (xy 254 142.24)
+			(xy 231.14 142.24) (xy 236.22 142.24)
 		)
 		(stroke
 			(width 0)
@@ -5162,6 +5198,83 @@
 	)
 	(symbol
 		(lib_id "power:+3V3")
+		(at 236.22 128.27 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "4a068044-3c16-44d9-8111-5221bdaccbda")
+		(property "Reference" "#PWR030"
+			(at 236.22 132.08 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "+3V3"
+			(at 240.03 126.492 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 236.22 128.27 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 236.22 128.27 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"+3V3\""
+			(at 236.22 128.27 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "d4af4c1d-781a-4418-9881-2e2754bf34ec")
+		)
+		(instances
+			(project "Zusatzplatine-Empfänger"
+				(path "/2f5e2bd3-24fa-4ddb-a911-7a84d4c0ceae"
+					(reference "#PWR030")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:+3V3")
 		(at 77.47 168.91 0)
 		(unit 1)
 		(body_style 1)
@@ -6515,6 +6628,88 @@
 			(project "Zusatzplatine-Empfänger"
 				(path "/2f5e2bd3-24fa-4ddb-a911-7a84d4c0ceae"
 					(reference "J3")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 236.22 134.62 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "97d2e0c4-e67d-43ee-8fdb-7d566cbd421a")
+		(property "Reference" "R9"
+			(at 238.76 133.3499 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "10k"
+			(at 238.76 135.8899 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" ""
+			(at 234.442 134.62 90)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 236.22 134.62 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Resistor"
+			(at 236.22 134.62 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "2"
+			(uuid "53b7fe9b-0a49-4e2d-b0f1-6e885e53d356")
+		)
+		(pin "1"
+			(uuid "4285d7b8-0baa-4efd-b85b-e475735e0d02")
+		)
+		(instances
+			(project "Zusatzplatine-Empfänger"
+				(path "/2f5e2bd3-24fa-4ddb-a911-7a84d4c0ceae"
+					(reference "R9")
 					(unit 1)
 				)
 			)
