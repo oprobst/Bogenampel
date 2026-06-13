@@ -7,6 +7,7 @@
 #include "Config.h"
 
 #include <esp_arduino_version.h>
+#include <math.h>
 
 namespace {
 #if ESP_ARDUINO_VERSION_MAJOR < 3
@@ -44,14 +45,17 @@ void FanManager::update() {
 }
 
 void FanManager::applyPotiValue() {
-    // Poti verpolt → invertiert auf den Gate-Duty (Q2 Open-Drain: Gate HIGH zieht
-    // die PWM-Leitung LOW = Lüfter langsam). Poti am ADC-Minimum (0) = volle
-    // Drehzahl (Gate-Duty 0 → Leitung HIGH). Ab Fan::OFF_THRESHOLD (nahe Maximum)
-    // Lüfter aus (Gate-Duty 255 → Leitung dauerhaft LOW; bei 4-Draht-Lüftern nur
-    // Minimaldrehzahl, da PWM 0 % nicht vollständig stoppt).
+    // Poti verpolt → invertiert (Q2 Open-Drain: Gate HIGH zieht die PWM-Leitung
+    // LOW = Lüfter langsam). ADC-Minimum = volle Drehzahl; ab Fan::OFF_THRESHOLD
+    // aus. Gamma-Kennlinie (Fan::CURVE_GAMMA < 1) spreizt die gefühlte Drehzahl-
+    // änderung über den Drehweg — sonst beschleunigt der Lüfter fast nur im
+    // obersten PWM-Bereich.
     uint16_t raw = analogRead(potiPin);
     uint16_t clamped = (raw > Fan::OFF_THRESHOLD) ? Fan::OFF_THRESHOLD : raw;
-    uint8_t newDuty = (uint8_t)map(clamped, 0, Fan::OFF_THRESHOLD, 0, 255);
+    // q = Anteil Richtung volle Drehzahl (1 = ADC-Min/voll, 0 = Aus-Anschlag)
+    float q = (float)(Fan::OFF_THRESHOLD - clamped) / (float)Fan::OFF_THRESHOLD;
+    uint8_t fanDuty = (uint8_t)(powf(q, Fan::CURVE_GAMMA) * 255.0f + 0.5f);  // 255 = voll
+    uint8_t newDuty = (uint8_t)(255 - fanDuty);  // Gate-Duty (invertiert: 0 = voll)
 
     // Kleine Hysterese gegen ADC-Rauschen
     if (newDuty != duty && (newDuty > duty ? newDuty - duty : duty - newDuty) >= 2) {

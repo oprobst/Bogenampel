@@ -251,6 +251,12 @@ namespace Fan {
     // Lüftern, die per PWM nicht vollständig stoppen).
     constexpr uint16_t OFF_THRESHOLD = 4000;
 
+    // Kennlinie Poti → Drehzahl: Gamma < 1 (konkav) verschiebt die Drehzahl-
+    // änderung nach "früher" im Drehweg und macht die GEFÜHLTE Änderung gleich-
+    // mäßiger (Luftstrom/Lärm ~ Drehzahl^~2,5 → γ≈0,4 linearisiert die Wahrnehmung).
+    // Kleiner = mehr Spreizung nach unten; 1,0 = linear. Tunbar.
+    constexpr float CURVE_GAMMA = 0.4f;
+
 } // namespace Fan
 
 //=============================================================================
