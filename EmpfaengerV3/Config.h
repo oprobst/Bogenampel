@@ -194,8 +194,8 @@ namespace Adc {
 
     // Leichte softwareseitige Rauschunterdrückung: Mehrfachmessung mitteln
     // (Oversampling). Reduziert weißes ADC-Rauschen ~√N, ohne Latenz über die
-    // Zeit (Reglerstellung bleibt sofort sichtbar). Default 16 Samples.
-    inline uint16_t readAveraged(uint8_t pin, uint8_t samples = 16) {
+    // Zeit (Reglerstellung bleibt sofort sichtbar). Default 6 Samples.
+    inline uint16_t readAveraged(uint8_t pin, uint8_t samples = 6) {
         uint32_t sum = 0;
         for (uint8_t i = 0; i < samples; i++) {
             sum += analogRead(pin);
