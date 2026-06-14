@@ -179,6 +179,10 @@ namespace Timing {
     // Poti-Abtastung (alle Regler live, ≥ 10 Hz — FR-021/FR-022/FR-023)
     constexpr uint16_t POTI_UPDATE_INTERVAL_MS = 100;  // 10 Hz
 
+    // Lautstärke-Vorhörton: kontinuierlicher Ton beim Drehen am Lautstärke-Poti,
+    // der noch bis zu dieser Zeit nach der letzten Bewegung nachklingt.
+    constexpr uint16_t VOLUME_PREVIEW_HOLD_MS = 1000;  // max. 1 s Nachlauf
+
 } // namespace Timing
 
 //=============================================================================
@@ -190,7 +194,8 @@ namespace Volume {
     // ESP32-C3-ADC ist 12-bit (0…4095). Ab diesem Rohwert (nahe Maximum) ist der
     // Buzzer KOMPLETT STUMM; darunter quadratische Kennlinie bis volle Lautstärke
     // bei ADC = 0. (Poti verpolt → Invertierung in updatePotis().)
-    constexpr uint16_t OFF_THRESHOLD = 4000;  // nahe Maximum (4095)
+    // Schwelle bei 99 % der Range → nur im letzten 1 % der Reglerstellung stumm.
+    constexpr uint16_t OFF_THRESHOLD = 4054;  // 4095 × 0,99 ≈ 4054 (letztes 1 %)
 
 } // namespace Volume
 

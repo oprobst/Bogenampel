@@ -65,6 +65,17 @@ public:
     void setVolume(uint8_t duty);
 
     /**
+     * @brief Startet/verlängert den Lautstärke-Vorhörton (kontinuierlich)
+     * @param holdMs Nachlaufzeit ab jetzt, bevor der Ton verstummt
+     *
+     * Erzeugt einen Dauerton, dessen Lautstärke live der eingestellten
+     * Lautstärke (setVolume) folgt — gedacht zum Vorhören beim Drehen am
+     * Lautstärke-Poti. Jeder Aufruf verschiebt das Verstummen um holdMs nach
+     * hinten. Funkt NICHT in eine laufende Signalsequenz (beep) hinein.
+     */
+    void startPreview(uint16_t holdMs);
+
+    /**
      * @brief Prüft ob Buzzer aktiv ist
      * @return true wenn Sequenz läuft, false sonst
      */
@@ -83,6 +94,10 @@ private:
 
     uint8_t volumeDuty;          // Aktuelle Lautstärke (LEDC-Duty)
     bool toneOn;                 // Ton gerade aktiv (für Live-Lautstärke)
+
+    // Lautstärke-Vorhörton (kontinuierlich beim Poti-Drehen)
+    bool previewActive;          // Läuft gerade ein Vorhörton?
+    uint32_t previewUntil;       // Zeitpunkt (millis), zu dem der Vorhörton verstummt
 
     /**
      * @brief Schaltet den Ton an/aus (LEDC-Duty setzen)

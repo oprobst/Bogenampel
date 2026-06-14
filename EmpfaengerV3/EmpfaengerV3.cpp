@@ -93,6 +93,7 @@ uint32_t alarmLastToggle = 0;      // Zeitpunkt der letzten Umschaltung
 uint32_t lastPotiUpdate = 0;       // Zeitpunkt der letzten Poti-Messung
 uint8_t currentBrightness = LEDStrip::BRIGHTNESS_MAX;  // Aktuelle Helligkeit
 uint8_t lastVolumeDuty = 0;        // Letzter Lautstärke-Duty (für Feedback-Erkennung)
+bool volumeFeedbackEnabled = false;  // Feedback-Piepen erst nach erstem Messzyklus (kein Dauerpiepen beim Start)
 
 // Status-LED (D9, aktiv LOW): an = bereit, kurzes Aus-Blinken bei Frame-Empfang
 uint32_t lastFrameCount = 0;       // Letzter Stand des Frame-Zählers
@@ -188,9 +189,11 @@ void setupNormal() {
     // LED Strip initialisieren (WS2812-Protokoll, GRB)
     FastLED.addLeds<WS2812, Pins::LED_STRIP, GRB>(leds, LEDStrip::TOTAL_LEDS);
 
-    // Initiale Helligkeit aus Poti lesen (25-100 %, FR-022)
+    // Initiale Helligkeit aus Poti lesen (15-100 %, FR-022). Poti verpolt →
+    // invertiert (ADC klein = hell), konsistent mit updatePotis() — sonst liefe
+    // der Regenbogen-Effekt mit verkehrter (oft viel zu dunkler) Helligkeit.
     uint16_t potiValue = analogRead(Pins::BRIGHTNESS_POTI);
-    currentBrightness = map(potiValue, 0, 4095, LEDStrip::BRIGHTNESS_MIN, LEDStrip::BRIGHTNESS_MAX);
+    currentBrightness = map(potiValue, 0, 4095, LEDStrip::BRIGHTNESS_MAX, LEDStrip::BRIGHTNESS_MIN);
     FastLED.setBrightness(currentBrightness);
 
     FastLED.clear();
@@ -409,14 +412,27 @@ void updatePotis() {
     }
     buzzer.setVolume(duty);
 
-    // Lautstärke-Feedback: 3 Pieptöne wenn Poti bewegt wurde (Hysterese 4 Stufen,
-    // nur wenn kein anderes Signal läuft — nicht unterbrechen)
+    // Lautstärke-Feedback: kontinuierlicher Vorhörton beim Drehen am Poti. Der Ton
+    // folgt live der eingestellten Lautstärke (setVolume oben) und verstummt max. 1 s
+    // nach der letzten Bewegung (Hysterese 4 Stufen gegen ADC-Rauschen).
+    // Beim allerersten Messzyklus (Initialisierung aus setupNormal()) KEIN Ton:
+    // sonst liefe er während des blockierenden Regenbogen-Effekts (dort wird kein
+    // buzzer.update() aufgerufen) durch → die Ampel würde beim Einschalten
+    // durchgehend piepen.
     uint8_t delta = (duty > lastVolumeDuty) ? duty - lastVolumeDuty : lastVolumeDuty - duty;
-    if (delta >= 4 && !buzzer.isActive()) {
-        buzzer.beep(3);
-    }
-    if (delta >= 4) {
-        lastVolumeDuty = duty;
+    if (volumeFeedbackEnabled) {
+        if (delta >= 4) {
+            // Kein Vorhörton während eines laufenden Countdowns (Timer oder
+            // Vorbereitungsphase) — würde die Schießphase akustisch stören.
+            // Die Lautstärke wird über setVolume oben trotzdem live übernommen.
+            if (!timerRunning && !inPreparationPhase) {
+                buzzer.startPreview(Timing::VOLUME_PREVIEW_HOLD_MS);
+            }
+            lastVolumeDuty = duty;
+        }
+    } else {
+        lastVolumeDuty = duty;         // Startwert übernehmen, ohne Ton
+        volumeFeedbackEnabled = true;
     }
 
     // --- Helligkeit (D1, linear 15-100 %, Poti verpolt → invertiert: ADC klein = hell) ---

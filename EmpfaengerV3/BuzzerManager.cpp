@@ -25,7 +25,9 @@ BuzzerManager::BuzzerManager(uint8_t pin, uint16_t frequency)
     , targetBeeps(0)
     , lastToggle(0)
     , volumeDuty(DUTY_MAX)
-    , toneOn(false) {
+    , toneOn(false)
+    , previewActive(false)
+    , previewUntil(0) {
 }
 
 void BuzzerManager::begin() {
@@ -64,6 +66,17 @@ void BuzzerManager::setVolume(uint8_t duty) {
     }
 }
 
+void BuzzerManager::startPreview(uint16_t holdMs) {
+    // Nicht in eine laufende Signalsequenz (beep) hineinfunken — die hat Vorrang.
+    if (active) return;
+
+    previewActive = true;
+    previewUntil = millis() + holdMs;
+    // Ton an; Lautstärke = aktueller volumeDuty (folgt live über setVolume).
+    // Bei volumeDuty == 0 (Poti am Aus-Ende) bleibt es automatisch stumm.
+    setTone(true);
+}
+
 void BuzzerManager::beep(uint8_t count) {
     if (count == 0) return;
 
@@ -78,6 +91,23 @@ void BuzzerManager::beep(uint8_t count) {
 }
 
 void BuzzerManager::update() {
+    // Lautstärke-Vorhörton (kontinuierlich beim Poti-Drehen)
+    if (previewActive) {
+        if (active) {
+            // Eine Signalsequenz (beep) hat Vorrang → Vorhörton beenden,
+            // die beep-State-Machine übernimmt den Ton.
+            previewActive = false;
+        } else if (millis() >= previewUntil) {
+            // Nachlauf abgelaufen → verstummen
+            previewActive = false;
+            setTone(false);
+        } else {
+            // Vorhörton hält an; Lautstärke live nachziehen (folgt volumeDuty,
+            // auch wenn der Poti von stumm auf hörbar gedreht wurde).
+            setTone(true);
+        }
+    }
+
     if (!active) return;
 
     uint32_t now = millis();
@@ -110,11 +140,12 @@ void BuzzerManager::update() {
 }
 
 void BuzzerManager::stop() {
-    if (active) {
+    if (active || previewActive) {
         setTone(false);
         active = false;
         state = 0;
         beepCount = 0;
         targetBeeps = 0;
+        previewActive = false;
     }
 }
