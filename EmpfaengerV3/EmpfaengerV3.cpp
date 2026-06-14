@@ -47,6 +47,7 @@ void showRainbowEffect();
 void handleCommand(RadioCommand cmd);
 void updateAlarm();
 void updatePotis();
+void updateBrightnessPreview();
 void updateStatusLed();
 void checkButton();
 void updatePreparation();
@@ -92,8 +93,15 @@ uint32_t alarmLastToggle = 0;      // Zeitpunkt der letzten Umschaltung
 // Lokalregler (Potis, US4)
 uint32_t lastPotiUpdate = 0;       // Zeitpunkt der letzten Poti-Messung
 uint8_t currentBrightness = LEDStrip::BRIGHTNESS_MAX;  // Aktuelle Helligkeit
-uint8_t lastVolumeDuty = 0;        // Letzter Lautstärke-Duty (für Feedback-Erkennung)
-bool volumeFeedbackEnabled = false;  // Feedback-Piepen erst nach erstem Messzyklus (kein Dauerpiepen beim Start)
+uint8_t lastVolumeDuty = 0;        // Letzter Lautstärke-Duty (für Bewegungserkennung)
+bool potiFeedbackEnabled = false;  // Vorschau erst nach erstem Messzyklus (kein Feedback beim Start)
+
+// Helligkeits-Vorschau: beim Drehen am Helligkeits-Poti "888" anzeigen, damit die
+// Reglereinstellung sofort sichtbar ist (analog zum Lautstärke-Vorhörton). Der
+// vorherige Display-Inhalt wird gesichert und nach dem Nachlauf wiederhergestellt.
+CRGB ledsBackup[LEDStrip::TOTAL_LEDS];
+bool brightnessPreviewActive = false;
+uint32_t brightnessPreviewUntil = 0;
 
 // Status-LED (D9, aktiv LOW): an = bereit, kurzes Aus-Blinken bei Frame-Empfang
 uint32_t lastFrameCount = 0;       // Letzter Stand des Frame-Zählers
@@ -192,7 +200,7 @@ void setupNormal() {
     // Initiale Helligkeit aus Poti lesen (15-100 %, FR-022). Poti verpolt →
     // invertiert (ADC klein = hell), konsistent mit updatePotis() — sonst liefe
     // der Regenbogen-Effekt mit verkehrter (oft viel zu dunkler) Helligkeit.
-    uint16_t potiValue = analogRead(Pins::BRIGHTNESS_POTI);
+    uint16_t potiValue = Adc::readAveraged(Pins::BRIGHTNESS_POTI);  // gemittelt (Rauschunterdrückung)
     currentBrightness = map(potiValue, 0, 4095, LEDStrip::BRIGHTNESS_MAX, LEDStrip::BRIGHTNESS_MIN);
     FastLED.setBrightness(currentBrightness);
 
@@ -316,6 +324,9 @@ void loopNormal() {
     updatePotis();
     fan.update();
 
+    // Helligkeits-Vorschau ("888") nach Nachlauf wieder ausblenden
+    updateBrightnessPreview();
+
     // Status-LED: an = bereit, kurzes Aus-Blinken bei Frame-Empfang
     updateStatusLed();
 
@@ -397,10 +408,12 @@ void updatePotis() {
     if (millis() - lastPotiUpdate < Timing::POTI_UPDATE_INTERVAL_MS && lastPotiUpdate != 0) return;
     lastPotiUpdate = millis();
 
+    const bool firstRead = !potiFeedbackEnabled;
+
     // --- Lautstärke (D0) — Poti verpolt: ADC klein = laut, ADC groß = aus.
     // Quadratische Kennlinie über den INVERTIERTEN Rohwert (gleiche Steilheit wie
     // bisher); ab Volume::OFF_THRESHOLD (nahe Maximum) komplett stumm (duty 0).
-    uint32_t rawVol = analogRead(Pins::VOLUME_POTI);
+    uint32_t rawVol = Adc::readAveraged(Pins::VOLUME_POTI);  // gemittelt (Rauschunterdrückung)
     uint8_t duty;
     if (rawVol >= Volume::OFF_THRESHOLD) {
         duty = 0;  // Poti am Maximum → Buzzer aus
@@ -419,31 +432,73 @@ void updatePotis() {
     // sonst liefe er während des blockierenden Regenbogen-Effekts (dort wird kein
     // buzzer.update() aufgerufen) durch → die Ampel würde beim Einschalten
     // durchgehend piepen.
-    uint8_t delta = (duty > lastVolumeDuty) ? duty - lastVolumeDuty : lastVolumeDuty - duty;
-    if (volumeFeedbackEnabled) {
-        if (delta >= 4) {
-            // Kein Vorhörton während eines laufenden Countdowns (Timer oder
-            // Vorbereitungsphase) — würde die Schießphase akustisch stören.
-            // Die Lautstärke wird über setVolume oben trotzdem live übernommen.
-            if (!timerRunning && !inPreparationPhase) {
-                buzzer.startPreview(Timing::VOLUME_PREVIEW_HOLD_MS);
-            }
-            lastVolumeDuty = duty;
+    uint8_t volDelta = (duty > lastVolumeDuty) ? duty - lastVolumeDuty : lastVolumeDuty - duty;
+    if (!firstRead && volDelta >= 4) {
+        // Kein Vorhörton während eines laufenden Countdowns (Timer oder
+        // Vorbereitungsphase) — würde die Schießphase akustisch stören.
+        // Die Lautstärke wird über setVolume oben trotzdem live übernommen.
+        if (!timerRunning && !inPreparationPhase) {
+            buzzer.startPreview(Timing::PREVIEW_HOLD_MS);
         }
-    } else {
+        lastVolumeDuty = duty;
+    } else if (firstRead) {
         lastVolumeDuty = duty;         // Startwert übernehmen, ohne Ton
-        volumeFeedbackEnabled = true;
     }
 
     // --- Helligkeit (D1, linear 15-100 %, Poti verpolt → invertiert: ADC klein = hell) ---
-    uint16_t rawBright = analogRead(Pins::BRIGHTNESS_POTI);
+    uint16_t rawBright = Adc::readAveraged(Pins::BRIGHTNESS_POTI);  // gemittelt (Rauschunterdrückung)
     uint8_t newBrightness = map(rawBright, 0, 4095, LEDStrip::BRIGHTNESS_MAX, LEDStrip::BRIGHTNESS_MIN);
 
     // Nur aktualisieren wenn sich Helligkeit signifikant geändert hat (Hysterese)
     if (abs((int)newBrightness - (int)currentBrightness) > 3) {
         currentBrightness = newBrightness;
         FastLED.setBrightness(currentBrightness);
+
+        // Helligkeits-Vorschau: "888" anzeigen, solange gedreht wird (+ Nachlauf),
+        // damit die Reglereinstellung sofort sichtbar ist — analog zum Lautstärke-
+        // Vorhörton. Nicht beim Start (firstRead) und nicht während Countdown/Alarm.
+        if (!firstRead && !timerRunning && !inPreparationPhase && !alarmActive) {
+            if (!brightnessPreviewActive) {
+                // Aktuellen Display-Inhalt sichern und Testbild zeichnen
+                memcpy(ledsBackup, leds, sizeof(ledsBackup));
+                brightnessPreviewActive = true;
+                display.displayTimer(888, CRGB::Red, true);  // alle Segmente an (rot)
+                display.setGroup(0, CRGB::Black);
+                display.setGroup(1, CRGB::Black);
+            }
+            brightnessPreviewUntil = millis() + Timing::PREVIEW_HOLD_MS;
+        }
         FastLED.show();
+    }
+
+    potiFeedbackEnabled = true;
+}
+
+//=============================================================================
+// Helligkeits-Vorschau ("888" beim Drehen am Helligkeits-Poti)
+//=============================================================================
+
+/**
+ * @brief Beendet die Helligkeits-Vorschau nach dem Nachlauf und stellt den
+ *        vorherigen Display-Inhalt wieder her (nicht-blockierend)
+ *
+ * Übernimmt ein Countdown oder Alarm das Display, wird die Vorschau verworfen
+ * (ohne Restore — der neue Zustand wurde bereits gezeichnet).
+ */
+void updateBrightnessPreview() {
+    if (!brightnessPreviewActive) return;
+
+    // Countdown/Alarm hat das Display übernommen → Vorschau ohne Restore beenden
+    if (timerRunning || inPreparationPhase || alarmActive) {
+        brightnessPreviewActive = false;
+        return;
+    }
+
+    // Nachlauf abgelaufen → vorherigen Display-Inhalt wiederherstellen
+    if (millis() >= brightnessPreviewUntil) {
+        memcpy(leds, ledsBackup, sizeof(ledsBackup));
+        FastLED.show();
+        brightnessPreviewActive = false;
     }
 }
 
@@ -746,6 +801,13 @@ void showRainbowEffect() {
  * @param cmd RadioCommand
  */
 void handleCommand(RadioCommand cmd) {
+    // Laufende Helligkeits-Vorschau ("888") verfällt, sobald ein Kommando den
+    // Anzeigezustand neu setzt (kein Restore — das Kommando zeichnet neu). PING
+    // ändert die Anzeige nicht und lässt die Vorschau weiterlaufen.
+    if (cmd != CMD_PING) {
+        brightnessPreviewActive = false;
+    }
+
     switch (cmd) {
         case CMD_PING:
             // Sender testet Verbindungsqualität — Link-Layer-ACK genügt

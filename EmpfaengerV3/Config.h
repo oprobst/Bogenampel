@@ -179,11 +179,31 @@ namespace Timing {
     // Poti-Abtastung (alle Regler live, ≥ 10 Hz — FR-021/FR-022/FR-023)
     constexpr uint16_t POTI_UPDATE_INTERVAL_MS = 100;  // 10 Hz
 
-    // Lautstärke-Vorhörton: kontinuierlicher Ton beim Drehen am Lautstärke-Poti,
-    // der noch bis zu dieser Zeit nach der letzten Bewegung nachklingt.
-    constexpr uint16_t VOLUME_PREVIEW_HOLD_MS = 1000;  // max. 1 s Nachlauf
+    // Regler-Vorschau: beim Drehen an Lautstärke-/Helligkeits-Poti läuft eine
+    // Vorschau (Ton bzw. "888"-Anzeige), die noch bis zu dieser Zeit nach der
+    // letzten Bewegung nachklingt.
+    constexpr uint16_t PREVIEW_HOLD_MS = 1000;  // max. 1 s Nachlauf
 
 } // namespace Timing
+
+//=============================================================================
+// ADC-HILFSFUNKTIONEN
+//=============================================================================
+
+namespace Adc {
+
+    // Leichte softwareseitige Rauschunterdrückung: Mehrfachmessung mitteln
+    // (Oversampling). Reduziert weißes ADC-Rauschen ~√N, ohne Latenz über die
+    // Zeit (Reglerstellung bleibt sofort sichtbar). Default 16 Samples.
+    inline uint16_t readAveraged(uint8_t pin, uint8_t samples = 16) {
+        uint32_t sum = 0;
+        for (uint8_t i = 0; i < samples; i++) {
+            sum += analogRead(pin);
+        }
+        return (uint16_t)(sum / samples);
+    }
+
+} // namespace Adc
 
 //=============================================================================
 // LAUTSTÄRKE-POTI (D0) — verpolt verbaut, in Software invertiert

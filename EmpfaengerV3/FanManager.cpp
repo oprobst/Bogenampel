@@ -50,7 +50,7 @@ void FanManager::applyPotiValue() {
     // aus. Gamma-Kennlinie (Fan::CURVE_GAMMA < 1) spreizt die gefühlte Drehzahl-
     // änderung über den Drehweg — sonst beschleunigt der Lüfter fast nur im
     // obersten PWM-Bereich.
-    uint16_t raw = analogRead(potiPin);
+    uint16_t raw = Adc::readAveraged(potiPin);  // gemittelt (Rauschunterdrückung)
     uint16_t clamped = (raw > Fan::OFF_THRESHOLD) ? Fan::OFF_THRESHOLD : raw;
     // q = Anteil Richtung volle Drehzahl (1 = ADC-Min/voll, 0 = Aus-Anschlag)
     float q = (float)(Fan::OFF_THRESHOLD - clamped) / (float)Fan::OFF_THRESHOLD;
