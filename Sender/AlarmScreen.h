@@ -1,45 +1,27 @@
 /**
  * @file AlarmScreen.h
- * @brief Alarm-Screen für Notfall-Abbruch
+ * @brief Alarm-Screen für Notfall-Abbruch (e-Paper)
+ *
+ * PORT aus V2 (Sender/AlarmScreen.h): statisches Alarm-UI (auf e-Paper kein
+ * Blinken nötig/sinnvoll), erweitert um Zustellstatus (US3-Szenario 3) und
+ * den Quittierungs-Hinweis (OK kurz = quittieren → CMD_STOP).
  */
 
 #pragma once
 
-#include <Adafruit_ST7789.h>
 #include "Config.h"
-#include "ButtonManager.h"
+#include "EpaperDisplay.h"
 
-/**
- * @brief Alarm-Screen für Notfall-Abbruch des Schießbetriebs
- *
- * Zeigt großen "ALARM" Text.
- * Läuft automatisch ~4.5 Sekunden und endet dann.
- */
 class AlarmScreen {
 public:
-    /**
-     * @brief Konstruktor
-     * @param tft Display-Referenz
-     * @param btnMgr ButtonManager-Referenz
-     */
-    AlarmScreen(Adafruit_ST7789& tft, ButtonManager& btnMgr);
+    AlarmScreen(EpaperDisplay& epd);
 
     /**
-     * @brief Initialisiert den Screen
+     * @brief Zeichnet den Alarm-Screen in den Puffer (ohne Refresh!)
+     * @param delivered true wenn CMD_ALARM bestätigt zugestellt wurde
      */
-    void begin();
-
-    /**
-     * @brief Update-Funktion (in loop() aufrufen)
-     */
-    void update();
-
-    /**
-     * @brief Zeichnet den Alarm-Screen
-     */
-    void draw();
+    void draw(bool delivered);
 
 private:
-    Adafruit_ST7789& display;
-    ButtonManager& buttons;
+    EpaperDisplay& epd;
 };

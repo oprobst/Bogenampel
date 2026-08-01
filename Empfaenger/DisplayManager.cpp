@@ -1,6 +1,8 @@
 /**
  * @file DisplayManager.cpp
  * @brief Implementierung des Anzeige-Managers
+ *
+ * PORT aus V2 (Empfaenger/DisplayManager.cpp) — Logik unverändert (FR-003).
  */
 
 #include "DisplayManager.h"
@@ -40,12 +42,12 @@ void DisplayManager::clearGroups() {
 
 void DisplayManager::setGroupAB(CRGB color) {
     fill_solid(leds + LEDStrip::GROUP_AB_START, LEDStrip::GROUP_AB_LEDS, color);
-    FastLED.show();
+    dirty_ = true;  // show() erfolgt zentral in loop() (genau 1× pro Iteration)
 }
 
 void DisplayManager::setGroupCD(CRGB color) {
     fill_solid(leds + LEDStrip::GROUP_CD_START, LEDStrip::GROUP_CD_LEDS, color);
-    FastLED.show();
+    dirty_ = true;  // show() erfolgt zentral in loop()
 }
 
 void DisplayManager::displayNumber(uint16_t number, CRGB color, bool showLeadingZeros) {
@@ -77,7 +79,7 @@ void DisplayManager::displayNumber(uint16_t number, CRGB color, bool showLeading
     // 1er-Stelle: Immer anzeigen
     displayDigit(LEDStrip::DIGIT_1_START, digit1, color);
 
-    FastLED.show();
+    dirty_ = true;  // show() erfolgt zentral in loop()
 }
 
 void DisplayManager::displayDigit(uint8_t digitStartIndex, uint8_t digit, CRGB color) {
@@ -107,7 +109,7 @@ void DisplayManager::displayDigit(uint8_t digitStartIndex, uint8_t digit, CRGB c
         bool segmentOn = (pattern >> (LEDStrip::SEGMENTS_PER_DIGIT - 1 - seg)) & 0x01;
         CRGB segmentColor = segmentOn ? color : CRGB::Black;
 
-        // Setze alle 6 LEDs dieses Segments
+        // Setze alle Pixel dieses Segments (LEDS_PER_SEGMENT)
         uint8_t segmentStart = digitStartIndex + (seg * LEDStrip::LEDS_PER_SEGMENT);
         fill_solid(leds + segmentStart, LEDStrip::LEDS_PER_SEGMENT, segmentColor);
     }

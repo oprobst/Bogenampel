@@ -1,40 +1,39 @@
 /**
  * @file ButtonManager.cpp
- * @brief Button Manager Implementierung
+ * @brief Button Manager Implementierung (2 Taster, V3)
  */
 
 #include "ButtonManager.h"
 
-ButtonManager::ButtonManager()
-    : arrowPressStartTime(0), arrowPressActive(false), alarmTriggered(false) {
-    // Alle Button-States initialisieren
+ButtonManager::ButtonManager() {
     for (uint8_t i = 0; i < static_cast<uint8_t>(Button::COUNT); i++) {
         buttons[i].pressed = false;
-        buttons[i].lastRawState = true;  // HIGH = nicht gedrückt (Pull-Up)
+        buttons[i].lastRawState = false;
         buttons[i].lastChangeTime = 0;
         buttons[i].pressTime = 0;
-        buttons[i].wasPressedFlag = false;
-        buttons[i].wasReleasedFlag = false;
+        buttons[i].clickedFlag = false;
+        buttons[i].reportedHoldMs = 0;
+        buttons[i].bootLockout = false;
     }
 }
 
 void ButtonManager::begin() {
-    // Pins als Eingänge mit Pull-Up konfigurieren
-    pinMode(Pins::BTN_LEFT, INPUT_PULLUP);
-    pinMode(Pins::BTN_OK, INPUT_PULLUP);
-    pinMode(Pins::BTN_RIGHT, INPUT_PULLUP);
+    // SW2/GPIO15 (Rolle CONFIG): aktiv HIGH über externen Teiler R2/R7 —
+    // KEINE internen Pulls
+    pinMode(Pins::BTN1, INPUT);
+    // SW1/GPIO9 (Rolle OK): gegen GND, kein externer Pullup → interner Pullup
+    pinMode(Pins::BTN2, INPUT_PULLUP);
 
-    // Initiale Zustände lesen
+    // Initiale Zustände lesen. Wer jetzt schon gedrückt ist, steht im
+    // Boot-Lockout: CONFIG hält beim Einschalten den Latch, und im
+    // Wartungsmodus werden beide Taster gehalten — ohne Lockout liefe dort
+    // nach 3 s die Power-Off-Geste von OK los.
     for (uint8_t i = 0; i < static_cast<uint8_t>(Button::COUNT); i++) {
         Button btn = static_cast<Button>(i);
         buttons[i].lastRawState = readRawState(btn);
+        buttons[i].pressed = buttons[i].lastRawState;
+        buttons[i].bootLockout = buttons[i].pressed;
     }
-}
-
-void ButtonManager::initBuzzer() {
-    // Buzzer-Pin als Ausgang konfigurieren
-    pinMode(Pins::BUZZER, OUTPUT);
-    digitalWrite(Pins::BUZZER, LOW);  // Sicherstellen, dass Buzzer aus ist
 }
 
 void ButtonManager::update() {
@@ -44,7 +43,7 @@ void ButtonManager::update() {
         Button btn = static_cast<Button>(i);
         ButtonState& state = buttons[i];
 
-        // Aktuellen rohen Zustand lesen (LOW = gedrückt)
+        // Aktuellen rohen Zustand lesen (true = gedrückt)
         bool rawPressed = readRawState(btn);
 
         // Debouncing: Hat sich der rohe Zustand geändert?
@@ -55,44 +54,31 @@ void ButtonManager::update() {
 
         // Prüfe ob genug Zeit vergangen ist (Debounce)
         if ((now - state.lastChangeTime) >= Timing::DEBOUNCE_MS) {
-            // Zustand ist stabil, prüfe ob sich der entprellte Zustand ändert
-
-            // Button wurde gedrückt (Flanke HIGH → LOW)
+            // Button wurde gedrückt (Flanke)
             if (rawPressed && !state.pressed) {
                 state.pressed = true;
                 state.pressTime = now;
-                state.wasPressedFlag = true;
-                playClickSound();  // Klick-Ton abspielen
+                state.reportedHoldMs = 0;
+
+                // CONFIG hat keine Halte-Geste → Klick sofort beim Drücken
+                if (btn == Button::CONFIG && !state.bootLockout) {
+                    state.clickedFlag = true;
+                }
             }
-            // Button wurde losgelassen (Flanke LOW → HIGH)
+            // Button wurde losgelassen (Flanke)
             else if (!rawPressed && state.pressed) {
                 state.pressed = false;
-                state.wasReleasedFlag = true;
+
+                if (state.bootLockout) {
+                    // Einschalt-/Modus-Druck endet hier — ab jetzt zählt er
+                    state.bootLockout = false;
+                } else if (btn == Button::OK
+                           && (now - state.pressTime) < Timing::ALARM_THRESHOLD_MS) {
+                    // Kurz gehalten → Klick (lange Drücke sind Gesten)
+                    state.clickedFlag = true;
+                }
             }
         }
-    }
-
-    // Alarm-Detektion: Pfeiltasten (LEFT oder RIGHT) > 2 Sekunden gehalten
-    bool leftPressed = buttons[static_cast<uint8_t>(Button::LEFT)].pressed;
-    bool rightPressed = buttons[static_cast<uint8_t>(Button::RIGHT)].pressed;
-    bool arrowPressed = leftPressed || rightPressed;
-
-    if (arrowPressed && !arrowPressActive) {
-        // Pfeiltaste wurde gerade gedrückt
-        arrowPressStartTime = now;
-        arrowPressActive = true;
-        alarmTriggered = false;
-    }
-    else if (arrowPressed && arrowPressActive) {
-        // Pfeiltaste wird gehalten - prüfe Dauer
-        uint32_t duration = now - arrowPressStartTime;
-        if (duration >= Timing::ALARM_THRESHOLD_MS && !alarmTriggered) {
-            alarmTriggered = true;  // Alarm-Flag setzen (wird mit isAlarmTriggered() abgerufen)
-        }
-    }
-    else if (!arrowPressed && arrowPressActive) {
-        // Pfeiltaste wurde losgelassen
-        arrowPressActive = false;
     }
 }
 
@@ -102,38 +88,34 @@ bool ButtonManager::isPressed(Button btn) const {
     return buttons[idx].pressed;
 }
 
-bool ButtonManager::wasPressed(Button btn) {
+bool ButtonManager::wasClicked(Button btn) {
     uint8_t idx = static_cast<uint8_t>(btn);
     if (idx >= static_cast<uint8_t>(Button::COUNT)) return false;
 
     // Read-once: Flag wird beim Lesen gelöscht
-    if (buttons[idx].wasPressedFlag) {
-        buttons[idx].wasPressedFlag = false;
+    if (buttons[idx].clickedFlag) {
+        buttons[idx].clickedFlag = false;
         return true;
     }
     return false;
 }
 
-bool ButtonManager::wasReleased(Button btn) {
+bool ButtonManager::wasHeldFor(Button btn, uint16_t ms) {
     uint8_t idx = static_cast<uint8_t>(btn);
     if (idx >= static_cast<uint8_t>(Button::COUNT)) return false;
 
-    // Read-once: Flag wird beim Lesen gelöscht
-    if (buttons[idx].wasReleasedFlag) {
-        buttons[idx].wasReleasedFlag = false;
-        return true;
-    }
-    return false;
-}
-
-bool ButtonManager::isLongPress(Button btn, uint32_t duration) const {
-    uint8_t idx = static_cast<uint8_t>(btn);
-    if (idx >= static_cast<uint8_t>(Button::COUNT)) return false;
-
-    const ButtonState& state = buttons[idx];
+    ButtonState& state = buttons[idx];
     if (!state.pressed) return false;
 
-    return (millis() - state.pressTime) >= duration;
+    // Boot-Lockout: Einschalt-/Modus-Druck darf keine Geste auslösen
+    if (state.bootLockout) return false;
+
+    uint32_t duration = millis() - state.pressTime;
+    if (duration >= ms && state.reportedHoldMs < ms) {
+        state.reportedHoldMs = ms;  // one-shot pro Schwelle
+        return true;
+    }
+    return false;
 }
 
 bool ButtonManager::isAnyPressed() const {
@@ -143,34 +125,23 @@ bool ButtonManager::isAnyPressed() const {
     return false;
 }
 
-bool ButtonManager::isAlarmTriggered() {
-    // Read-once: Flag wird beim Lesen gelöscht
-    if (alarmTriggered) {
-        alarmTriggered = false;
-        return true;
-    }
-    return false;
-}
-
 //=============================================================================
 // Private Hilfsfunktionen
 //=============================================================================
 
-uint8_t ButtonManager::getPin(Button btn) const {
-    switch (btn) {
-        case Button::LEFT:  return Pins::BTN_LEFT;
-        case Button::OK:    return Pins::BTN_OK;
-        case Button::RIGHT: return Pins::BTN_RIGHT;
-        default: return 0;
-    }
-}
-
 bool ButtonManager::readRawState(Button btn) const {
-    // LOW = gedrückt (Pull-Up aktiv), also invertieren
-    return digitalRead(getPin(btn)) == LOW;
+    if (btn == Button::CONFIG) {
+        // SW2/GPIO15, aktiv HIGH (Teiler R2/R7 an +BATT, ~2,5-3,5 V gedrückt).
+        // Dieser Taster hält beim Einschalten den Power-Latch — das ist
+        // Hardware und per Firmware nicht auf den anderen Taster verlegbar.
+        return digitalRead(Pins::BTN1) == HIGH;
+    }
+    // Rolle OK → SW1/GPIO9, aktiv LOW (interner Pullup)
+    return digitalRead(Pins::BTN2) == LOW;
 }
 
-void ButtonManager::playClickSound() {
-    // Kurzen Klick-Ton erzeugen
-    tone(Pins::BUZZER, Timing::CLICK_FREQUENCY_HZ, Timing::CLICK_DURATION_MS);
+bool ButtonManager::isBootLockoutActive(Button btn) const {
+    uint8_t idx = static_cast<uint8_t>(btn);
+    if (idx >= static_cast<uint8_t>(Button::COUNT)) return false;
+    return buttons[idx].bootLockout;
 }

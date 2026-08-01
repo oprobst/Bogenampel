@@ -44,8 +44,8 @@ _autosave-*
 # PlatformIO (V3-Firmware)
 # =============================================================================
 .pio/
-SenderV3/.pio/
-EmpfaengerV3/.pio/
+Sender/.pio/
+Empfaenger/.pio/
 
 # =============================================================================
 # Lokale Konfiguration / Werkzeuge

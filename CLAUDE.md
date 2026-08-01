@@ -6,17 +6,22 @@ Auto-generated from all feature plans. Last updated: 2026-06-11
 
 Bogenampel ist eine funkgesteuerte Timer-Anzeige für Bogenschießplätze.
 
-**Aktuelle Generation V3 (`SenderV3/`, `EmpfaengerV3/`, `Schaltung-Sender/`, `Schaltung-Empfaenger/`):**
+**Aktuelle Generation V3 (`Sender/`, `Empfaenger/`, `Schaltung-Sender/`, `Schaltung-Empfaenger/`):**
 - **Sender (Bedieneinheit)**: ESP32-S3-WROOM-1U + 1.54″ e-Paper (SSD1681) + LiPo/MCP73837 + Power-Latch
 - **Empfänger (Anzeigeeinheit)**: XIAO ESP32C3 + WS2812B LED Strip (158 LEDs) + Lüfter + 3 Potis
 - **Kommunikation**: ESP-NOW (Kanal 1, 6-Byte-Frames, Discovery zur Laufzeit), 11 Kommandos unverändert
 - **Features**: Timer-Steuerung, Gruppen-Anzeige, Alarm-System, NVS-Konfiguration, autonomes Passenende (FR-004),
   OTA-Wartungsmodus (beide Taster beim Einschalten; im Normalbetrieb läuft kein WiFi)
 
-**Legacy V2 (`Sender/`, `Empfaenger/` — eingefroren, FR-025):**
+**Legacy V2 (vollständig entfernt am 2026-08-01):**
 - Arduino Nano + ST7789 TFT bzw. WS2812B + NRF24L01 (2.4 GHz, 250 kbps)
-- Die V2-KiCad-Dateien (`Schaltung/`) wurden am 2026-08-01 entfernt und sind
-  nur noch über die Git-Historie auffindbar.
+- Firmware (`Sender/`, `Empfaenger/`), Bibliotheken (`libraries/`, 55 MB) und
+  KiCad-Projekt (`Schaltung/`) liegen nur noch in der Git-Historie. FR-025
+  („V2 bleibt eingefroren erhalten") ist damit überholt: V2 wird nicht mehr im
+  Arbeitsverzeichnis vorgehalten. Letzter Stand vor der Entfernung: Commit
+  `e632bfb`.
+- **Achtung**: Die Ordnernamen `Sender/` und `Empfaenger/` sind seither neu
+  belegt — sie enthalten jetzt die V3-Firmware.
 
 ## Active Technologies
 - C++ (Arduino core for ESP32 / arduino-esp32 3.x, C++17; V2 logic is C++11 and ports without changes) (004-v3-esp32-port)
@@ -34,58 +39,66 @@ Bogenampel ist eine funkgesteuerte Timer-Anzeige für Bogenschießplätze.
 ## Project Structure
 
 ```text
-SenderV3/             # V3 Bedieneinheit (ESP32-S3 + e-Paper) — AKTUELL
-  ├── SenderV3.cpp    # Setup/Loop, Power-Latch zuerst!, esp_timer 1 Hz
-  ├── platformio.ini  # env:sender (esp32-s3-devkitc-1, 16MB, OPI-PSRAM)
+platformio.ini        # ZENTRAL im Repo-Root — beide Envs, kein pio in den Unterordnern
+
+Sender/               # Bedieneinheit (ESP32-S3 + e-Paper)
+  ├── Sender.cpp      # Setup/Loop, Power-Latch zuerst!, esp_timer 1 Hz
   ├── Config.h        # Pins aus contracts/hardware-pins.md, NVS, Timing
-  ├── Commands.h      # ESP-NOW-Protokoll (byte-identisch mit EmpfaengerV3!)
+  ├── Commands.h      # ESP-NOW-Protokoll (byte-identisch mit Empfaenger/!)
   ├── RadioManager.*  # ESP-NOW: Discovery, sendCommand+Retry, Qualitätstest
   ├── PowerManager.*  # Latch, Akku (Median-5), MCP73837-Status, Power-Off
   ├── EpaperDisplay.* # GxEPD2-Wrapper: Voll-/Partial-Refresh, Statuszeile
-  ├── ButtonManager.* # 2 Taster: BTN1 aktiv HIGH (Gesten), BTN2 aktiv LOW
+  ├── ButtonManager.* # 2 Taster; Rolle→Pin NUR in readRawState() zugeordnet
+  ├── OTAManager.*    # Wartungsmodus: WiFi-Station + ArduinoOTA (kein SoftAP)
+  ├── OtaScreen.*     # Wartungsmodus-Anzeige: WLAN-Status + eigene IP
   ├── ConfigStore.*   # NVS-Persistenz (Preferences)
   ├── StateMachine.*  # 5 States — Logik 1:1 aus V2 (FR-004a-Guard!)
   └── *Menu/*Screen.* # ConfigMenu, SchiessBetrieb, PfeileHolen, Splash, Alarm
 
-EmpfaengerV3/         # V3 Anzeigeeinheit (XIAO ESP32C3) — AKTUELL
-  ├── EmpfaengerV3.cpp# Timer-Logik 1:1 aus V2 (autonomes Passenende!)
-  ├── platformio.ini  # env:empfaenger (seeed_xiao_esp32c3)
+Empfaenger/           # Anzeigeeinheit (XIAO ESP32C3)
+  ├── Empfaenger.cpp  # Timer-Logik 1:1 aus V2 (autonomes Passenende!)
   ├── Config.h        # XIAO-Pins (Strapping-Fixes!), LED-Layout unverändert
-  ├── Commands.h      # byte-identische Kopie von SenderV3/Commands.h
+  ├── Commands.h      # byte-identische Kopie von Sender/Commands.h
   ├── RadioManager.*  # ESP-NOW-Empfang: Validierung, Dedup, HELLO_ACK
   ├── DisplayManager.*# 7-Segment + Gruppen (unverändert aus V2)
   ├── BuzzerManager.* # LEDC-PWM, Lautstärke vom Poti (Duty 0-50%)
-  └── FanManager.*    # Lüfter-PWM 25 kHz, Drehzahl vom Poti
+  ├── FanManager.*    # Lüfter-PWM 25 kHz, Drehzahl vom Poti
+  └── OTAManager.*    # Wartungsmodus (Debug-Taster D7 beim Boot)
 
-Schaltung-Sender/     # V3 KiCad Sender    — autoritative Hardware-Quelle (Constitution V)
-Schaltung-Empfaenger/ # V3 KiCad Empfänger — dito
+Schaltung-Sender/     # KiCad Sender    — autoritative Hardware-Quelle (Constitution V)
+Schaltung-Empfaenger/ # KiCad Empfänger — dito
 schaltplan-sender.png     # Schaltplan-Export, ohne KiCad lesbar
 schaltplan-empfaenger.png
 
-Sender/               # V2 Bedieneinheit (Arduino Nano) — EINGEFROREN (FR-025)
-Empfaenger/           # V2 Anzeigeeinheit (Arduino Nano) — EINGEFROREN (FR-025)
-libraries/            # Externe Libraries — NUR V2. Der V3-Build ist davon
-                      # unabhängig (verifiziert 2026-08-01: beide Envs bauen
-                      # ohne den Ordner); V3 bezieht alles über lib_deps.
 specs/                # Feature-Spezifikationen (004-v3-esp32-port = V3-Port)
 ```
+
+**Hinweis zur Namensgebung**: `Sender/` und `Empfaenger/` enthalten seit dem
+2026-08-01 die **V3-Firmware** (ESP32). Zuvor lag dort die V2-Firmware
+(Arduino Nano), die zusammen mit `libraries/` entfernt wurde und nur noch über
+die Git-Historie auffindbar ist. Ältere Commits und Spec-Dokumente sprechen
+daher von `SenderV3/` und `EmpfaengerV3/` — gemeint sind dieselben Ordner.
 
 ## Commands
 
 ### V3: Build & Upload (PlatformIO — einziger unterstützter Build-Pfad)
 ```bash
-cd SenderV3        # oder EmpfaengerV3
-pio run            # bauen
-pio run -t upload  # flashen (Sender: natives USB-C)
-pio device monitor # 115200 Baud
+cd /d/git/Bogenampel   # Repo-Root — platformio.ini liegt HIER, nicht in den Firmware-Ordnern
+pio run -e sender          # bauen (oder -e empfaenger)
+pio run -t upload -e sender # flashen (Sender: BTN1 dabei halten!)
+pio device monitor -e sender # 115200 Baud
 ```
 Libraries kommen versioniert über `lib_deps` (kein manuelles Installieren).
 Arduino-IDE-Build ist seit 2026-06-11 keine Anforderung mehr (Constitution v2.2.0).
 
-### V2 (Legacy): Arduino IDE
-1. Open `Sender/Sender.ino` or `Empfaenger/Empfaenger.ino`
-2. Board: Arduino Nano, ATmega328P (Old Bootloader)
-3. Libraries: Adafruit ST7789, Adafruit GFX, RF24, FastLED
+### V2 (Legacy): nicht mehr im Arbeitsverzeichnis
+V2 wurde am 2026-08-01 entfernt. Zum Nachschlagen aus der Historie:
+```bash
+git log --all --oneline -- Sender/Sender.ino     # letzten V2-Commit finden
+git show <commit>:Sender/Sender.ino              # Datei ansehen
+```
+Baubar war V2 nur mit der Arduino IDE (Nano, ATmega328P Old Bootloader;
+Adafruit ST7789 + GFX, RF24, FastLED aus dem entfernten `libraries/`).
 
 ## Code Style
 
@@ -116,7 +129,11 @@ Verbindlich: `specs/004-v3-esp32-port/contracts/hardware-pins.md` (aus KiCad-Net
 
 ### Sender (ESP32-S3)
 - Power: LATCH=GPIO16 (**erste Aktion in setup(): HIGH!**), LOAD-Rail=GPIO7
-- Taster: BTN1=GPIO15 (**aktiv HIGH**, keine internen Pulls), BTN2=GPIO9 (INPUT_PULLUP)
+- Taster: BTN1=GPIO15 (**aktiv HIGH**, keine internen Pulls), BTN2=GPIO9 (INPUT_PULLUP).
+  Rollen seit 2026-08-01 an der Gehäusebeschriftung ausgerichtet: GPIO15 = **CONFIG**
+  (Weiter/Ändern, hält beim Einschalten den Latch), GPIO9 = **OK** (Bestätigen,
+  2 s Alarm, 3 s Aus). Zuordnung ausschließlich in `ButtonManager::readRawState()`.
+  Wartungsmodus = beide beim Einschalten halten.
 - e-Paper: CS=21, DC=47, RST=48, BUSY=38, CLK=14, MOSI=13 (write-only)
 - Akku: ADC_BAT=GPIO10 (ADC1, ×2,5); USB_CON=GPIO8; Lader ST1/ST2/PG/PRG=11/12/17/18
 - Reserviert: GPIO35-37 (Octal-PSRAM), GPIO19/20 (natives USB)
@@ -134,7 +151,7 @@ Verbindlich: `specs/004-v3-esp32-port/contracts/hardware-pins.md` (aus KiCad-Net
 
 ## Recent Changes
 - 005-ota-maintenance-mode: Added C++17, Arduino core for ESP32 (arduino-esp32 3.3.7) + WiFi, ArduinoOTA, ESPmDNS (Arduino-ESP32 built-ins), FastLED (already used); ESP-NOW via `esp_now`/`esp_wifi` (normal path only)
-- 2026-06-11: **V3-Firmware implementiert** (`SenderV3/`, `EmpfaengerV3/`): ESP-NOW-Transport,
+- 2026-06-11: **V3-Firmware implementiert** (`Sender/`, `Empfaenger/`, damals `SenderV3/`/`EmpfaengerV3/`): ESP-NOW-Transport,
   e-Paper-UI, Soft-Power, NVS, Lokalregler — beide Firmwares bauen mit PlatformIO
   (arduino-esp32 3.3.7); HIL-Abnahme offen (quickstart.md #1-#21)
 - 004-v3-esp32-port: Added C++ (Arduino core for ESP32 / arduino-esp32 3.x, C++17; V2 logic is C++11 and ports without changes)

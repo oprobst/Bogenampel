@@ -1,57 +1,39 @@
 /**
  * @file AlarmScreen.cpp
- * @brief Implementierung des Alarm-Screens
+ * @brief Implementierung des Alarm-Screens (e-Paper)
  */
 
 #include "AlarmScreen.h"
 
-AlarmScreen::AlarmScreen(Adafruit_ST7789& tft, ButtonManager& btnMgr)
-    : display(tft)
-    , buttons(btnMgr) {
+AlarmScreen::AlarmScreen(EpaperDisplay& epdRef)
+    : epd(epdRef) {
 }
 
-void AlarmScreen::begin() {
-    // Nichts zu initialisieren
-}
+void AlarmScreen::draw(bool delivered) {
+    Adafruit_GFX& g = epd.gfx();
 
-void AlarmScreen::update() {
-    // Keine vorzeitige Beendigung möglich
-}
+    // Invertierter Vollbild-Hintergrund für maximale Auffälligkeit
+    g.fillScreen(GxEPD_BLACK);
+    g.setTextColor(GxEPD_WHITE);
 
-void AlarmScreen::draw() {
-    // Schwarzer Hintergrund
-    display.fillScreen(ST77XX_BLACK);
+    // Großer "ALARM"-Schriftzug
+    epd.printCentered("ALARM", 50, 4);
 
-    // Portrait: Mehr vertikaler Platz, zentriert
-    int16_t x1, y1;
-    uint16_t w, h;
+    // Erklärungstext
+    epd.printCentered("Schiessbetrieb", 100, 2);
+    epd.printCentered("abgebrochen", 122, 2);
 
-    // Großer "ALARM" Text in Rot (zentriert)
-    display.setTextSize(4);
-    display.setTextColor(ST77XX_RED);
+    // Zustellstatus (US3-Szenario 3: bei Fehlschlag muss der Bediener
+    // wissen, dass er mündlich abbrechen muss)
+    if (delivered) {
+        epd.printCentered("Empfaenger: bestaetigt", 154, 1);
+    } else {
+        epd.printCentered("!! KEINE BESTAETIGUNG !!", 150, 1);
+        epd.printCentered("Muendlich abbrechen!", 162, 1);
+    }
 
-    const char* alarmText = "ALARM";
-    display.getTextBounds(alarmText, 0, 0, &x1, &y1, &w, &h);
-    uint16_t alarmX = (display.width() - w) / 2;
-    uint16_t alarmY = 100;  // Portrait: mehr Platz oben
+    // Quittierungs-Hinweis
+    epd.printCentered("OK: quittieren", EpaperDisplay::HEIGHT - 14, 1);
 
-    display.setCursor(alarmX, alarmY);
-    display.print(alarmText);
-
-    // Erklärungstext (zentriert)
-    display.setTextSize(2);
-    display.setTextColor(ST77XX_WHITE);
-
-    const char* line1 = "Schiessbetrieb";
-    const char* line2 = "abgebrochen";
-
-    display.getTextBounds(line1, 0, 0, &x1, &y1, &w, &h);
-    uint16_t line1X = (display.width() - w) / 2;
-    display.setCursor(line1X, 180);  // Portrait: angepasst
-    display.println(line1);
-
-    display.getTextBounds(line2, 0, 0, &x1, &y1, &w, &h);
-    uint16_t line2X = (display.width() - w) / 2;
-    display.setCursor(line2X, 210);  // Portrait: angepasst
-    display.println(line2);
+    g.setTextColor(GxEPD_BLACK);
 }

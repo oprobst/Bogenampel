@@ -1,44 +1,27 @@
 /**
  * @file ConfigMenu.cpp
- * @brief Implementierung des Konfigurationsmenüs
+ * @brief Implementierung des Konfigurationsmenüs (e-Paper)
  */
 
 #include "ConfigMenu.h"
 
-ConfigMenu::ConfigMenu(Adafruit_ST7789& tft, ButtonManager& btnMgr)
-    : display(tft)
+ConfigMenu::ConfigMenu(EpaperDisplay& epdRef, ButtonManager& btnMgr)
+    : epd(epdRef)
     , buttons(btnMgr)
-    , shootingTime(EEPROM_Config::DEFAULT_TIME)
-    , shooterCount(EEPROM_Config::DEFAULT_COUNT)
+    , shootingTime(TournamentDefaults::DEFAULT_TIME)
+    , shooterCount(TournamentDefaults::DEFAULT_COUNT)
     , cursorLine(0)
-    , selectedButton(1)  // Default: "Start"
     , complete(false)
-    , changeRequested(false)
-    , needsUpdate(true)
-    , firstDraw(true)
-    , lastShootingTime(0)
-    , lastShooterCount(0)
-    , lastCursorLine(0xFF)
-    , lastSelectedButton(0xFF) {
+    , needsUpdate(true) {
 }
 
 void ConfigMenu::begin() {
-    // Setze UI-Variablen zurück
     cursorLine = 0;
-    selectedButton = 1;  // Default: "Start"
     complete = false;
-    changeRequested = false;
     needsUpdate = true;
-    firstDraw = true;  // Beim nächsten draw() alles neu zeichnen
-
-    // Vorherige Werte zurücksetzen
-    lastShootingTime = 0;
-    lastShooterCount = 0;
-    lastCursorLine = 0xFF;
-    lastSelectedButton = 0xFF;
 }
 
-void ConfigMenu::setConfig(uint8_t time, uint8_t count) {
+void ConfigMenu::setConfig(uint16_t time, uint8_t count) {
     shootingTime = time;
     shooterCount = count;
     needsUpdate = true;
@@ -48,255 +31,112 @@ void ConfigMenu::update() {
     // Nichts tun wenn bereits abgeschlossen
     if (complete) return;
 
-    // Button-Handling abhängig von cursorLine
-
     if (cursorLine == 0) {
         // Zeile 0: Zeit auswählen (120/240)
-        if (buttons.wasPressed(Button::LEFT) || buttons.wasPressed(Button::RIGHT)) {
-            // Toggle zwischen 120 und 240
+        if (buttons.wasClicked(Button::CONFIG)) {
             shootingTime = (shootingTime == 120) ? 240 : 120;
             needsUpdate = true;
-        }
-        else if (buttons.wasPressed(Button::OK)) {
+        } else if (buttons.wasClicked(Button::OK)) {
             cursorLine = 1;
             needsUpdate = true;
-            
         }
-    }
-    else if (cursorLine == 1) {
+    } else if (cursorLine == 1) {
         // Zeile 1: Schützenanzahl auswählen (1-2/3-4)
-        if (buttons.wasPressed(Button::LEFT) || buttons.wasPressed(Button::RIGHT)) {
-            // Toggle zwischen 2 und 4
+        if (buttons.wasClicked(Button::CONFIG)) {
             shooterCount = (shooterCount == 2) ? 4 : 2;
-            needsUpdate = true;           
-        }
-        else if (buttons.wasPressed(Button::OK)) {
+            needsUpdate = true;
+        } else if (buttons.wasClicked(Button::OK)) {
             cursorLine = 2;
             needsUpdate = true;
         }
-    }
-    else if (cursorLine == 2) {
-        // Zeile 2: "Start" Button
-        if (buttons.wasPressed(Button::LEFT) || buttons.wasPressed(Button::RIGHT)) {
-            // Pfeiltasten → zurück zu Zeile 0 (Konfiguration ändern)
+    } else {
+        // Zeile 2: "Start" — CONFIG = Wrap-around zurück zur Konfiguration
+        if (buttons.wasClicked(Button::CONFIG)) {
             cursorLine = 0;
-            changeRequested = true;
             needsUpdate = true;
-        }
-        else if (buttons.wasPressed(Button::OK)) {
-            // "Start" → Menü abschließen
+        } else if (buttons.wasClicked(Button::OK)) {
             complete = true;
         }
     }
 }
 
 void ConfigMenu::draw() {
-    // Beim ersten Aufruf: Komplettes Display zeichnen
-    if (firstDraw) {
-        display.fillScreen(ST77XX_BLACK);
-        drawHeader();
-        drawTimeOption();
-        drawShooterOption();
-        drawButtonOption();
-        drawHelp();
+    Adafruit_GFX& g = epd.gfx();
 
-        // Werte speichern
-        lastShootingTime = shootingTime;
-        lastShooterCount = shooterCount;
-        lastCursorLine = cursorLine;
-        lastSelectedButton = selectedButton;
-        firstDraw = false;
+    // Inhalt unterhalb der Statuszeile löschen
+    g.fillRect(0, Display::STATUS_H, EpaperDisplay::WIDTH,
+               EpaperDisplay::HEIGHT - Display::STATUS_H, GxEPD_WHITE);
+    g.setTextColor(GxEPD_BLACK);
 
+    // Überschrift
+    epd.printCentered("Konfiguration", 32, 2);
+    g.drawFastHLine(10, 52, EpaperDisplay::WIDTH - 20, GxEPD_BLACK);
+
+    // --- Zeile 0: Zeit ---
+    const int16_t timeY = 64;
+    g.setTextSize(2);
+    g.setCursor(14, timeY);
+    g.print("Zeit");
+    if (cursorLine == 0) {
+        g.setCursor(2, timeY);
+        g.print('>');
     }
-    else {
-        // Selective Redraw: Nur geänderte Bereiche neu zeichnen
-
-        // Zeit-Zeile neu zeichnen wenn Zeit oder Cursor geändert
-        if (shootingTime != lastShootingTime ||
-            (cursorLine == 0) != (lastCursorLine == 0)) {
-            drawTimeOption();
-            lastShootingTime = shootingTime;
-        }
-
-        // Schützen-Zeile neu zeichnen wenn Schützenanzahl oder Cursor geändert
-        if (shooterCount != lastShooterCount ||
-            (cursorLine == 1) != (lastCursorLine == 1)) {
-            drawShooterOption();
-            lastShooterCount = shooterCount;
-        }
-
-        // Button-Zeile neu zeichnen wenn Auswahl oder Cursor geändert
-        if (selectedButton != lastSelectedButton ||
-            (cursorLine == 2) != (lastCursorLine == 2)) {
-            drawButtonOption();
-            lastSelectedButton = selectedButton;
-        }
-
-        lastCursorLine = cursorLine;
+    // Optionen 120s / 240s, aktive Auswahl unterstrichen
+    g.setCursor(86, timeY);
+    g.print("120s");
+    g.setCursor(146, timeY);
+    g.print("240s");
+    if (shootingTime == 120) {
+        g.drawFastHLine(86, timeY + 16, 46, GxEPD_BLACK);
+        g.drawFastHLine(86, timeY + 17, 46, GxEPD_BLACK);
+    } else {
+        g.drawFastHLine(146, timeY + 16, 46, GxEPD_BLACK);
+        g.drawFastHLine(146, timeY + 17, 46, GxEPD_BLACK);
     }
+
+    // --- Zeile 1: Schützen ---
+    const int16_t shooterY = 98;
+    g.setTextSize(2);
+    g.setCursor(14, shooterY);
+    g.print("Sch.");
+    if (cursorLine == 1) {
+        g.setCursor(2, shooterY);
+        g.print('>');
+    }
+    g.setCursor(86, shooterY);
+    g.print("1-2");
+    g.setCursor(146, shooterY);
+    g.print("3-4");
+    if (shooterCount == 2) {
+        g.drawFastHLine(86, shooterY + 16, 34, GxEPD_BLACK);
+        g.drawFastHLine(86, shooterY + 17, 34, GxEPD_BLACK);
+    } else {
+        g.drawFastHLine(146, shooterY + 16, 34, GxEPD_BLACK);
+        g.drawFastHLine(146, shooterY + 17, 34, GxEPD_BLACK);
+    }
+
+    // --- Zeile 2: Start-Button ---
+    const int16_t btnY = 134;
+    const int16_t btnH = 32;
+    const int16_t margin = 30;
+    const int16_t btnW = EpaperDisplay::WIDTH - 2 * margin;
+    if (cursorLine == 2) {
+        // Ausgewählt: invertiert (schwarzer Button, weiße Schrift)
+        g.fillRect(margin, btnY, btnW, btnH, GxEPD_BLACK);
+        g.setTextColor(GxEPD_WHITE);
+    } else {
+        g.drawRect(margin, btnY, btnW, btnH, GxEPD_BLACK);
+        g.setTextColor(GxEPD_BLACK);
+    }
+    epd.printCentered("Start", btnY + 9, 2);
+    g.setTextColor(GxEPD_BLACK);
+
+    // Hilfetext unten
+    g.setTextSize(1);
+    g.setCursor(10, EpaperDisplay::HEIGHT - 24);
+    g.print("Pfeil: aendern   OK: weiter");
+    g.setCursor(10, EpaperDisplay::HEIGHT - 12);
+    g.print("Taste 3s halten: Aus");
 
     needsUpdate = false;
-}
-
-//=============================================================================
-// Private Hilfsfunktionen für Selective Drawing
-//=============================================================================
-
-void ConfigMenu::drawHeader() {
-    // Überschrift: "Konfiguration"
-    display.setTextSize(2);
-    display.setTextColor(ST77XX_CYAN);
-
-    // Zentrieren
-    int16_t x1, y1;
-    uint16_t w, h;
-    display.getTextBounds(F("Konfiguration"), 0, 0, &x1, &y1, &w, &h);
-    display.setCursor((display.width() - w) / 2, 15);
-    display.print(F("Konfiguration"));
-
-    // Trennlinie
-    display.drawFastHLine(10, 50, display.width() - 20, Display::COLOR_GRAY);
-}
-
-void ConfigMenu::drawTimeOption() {
-    // Optionen-Positionen (Portrait: 240 Breite)
-    const uint16_t option1_x = 120;
-    const uint16_t option2_x = 180;
-    const uint16_t y = 65;
-
-    // Bereich löschen (Zeit-Zeile + Beschriftung)
-    display.fillRect(0, y, display.width(), 40, ST77XX_BLACK);
-
-    // Label "Zeit:"
-    display.setTextSize(2);
-    display.setCursor(10, y);
-    display.setTextColor(cursorLine == 0 ? ST77XX_YELLOW : ST77XX_WHITE);
-    display.print(F("Zeit:"));
-
-    int16_t x1, y1;
-    uint16_t w, h;
-
-    // Option 120s
-    display.setCursor(option1_x, y);
-    display.setTextColor(cursorLine == 0 ? ST77XX_YELLOW : ST77XX_WHITE);
-    display.print(F("120s"));
-    if (shootingTime == 120) {
-        display.getTextBounds(F("120s"), option1_x, y, &x1, &y1, &w, &h);
-        display.drawLine(option1_x, y + h + 2, option1_x + w, y + h + 2,
-                        cursorLine == 0 ? ST77XX_YELLOW : ST77XX_WHITE);
-    }
-
-    // Option 240s
-    display.setCursor(option2_x, y);
-    display.setTextColor(cursorLine == 0 ? ST77XX_YELLOW : ST77XX_WHITE);
-    display.print(F("240s"));
-    if (shootingTime == 240) {
-        display.getTextBounds(F("240s"), option2_x, y, &x1, &y1, &w, &h);
-        display.drawLine(option2_x, y + h + 2, option2_x + w, y + h + 2,
-                        cursorLine == 0 ? ST77XX_YELLOW : ST77XX_WHITE);
-    }
-
-    // Beschriftung "pro Passe"
-    display.setTextSize(1);
-    display.setTextColor(Display::COLOR_GRAY);
-    display.setCursor(10, y + 25);
-    display.print(F("pro Passe"));
-}
-
-void ConfigMenu::drawShooterOption() {
-    // Optionen-Positionen (Portrait: 240 Breite)
-    const uint16_t y = 115;
-
-    // Bereich löschen (Schützen-Zeile + Beschriftung)
-    display.fillRect(0, y, display.width(), 50, ST77XX_BLACK);
-
-    // Label "Schuetzen:"
-    display.setTextSize(2);
-    display.setCursor(10, y);
-    display.setTextColor(cursorLine == 1 ? ST77XX_YELLOW : ST77XX_WHITE);
-    display.print(F("Schuetzen:"));
-
-    // Beschriftung "pro Scheibe" (direkt unter "Schuetzen:")
-    display.setTextSize(1);
-    display.setTextColor(Display::COLOR_GRAY);
-    display.setCursor(10, y + 18);
-    display.print(F("pro Scheibe"));
-
-    // Optionen auf zweiter Zeile
-    const uint16_t optionY = y + 30;
-    const uint16_t option1_x = 60;
-    const uint16_t option2_x = 140;
-
-    display.setTextSize(2);
-    display.setTextColor(cursorLine == 1 ? ST77XX_YELLOW : ST77XX_WHITE);
-
-    int16_t x1, y1;
-    uint16_t w, h;
-
-    // Option 1-2
-    display.setCursor(option1_x, optionY);
-    display.print(F("1-2"));
-    if (shooterCount == 2) {
-        display.getTextBounds(F("1-2"), option1_x, optionY, &x1, &y1, &w, &h);
-        display.drawLine(option1_x, optionY + h + 2, option1_x + w, optionY + h + 2,
-                        cursorLine == 1 ? ST77XX_YELLOW : ST77XX_WHITE);
-    }
-
-    // Option 3-4
-    display.setCursor(option2_x, optionY);
-    display.print(F("3-4"));
-    if (shooterCount == 4) {
-        display.getTextBounds(F("3-4"), option2_x, optionY, &x1, &y1, &w, &h);
-        display.drawLine(option2_x, optionY + h + 2, option2_x + w, optionY + h + 2,
-                        cursorLine == 1 ? ST77XX_YELLOW : ST77XX_WHITE);
-    }
-}
-
-void ConfigMenu::drawButtonOption() {
-    // Portrait: Nur "Start" Button
-    const uint16_t y = 200;
-    const uint16_t buttonHeight = 40;
-    const uint16_t margin = 20;
-    const uint16_t buttonWidth = display.width() - 2 * margin;
-
-    // Bereich löschen
-    display.fillRect(0, y - 20, display.width(), buttonHeight + 25, ST77XX_BLACK);
-
-    // Farben für aktive Zeile
-    uint16_t activeColor = cursorLine == 2 ? ST77XX_YELLOW : ST77XX_WHITE;
-    uint16_t fillColor = Display::COLOR_DARKGRAY;
-
-    int16_t x1, y1;
-    uint16_t w, h;
-
-    // --- "Start" Button ---
-    if (cursorLine == 2) {
-        display.fillRect(margin, y, buttonWidth, buttonHeight, fillColor);
-    }
-    display.drawRect(margin, y, buttonWidth, buttonHeight, activeColor);
-
-    display.setTextSize(2);
-    display.getTextBounds(F("Start"), 0, 0, &x1, &y1, &w, &h);
-    uint16_t text_x = margin + (buttonWidth - w) / 2;
-    uint16_t text_y = y + (buttonHeight - h) / 2;
-
-    display.setCursor(text_x, text_y);
-    display.setTextColor(activeColor);
-    display.print(F("Start"));
-
-    if (cursorLine == 2) {
-        display.drawLine(text_x, text_y + h + 1, text_x + w, text_y + h + 1, activeColor);
-    }
-}
-
-void ConfigMenu::drawHelp() {
-    // Hilfetext unten (Portrait: mehr Platz)
-    display.setTextSize(1);
-    display.setTextColor(Display::COLOR_GRAY);
-    display.setCursor(10, display.height() - 30);
-    display.print(F("Stift: Aendern  OK: Weiter"));
-
-    // Alarm-Hinweis (zweite Zeile)
-    display.setCursor(10, display.height() - 15);
-    display.print(F("Pfeiltaste >2s: Alarm"));
 }

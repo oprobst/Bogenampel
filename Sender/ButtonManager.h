@@ -1,6 +1,28 @@
 /**
  * @file ButtonManager.h
- * @brief Button-Verwaltung mit Debouncing und Event-System
+ * @brief Button-Verwaltung mit Debouncing und Gesten (2-Taster-Bedienung V3)
+ *
+ * PORT aus V2 (Sender/ButtonManager.h), reduziert auf die real gelebte
+ * 2-Taster-Bedienung. Die Enum benennt die ROLLE, nicht den Pin — welcher
+ * Taster welche Rolle trägt, legt allein readRawState() fest:
+ *
+ * - Button::CONFIG → SW2, GPIO15, AKTIV HIGH (externer Teiler R2/R7, keine
+ *   internen Pulls!). Das ist der Einschalt-Taster: er hält beim Boot den
+ *   Power-Latch. Welcher Taster einschaltet, bestimmt die Hardware und ist
+ *   per Firmware nicht tauschbar. Auf dem Gehäuse steht "Config", also trägt
+ *   er die Weiter-/Ändern-Rolle. Klick feuert beim DRÜCKEN (keine Gesten).
+ * - Button::OK → SW1, GPIO9, gegen GND, INPUT_PULLUP, aktiv LOW.
+ *   Kurz = OK, ≥2s = Alarm (im Schießbetrieb), ≥3s = Power-Off (sonst) —
+ *   Schwellen meldet der Manager, die Auswertung übernimmt die StateMachine
+ *   (T016). Klick feuert beim LOSLASSEN, sonst wäre jeder Halte-Beginn auch
+ *   ein Klick.
+ *
+ * - Boot-Lockout (pro Taster): Wer beim Einschalten schon gedrückt ist, meldet
+ *   weder Klick noch Geste, bis er einmal losgelassen wurde. Nötig für den
+ *   Einschalt-Druck auf CONFIG (Edge Case "Boot press duration") und für den
+ *   Wartungsmodus, bei dem beide Taster gehalten werden — ohne den Lockout
+ *   liefe dort nach 3 s die Power-Off-Geste von OK los.
+ * - Kein Buzzer am V3-Sender (FR-019): Klick-Ton-Code entfernt
  */
 
 #pragma once
@@ -8,37 +30,25 @@
 #include "Config.h"
 
 /**
- * @brief Button-Enumeration
+ * @brief Button-Rollen (V3: nur 2 Taster) — Pin-Zuordnung in readRawState()
  */
 enum class Button : uint8_t {
-    LEFT = 0,   // J1: Links-Navigation
-    OK = 1,     // J2: Bestätigen/Auswählen
-    RIGHT = 2,  // J3: Rechts-Navigation
-    COUNT = 3   // Anzahl der Buttons
+    OK = 0,      // SW1/GPIO9: Bestätigen, Alarm (2s), Power-Off (3s)
+    CONFIG = 1,  // SW2/GPIO15: Weiter/Ändern — zugleich der Einschalt-Taster
+    COUNT = 2    // Anzahl der Buttons
 };
 
 /**
- * @brief Button Manager mit Debouncing und Event-Detection
- *
- * Features:
- * - Automatisches Debouncing (konfigurierbar)
- * - Event-Flags: wasPressed(), wasReleased()
- * - Long-Press Detection
- * - Polling von aktuellen Zuständen
+ * @brief Button Manager mit Debouncing, Klick- und Halte-Gesten
  */
 class ButtonManager {
 public:
     ButtonManager();
 
     /**
-     * @brief Initialisiert alle Button-Pins
+     * @brief Initialisiert die Button-Pins (inkl. Boot-Lockout-Erkennung)
      */
     void begin();
-
-    /**
-     * @brief Initialisiert den Buzzer-Pin
-     */
-    void initBuzzer();
 
     /**
      * @brief Update-Funktion (in loop() aufrufen)
@@ -47,44 +57,38 @@ public:
 
     /**
      * @brief Prüft ob Button aktuell gedrückt ist (mit Debouncing)
-     * @param btn Button-ID
-     * @return true wenn gedrückt
      */
     bool isPressed(Button btn) const;
 
     /**
-     * @brief Prüft ob Button seit letztem Abruf gedrückt wurde
-     * @param btn Button-ID
-     * @return true wenn gedrückt (Flag wird gelöscht!)
+     * @brief Klick-Ereignis (one-shot, Flag wird gelöscht)
+     *
+     * CONFIG: feuert beim Drücken (sofortige Reaktion, keine Halte-Geste).
+     * OK: feuert beim LOSLASSEN, wenn kürzer als die Alarm-Schwelle (2 s)
+     * gehalten wurde — sonst wäre jeder Halte-Beginn auch ein Klick.
      */
-    bool wasPressed(Button btn);
+    bool wasClicked(Button btn);
 
     /**
-     * @brief Prüft ob Button seit letztem Abruf losgelassen wurde
-     * @param btn Button-ID
-     * @return true wenn losgelassen (Flag wird gelöscht!)
+     * @brief Halte-Geste (one-shot): Button wird gerade ≥ ms gehalten
+     * @param btn Button
+     * @param ms Schwelle in Millisekunden (z.B. 2000 Alarm, 3000 Power-Off)
+     * @return true genau einmal beim Überschreiten der Schwelle
+     *
+     * Solange der Taster im Boot-Lockout steht (seit dem Einschalten noch nie
+     * losgelassen), werden keine Halte-Gesten gemeldet.
      */
-    bool wasReleased(Button btn);
-
-    /**
-     * @brief Prüft ob Button länger als duration gedrückt ist
-     * @param btn Button-ID
-     * @param duration Mindestdauer in Millisekunden
-     * @return true wenn Long Press erkannt
-     */
-    bool isLongPress(Button btn, uint32_t duration = 1000) const;
+    bool wasHeldFor(Button btn, uint16_t ms);
 
     /**
      * @brief Prüft ob irgendein Button gedrückt ist
-     * @return true wenn mindestens ein Button gedrückt
      */
     bool isAnyPressed() const;
 
     /**
-     * @brief Prüft ob Alarm ausgelöst wurde (Pfeiltaste > 2 Sekunden)
-     * @return true wenn Alarm-Trigger erkannt (Flag wird gelöscht!)
+     * @brief Boot-Lockout aktiv? (Taster seit dem Einschalten nicht losgelassen)
      */
-    bool isAlarmTriggered();
+    bool isBootLockoutActive(Button btn) const;
 
 private:
     /**
@@ -92,32 +96,22 @@ private:
      */
     struct ButtonState {
         bool pressed;              // Aktuell gedrückt (nach Debouncing)
-        bool lastRawState;         // Letzter roher Pin-Zustand
+        bool lastRawState;         // Letzter roher Pin-Zustand (gedrückt-Logik)
         uint32_t lastChangeTime;   // Zeitpunkt der letzten Zustandsänderung
-        uint32_t pressTime;        // Zeitpunkt des Drückens (für Long Press)
-        bool wasPressedFlag;       // Event-Flag: wurde gedrückt
-        bool wasReleasedFlag;      // Event-Flag: wurde losgelassen
+        uint32_t pressTime;        // Zeitpunkt des Drückens (für Halte-Gesten)
+        bool clickedFlag;          // Event-Flag: Klick erkannt
+        uint16_t reportedHoldMs;   // Höchste bereits gemeldete Halte-Schwelle
+        bool bootLockout;          // beim Boot gedrückt — bis zum Loslassen stumm
     };
 
     ButtonState buttons[static_cast<uint8_t>(Button::COUNT)];
 
-    // Alarm-Detektion (Pfeiltasten > 2 Sekunden)
-    uint32_t arrowPressStartTime;  // Zeitpunkt, wann Pfeiltaste gedrückt wurde
-    bool arrowPressActive;         // Pfeiltaste aktuell gedrückt
-    bool alarmTriggered;           // Alarm wurde ausgelöst (Flag)
-
     /**
-     * @brief Gibt den Pin für einen Button zurück
-     */
-    uint8_t getPin(Button btn) const;
-
-    /**
-     * @brief Liest den rohen Button-Zustand (LOW = gedrückt)
+     * @brief Liest den rohen Button-Zustand (true = gedrückt)
+     *
+     * Hier — und nur hier — hängt die Rolle am Pin:
+     *   CONFIG → Pins::BTN1 (GPIO15), aktiv HIGH (Teiler an +BATT)
+     *   OK     → Pins::BTN2 (GPIO9),  aktiv LOW  (interner Pullup gegen GND)
      */
     bool readRawState(Button btn) const;
-
-    /**
-     * @brief Spielt einen kurzen Klick-Ton ab
-     */
-    void playClickSound();
 };

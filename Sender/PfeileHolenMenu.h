@@ -1,18 +1,18 @@
 /**
  * @file PfeileHolenMenu.h
- * @brief Menü für "Pfeile holen" State
+ * @brief Menü für "Pfeile holen" State (e-Paper, 2 Tasten)
  *
- * Zeigt Optionen zwischen Passen:
- * - Nächste Passe starten
- * - Reihenfolge ändern
- * - Neustart
+ * PORT aus V2 (Sender/PfeileHolenMenu.h):
+ * - Optionen: Nächste Passe / Abfolge (nur 3-4 Schützen) / Neustart
+ * - CONFIG: Cursor weiter (Wrap-around), OK: Aktion ausführen
+ * - Verbindungs-/Batteriestatus wandert in V3 in die Statuszeile (T023)
  */
 
 #pragma once
 
-#include <Adafruit_ST7789.h>
 #include "Config.h"
 #include "ButtonManager.h"
+#include "EpaperDisplay.h"
 
 /**
  * @brief Aktionen die im Pfeile-Holen-Menü gewählt werden können
@@ -24,38 +24,12 @@ enum class PfeileHolenAction : uint8_t {
     NEUSTART = 2          // Zurück zur Konfiguration
 };
 
-/**
- * @brief Menü für "Pfeile holen" Pause zwischen Passen
- *
- * Verwaltet die UI-Logik für das Pause-Menü mit 3 Optionen.
- *
- * Usage:
- * @code
- * pfeileHolenMenu.begin();
- *
- * // In loop():
- * pfeileHolenMenu.update();
- * if (pfeileHolenMenu.needsRedraw()) {
- *     pfeileHolenMenu.draw();
- * }
- * if (pfeileHolenMenu.getSelectedAction() != PfeileHolenAction::NONE) {
- *     PfeileHolenAction action = pfeileHolenMenu.getSelectedAction();
- *     pfeileHolenMenu.resetAction();
- *     // ... handle action
- * }
- * @endcode
- */
 class PfeileHolenMenu {
 public:
-    /**
-     * @brief Konstruktor
-     * @param tft Display-Referenz
-     * @param btnMgr ButtonManager-Referenz
-     */
-    PfeileHolenMenu(Adafruit_ST7789& tft, ButtonManager& btnMgr);
+    PfeileHolenMenu(EpaperDisplay& epd, ButtonManager& btnMgr);
 
     /**
-     * @brief Initialisiert das Menü
+     * @brief Initialisiert das Menü (inkl. MENU_LOCKOUT gegen Tastenprellen)
      */
     void begin();
 
@@ -65,89 +39,37 @@ public:
     void update();
 
     /**
-     * @brief Zeichnet das komplette Menü
+     * @brief Zeichnet das komplette Menü in den Puffer (ohne Refresh!)
      */
     void draw();
 
-    /**
-     * @brief Prüft ob Display neu gezeichnet werden muss
-     * @return true wenn draw() aufgerufen werden sollte
-     */
     bool needsRedraw() const { return needsUpdate; }
 
-    /**
-     * @brief Holt die gewählte Aktion
-     * @return Gewählte Aktion oder NONE
-     */
     PfeileHolenAction getSelectedAction() const { return selectedAction; }
-
-    /**
-     * @brief Setzt die gewählte Aktion zurück
-     */
     void resetAction() { selectedAction = PfeileHolenAction::NONE; }
 
     /**
-     * @brief Aktualisiert den Verbindungsstatus zum Empfänger
-     * @param isConnected true wenn Empfänger erreichbar, false sonst
-     */
-    void updateConnectionStatus(bool isConnected);
-
-    /**
-     * @brief Aktualisiert den Batteriestatus
-     * @param voltageMillivolts Batteriespannung in Millivolt
-     * @param usbPowered true wenn USB angeschlossen, false wenn Batteriebetrieb
-     */
-    void updateBatteryStatus(uint16_t voltageMillivolts, bool usbPowered);
-
-    /**
-     * @brief Setzt die Turnierkonfiguration
-     * @param shooters Anzahl Schützen (2 oder 4)
-     * @param group Aktuelle Gruppe (GROUP_AB oder GROUP_CD)
-     * @param position Aktuelle Position (POS_1 oder POS_2)
+     * @brief Setzt die Turnierkonfiguration (Schützenzahl, Gruppe, Position)
      */
     void setTournamentConfig(uint8_t shooters, Groups::Type group, Groups::Position position);
 
 private:
-    Adafruit_ST7789& display;
+    EpaperDisplay& epd;
     ButtonManager& buttons;
 
     // UI-State
-    uint8_t cursorPosition;   // 0 = Nächste Passe, 1 = Reihenfolge, 2 = Neustart
-    PfeileHolenAction selectedAction;  // Gewählte Aktion
+    uint8_t cursorPosition;            // 0 = Nächste Passe, 1 = Abfolge, 2 = Neustart
+    PfeileHolenAction selectedAction;
 
     // Flags
     bool needsUpdate;
-    bool firstDraw;
-    uint32_t buttonLockoutUntil;  // Eingaben ignorieren bis zu diesem Zeitpunkt (millis)
-
-    // Vorherige Werte für selective redraw
-    uint8_t lastCursorPosition;
-
-    // Verbindungsstatus
-    bool connectionOk;
-    bool lastConnectionOk;
-
-    // Ping-Historie für Empfangsstärke-Anzeige (letzte 4 Pings)
-    bool pingHistory[4];      // true = ACK empfangen, false = kein ACK
-    uint8_t pingHistoryIndex; // Ring-Buffer Index (0-3)
-    bool pingHistoryUpdated;  // Flag: Ping-Historie wurde aktualisiert
-
-    // Batteriestatus
-    uint16_t batteryVoltage;  // Spannung in Millivolt
-    bool isUsbPowered;        // true wenn USB, false wenn Batterie
-    bool batteryUpdated;      // Flag: Batteriestatus wurde aktualisiert
+    uint32_t buttonLockoutUntil;  // Eingaben ignorieren bis zu diesem Zeitpunkt
 
     // Turnierkonfiguration
-    uint8_t shooterCount;           // 2 (1-2 Schützen) oder 4 (3-4 Schützen)
-    Groups::Type currentGroup;      // Aktuelle Gruppe (GROUP_AB oder GROUP_CD)
-    Groups::Position currentPosition; // Aktuelle Position (POS_1 oder POS_2)
-    bool groupConfigChanged;        // Flag: Gruppe/Position wurde geändert
+    uint8_t shooterCount;              // 2 oder 4
+    Groups::Type currentGroup;
+    Groups::Position currentPosition;
 
-    // Hilfsfunktionen für selective drawing
-    void drawHeader();
-    void drawOptions();
-    void drawHelp();
-    void drawConnectionIcon();
-    void drawBatteryIcon();       // Zeigt Batteriestatus
-    void drawShooterGroupInfo();  // Zeigt Schützengruppen bei 3-4 Schützen
+    void drawOptionButton(const char* label, int16_t y, bool selected);
+    void drawShooterGroupInfo();
 };

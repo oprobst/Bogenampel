@@ -1,40 +1,42 @@
 /**
  * @file SplashScreen.h
- * @brief Splash Screen für Startbildschirm
+ * @brief Splash Screen für Startbildschirm (e-Paper)
  *
- * Enthält nur die UI-Darstellung des Splash Screens.
+ * PORT aus V2 (Sender/SplashScreen.h): Logo/Version als ein Voll-Refresh,
+ * Status- und Qualitätsanzeige als Partial-Fenster (US5/T032).
  * Timing-Logik wird von der StateMachine verwaltet.
  */
 
 #pragma once
 
-#include <Adafruit_ST7789.h>
 #include "Config.h"
+#include "EpaperDisplay.h"
 
 class SplashScreen {
 public:
-    SplashScreen(Adafruit_ST7789& tft);
+    SplashScreen(EpaperDisplay& epd);
 
     /**
-     * @brief Zeichnet den kompletten Splash Screen
+     * @brief Zeichnet den kompletten Splash Screen in den Puffer (ohne Refresh!)
      */
     void draw();
 
     /**
-     * @brief Aktualisiert die Verbindungsstatus-Anzeige
-     * @param status Statustext (z.B. "Suche Empfaenger...", "Verbunden", "Nicht verbunden")
+     * @brief Aktualisiert die Verbindungsstatus-Anzeige (Partial-Refresh)
+     * @param status Statustext (z.B. "Suche Empfaenger...", "Teste Verbindung...")
      */
     void updateConnectionStatus(const char* status);
 
     /**
-     * @brief Zeigt Verbindungsqualität an
-     * @param qualityPercent Qualität in Prozent (0-100)
+     * @brief Zeigt die Verbindungsqualität an (Partial-Refresh, FR-009)
+     * @param qualityPercent Qualität in Prozent (0-100); 0 = "Keine Verbindung"
      */
     void showConnectionQuality(uint8_t qualityPercent);
 
 private:
-    Adafruit_ST7789& display;
+    EpaperDisplay& epd;
 
-    // Position für Status-Text (Portrait: 240x320)
-    static constexpr uint16_t STATUS_Y = 230;
+    // Partial-Fenster für Status/Qualität (unterer Bereich)
+    static constexpr uint16_t RESULT_Y = 116;
+    static constexpr uint16_t RESULT_H = 64;
 };

@@ -75,7 +75,7 @@ Arduino-Platform und etablierte Standards nutzen.
   mehr — V3 ist vollständig auf PlatformIO migriert (V2-Legacy bleibt Arduino-IDE-basiert)
 - Verwendete Bibliotheken MÜSSEN stabil, wartbar und Open Source sein
 - Pin-Belegungen MÜSSEN dokumentiert und im Code als Konstanten definiert sein
-- **Pin-Belegungen MÜSSEN exakt mit dem KiCad-Schaltplan der jeweiligen Hardware-Generation übereinstimmen (NON-NEGOTIABLE)**: V3-Firmware (`SenderV3/`, `EmpfaengerV3/`) gegen `Schaltung-Sender/` bzw. `Schaltung-Empfaenger/`; eingefrorene V2-Firmware (`Sender/`, `Empfaenger/`) gegen den V2-Schaltplan aus der Git-Historie (`Schaltung/`, entfernt am 2026-08-01)
+- **Pin-Belegungen MÜSSEN exakt mit dem KiCad-Schaltplan der jeweiligen Hardware-Generation übereinstimmen (NON-NEGOTIABLE)**: V3-Firmware (`Sender/`, `Empfaenger/`) gegen `Schaltung-Sender/` bzw. `Schaltung-Empfaenger/`; die V2-Firmware wurde am 2026-08-01 samt Schaltplan entfernt und ist nur noch in der Git-Historie
 - Hardware-Schnittstellen MÜSSEN gegen Fehlbeschaltung geschützt sein (Pull-up/Pull-down Widerstände)
 - Analoge Eingänge MÜSSEN auf ADC1-Pins liegen (ESP32: ADC2 ist bei aktivem Funk unbrauchbar)
 - Stromversorgung MUSS innerhalb spezifizierter Grenzen bleiben (USB: 0,5-3A, Powerbank/Netzteil: bis 12A)

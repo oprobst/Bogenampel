@@ -1,54 +1,24 @@
 /**
  * @file SchiessBetriebMenu.h
- * @brief Menü für "Schießbetrieb" State
+ * @brief Menü für "Schießbetrieb" State (e-Paper, Countdown per Partial-Refresh)
  *
- * Zeigt Schießbetrieb-UI mit:
- * - Vorbereitungsphase (10s, orange Countdown)
- * - Schießphase (120/240s, grüner Countdown)
- * - Gruppensequenz-Anzeige (bei 3-4 Schützen)
- * - "Passe beenden" Button
+ * PORT aus V2 (Sender/SchiessBetriebMenu.h), erweitert um den 1-Hz-Countdown
+ * im Partial-Fenster (SC-007 — kein Vollbild-Blitzen):
+ * - Vorbereitungsphase (10 s, Countdown in Sekunden)
+ * - Schießphase (120/240 s, Countdown mm:ss)
+ * - Gruppenanzeige bei 3-4 Schützen
+ * - OK kurz = "Passe beenden", OK ≥ 2 s = Alarm (StateMachine)
  */
 
 #pragma once
 
-#include <Adafruit_ST7789.h>
 #include "Config.h"
 #include "ButtonManager.h"
+#include "EpaperDisplay.h"
 
-/**
- * @brief Menü für Schießbetrieb (aktive Schießphase)
- *
- * Verwaltet die UI-Logik für den Schießbetrieb-State mit:
- * - Vorbereitungsphase (10s, orange)
- * - Schießphase (120/240s, grün)
- * - Gruppenanzeige bei 3-4 Schützen
- * - Button "Passe beenden"
- *
- * Usage:
- * @code
- * schiessBetriebMenu.begin();
- * schiessBetriebMenu.setTournamentConfig(120, 4, Groups::GROUP_AB, Groups::POS_1);
- * schiessBetriebMenu.setPreparationPhase(true, 10000);
- *
- * // In loop():
- * schiessBetriebMenu.update();
- * if (schiessBetriebMenu.needsRedraw()) {
- *     schiessBetriebMenu.draw();
- * }
- * if (schiessBetriebMenu.isEndRequested()) {
- *     schiessBetriebMenu.resetEndRequest();
- *     // ... handle end request
- * }
- * @endcode
- */
 class SchiessBetriebMenu {
 public:
-    /**
-     * @brief Konstruktor
-     * @param tft Display-Referenz
-     * @param btnMgr ButtonManager-Referenz
-     */
-    SchiessBetriebMenu(Adafruit_ST7789& tft, ButtonManager& btnMgr);
+    SchiessBetriebMenu(EpaperDisplay& epd, ButtonManager& btnMgr);
 
     /**
      * @brief Initialisiert das Menü
@@ -56,80 +26,63 @@ public:
     void begin();
 
     /**
-     * @brief Update-Funktion (in loop() aufrufen)
+     * @brief Update-Funktion (in loop() aufrufen) — OK kurz = Passe beenden
      */
     void update();
 
     /**
-     * @brief Zeichnet das komplette Menü
+     * @brief Zeichnet den kompletten Screen in den Puffer (ohne Refresh!)
      */
     void draw();
 
-    /**
-     * @brief Prüft ob Display neu gezeichnet werden muss
-     * @return true wenn draw() aufgerufen werden sollte
-     */
     bool needsRedraw() const { return needsUpdate; }
 
     /**
      * @brief Setzt die Turnierkonfiguration
-     * @param shootingTime Schießzeit (120 oder 240 Sekunden)
-     * @param shooterCount Anzahl Schützen (2 oder 4)
-     * @param group Aktuelle Gruppe (GROUP_AB oder GROUP_CD)
-     * @param position Aktuelle Position (POS_1 oder POS_2)
      */
-    void setTournamentConfig(uint8_t shootingTime, uint8_t shooterCount,
-                            Groups::Type group, Groups::Position position);
+    void setTournamentConfig(uint16_t shootingTime, uint8_t shooterCount,
+                             Groups::Type group, Groups::Position position);
 
     /**
-     * @brief Setzt die Vorbereitungsphase
-     * @param inPrep true wenn in Vorbereitung, false wenn in Schießphase
-     * @param remainingMs Verbleibende Zeit in Millisekunden
+     * @brief Setzt die Vorbereitungsphase (orange Phase in V2)
      */
     void setPreparationPhase(bool inPrep, uint32_t remainingMs);
 
     /**
-     * @brief Setzt die Schießphase
-     * @param remainingMs Verbleibende Zeit in Millisekunden
+     * @brief Wechselt in die Schießphase
      */
     void setShootingPhase(uint32_t remainingMs);
 
     /**
-     * @brief Prüft ob "Passe beenden" gedrückt wurde
-     * @return true wenn Button gedrückt wurde
+     * @brief 1-Hz-Countdown: zeichnet die Restzeit ins Countdown-Fenster und
+     *        stößt den Partial-Refresh an (R-2, ~300-400 ms)
+     * @param remainingSec verbleibende Sekunden der aktuellen Phase
      */
-    bool isEndRequested() const { return endRequested; }
+    void updateCountdown(uint32_t remainingSec);
 
-    /**
-     * @brief Setzt das "Passe beenden" Flag zurück
-     */
+    bool isEndRequested() const { return endRequested; }
     void resetEndRequest() { endRequested = false; }
 
 private:
-    Adafruit_ST7789& display;
+    EpaperDisplay& epd;
     ButtonManager& buttons;
 
     // Turnierkonfiguration
-    uint8_t shootingTime;    // 120 oder 240 Sekunden
-    uint8_t shooterCount;    // 2 (1-2 Schützen) oder 4 (3-4 Schützen)
-    Groups::Type currentGroup;      // Aktuelle Gruppe (GROUP_AB oder GROUP_CD)
-    Groups::Position currentPosition; // Aktuelle Position (POS_1 oder POS_2)
+    uint16_t shootingTime;             // 120 oder 240 Sekunden
+    uint8_t shooterCount;              // 2 oder 4
+    Groups::Type currentGroup;
+    Groups::Position currentPosition;
 
     // Timer-Zustand
-    bool inPreparationPhase;  // true = Vorbereitung (10s), false = Schießphase (120/240s)
-    uint16_t remainingSec;    // Verbleibende Sekunden
-    uint16_t lastRemainingSec; // Letzte gezeichnete Zeit (für selective redraw)
+    bool inPreparationPhase;           // true = Vorbereitung, false = Schießphase
+    uint32_t lastDrawnSec;             // zuletzt gezeichnete Restzeit
 
     // UI-State
     bool needsUpdate;
-    bool firstDraw;
-    bool endRequested;  // "Passe beenden" Button gedrückt
+    bool endRequested;                 // "Passe beenden" (OK kurz)
 
-    // Selective Drawing Helper
-    void drawHeader();
-    void drawGroupSequence();
-    void drawTimer();
-    void drawEndButton();
-    void drawHelp();
-    void updateTimer();  // Nur Timer aktualisieren (selective redraw)
+    /**
+     * @brief Restzeit ins Countdown-Fenster zeichnen (nur Puffer)
+     */
+    void drawCountdownValue(uint32_t remainingSec);
 };

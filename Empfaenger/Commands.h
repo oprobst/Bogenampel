@@ -1,16 +1,20 @@
 /**
  * @file Commands.h
- * @brief RF-Kommando-Definitionen für Bogenampel Sender ↔ Empfänger
+ * @brief ESP-NOW-Protokoll-Definitionen für Bogenampel V3 (Sender ↔ Empfänger)
  *
- * Definiert das Protokoll für die Funkübertragung zwischen Sender und Empfänger.
- * WICHTIG: Diese Datei MUSS identisch im Sender und Empfänger sein!
+ * Definiert das Funkprotokoll zwischen Sender und Empfänger.
+ * WICHTIG: Diese Datei MUSS byte-identisch in Sender/ und Empfaenger/ sein!
+ * Verbindliche Quelle: specs/004-v3-esp32-port/contracts/espnow-protocol.md
  *
- * Protokoll (2 Bytes):
- * - Byte 0: Kommando-Typ (RadioCommand)
- * - Byte 1: XOR-Checksumme (command ^ 0xFF)
+ * Frame (6 Bytes, packed):
+ * - Byte 0-1: magic 'B','3' (Filter gegen fremde ESP-NOW-Frames)
+ * - Byte 2:   FrameType (CMD/HELLO/HELLO_ACK/PING/PING_ACK)
+ * - Byte 3:   Sequenznummer (Dedup bei Retries)
+ * - Byte 4:   RadioCommand (nur bei FT_CMD, sonst 0x00)
+ * - Byte 5:   XOR-Checksumme (command ^ 0xFF, V2-Semantik)
  *
- * @date 2025-12-21
- * @version 2.1 - Halbe Passe (11 Kommandos)
+ * @date 2026-06-11
+ * @version 3.0 - ESP-NOW statt NRF24 (11 Kommandos unverändert aus V2)
  */
 
 #pragma once
@@ -18,7 +22,7 @@
 #include <Arduino.h>
 
 /**
- * @brief Radio-Kommando-Codes (11 Kommandos für Benutzerführung)
+ * @brief Radio-Kommando-Codes (11 Kommandos, Semantik unverändert aus V2)
  */
 enum RadioCommand : uint8_t {
     CMD_STOP = 0x01,       // Timer stoppen, rote Ampel
@@ -35,17 +39,34 @@ enum RadioCommand : uint8_t {
 };
 
 /**
- * @brief Radio-Paket-Struktur (2 Bytes, für nRF24L01+ Übertragung)
+ * @brief Frame-Typen (Transport-Ebene, neu in V3)
  */
-#pragma pack(push, 1)
-struct RadioPacket {
-    uint8_t command;    // Kommando-Code (RadioCommand)
-    uint8_t checksum;   // XOR-Checksumme (command ^ 0xFF)
+enum FrameType : uint8_t {
+    FT_CMD       = 0x01,  // Kommando Sender → Empfänger
+    FT_HELLO     = 0x02,  // Discovery-Broadcast Sender → alle
+    FT_HELLO_ACK = 0x03,  // Discovery-Antwort Empfänger → Sender (unicast)
+    FT_PING      = 0x04,  // Qualitätstest Sender → Empfänger
+    FT_PING_ACK  = 0x05   // optionale App-Antwort (Link-ACK genügt für Qualität)
 };
-#pragma pack(pop)
 
-// Compile-Zeit-Prüfung: RadioPacket muss exakt 2 Bytes sein
-static_assert(sizeof(RadioPacket) == 2, "RadioPacket must be exactly 2 bytes");
+// Magic-Bytes (Frame-Filter)
+constexpr uint8_t PACKET_MAGIC0 = 'B';  // 0x42
+constexpr uint8_t PACKET_MAGIC1 = '3';  // 0x33
+
+/**
+ * @brief Radio-Paket-Struktur (6 Bytes, für ESP-NOW-Übertragung)
+ */
+struct RadioPacketV3 {
+    uint8_t magic0;    // 'B' (0x42)
+    uint8_t magic1;    // '3' (0x33)
+    uint8_t type;      // FrameType
+    uint8_t seq;       // Sequenznummer, pro Boot zufällig initialisiert, ++ pro Sendung
+    uint8_t command;   // RadioCommand bei type==FT_CMD, sonst 0x00
+    uint8_t checksum;  // command ^ 0xFF
+} __attribute__((packed));
+
+// Compile-Zeit-Prüfung: RadioPacketV3 muss exakt 6 Bytes sein
+static_assert(sizeof(RadioPacketV3) == 6, "RadioPacketV3 must be exactly 6 bytes");
 
 /**
  * @brief Berechnet XOR-Checksumme für Kommando
@@ -57,41 +78,43 @@ inline uint8_t calculateChecksum(uint8_t command) {
 }
 
 /**
- * @brief Validiert RadioPacket-Checksumme
- * @param packet Zeiger auf RadioPacket
- * @return true wenn Checksumme korrekt, false sonst
+ * @brief Validiert ein empfangenes Paket (magic + Checksumme)
+ * @param packet Zeiger auf RadioPacketV3
+ * @return true wenn magic und Checksumme korrekt, false sonst
  */
-inline bool validateChecksum(const RadioPacket* packet) {
-    return (packet->checksum == (packet->command ^ 0xFF));
+inline bool validatePacket(const RadioPacketV3* packet) {
+    return (packet->magic0 == PACKET_MAGIC0)
+        && (packet->magic1 == PACKET_MAGIC1)
+        && (packet->checksum == (packet->command ^ 0xFF));
 }
 
 /**
  * @brief Hilfsfunktion: Kommando als String (für Debugging)
  * @param cmd RadioCommand
- * @return String-Repräsentation (PROGMEM)
+ * @return String-Repräsentation
  */
-inline const __FlashStringHelper* commandToString(RadioCommand cmd) {
+inline const char* commandToString(RadioCommand cmd) {
     switch (cmd) {
-        case CMD_STOP:       return F("STOP");
-        case CMD_START_120:  return F("START_120");
-        case CMD_START_240:  return F("START_240");
-        case CMD_INIT:       return F("INIT");
-        case CMD_ALARM:      return F("ALARM");
-        case CMD_PING:       return F("PING");
-        case CMD_GROUP_AB:   return F("GROUP_AB");
-        case CMD_GROUP_CD:   return F("GROUP_CD");
-        case CMD_GROUP_NONE: return F("GROUP_NONE");
-        case CMD_GROUP_FINISH_AB: return F("GROUP_FINISH_AB");
-        case CMD_GROUP_FINISH_CD: return F("GROUP_FINISH_CD");
-        default:             return F("UNKNOWN");
+        case CMD_STOP:       return "STOP";
+        case CMD_START_120:  return "START_120";
+        case CMD_START_240:  return "START_240";
+        case CMD_INIT:       return "INIT";
+        case CMD_ALARM:      return "ALARM";
+        case CMD_PING:       return "PING";
+        case CMD_GROUP_AB:   return "GROUP_AB";
+        case CMD_GROUP_CD:   return "GROUP_CD";
+        case CMD_GROUP_NONE: return "GROUP_NONE";
+        case CMD_GROUP_FINISH_AB: return "GROUP_FINISH_AB";
+        case CMD_GROUP_FINISH_CD: return "GROUP_FINISH_CD";
+        default:             return "UNKNOWN";
     }
 }
 
 /**
- * @brief Transmission Result (für sendCommand-Rückgabewert)
+ * @brief Transmission Result (für sendCommand-Rückgabewert, V2-API erhalten)
  */
 enum TransmissionResult {
-    TX_SUCCESS,   // ACK empfangen, Kommando zugestellt
+    TX_SUCCESS,   // Link-Layer-ACK empfangen, Kommando zugestellt
     TX_TIMEOUT,   // Kein ACK nach Retries (Empfänger nicht erreichbar)
-    TX_ERROR      // Radio-Hardware-Fehler
+    TX_ERROR      // esp_now-Fehler (Hardware/API)
 };

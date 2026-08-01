@@ -1,255 +1,138 @@
 /**
  * @file SchiessBetriebMenu.cpp
- * @brief Implementierung des Schießbetrieb-Menüs
+ * @brief Implementierung des Schießbetrieb-Menüs (e-Paper)
  */
 
 #include "SchiessBetriebMenu.h"
 
-SchiessBetriebMenu::SchiessBetriebMenu(Adafruit_ST7789& tft, ButtonManager& btnMgr)
-    : display(tft)
+#include <stdio.h>
+
+SchiessBetriebMenu::SchiessBetriebMenu(EpaperDisplay& epdRef, ButtonManager& btnMgr)
+    : epd(epdRef)
     , buttons(btnMgr)
     , shootingTime(120)
     , shooterCount(2)
     , currentGroup(Groups::Type::GROUP_AB)
     , currentPosition(Groups::Position::POS_1)
     , inPreparationPhase(true)
-    , remainingSec(0)
-    , lastRemainingSec(0xFFFF)
+    , lastDrawnSec(0xFFFFFFFF)
     , needsUpdate(true)
-    , firstDraw(true)
     , endRequested(false) {
 }
 
 void SchiessBetriebMenu::begin() {
     needsUpdate = true;
-    firstDraw = true;
     endRequested = false;
-    lastRemainingSec = 0xFFFF;  // Force timer redraw
+    lastDrawnSec = 0xFFFFFFFF;
 }
 
 void SchiessBetriebMenu::update() {
-    // Button-Handling: OK = "Passe beenden"
-    if (buttons.wasPressed(Button::OK)) {
+    // OK kurz = "Passe beenden" (OK ≥ 2s = Alarm, wertet die StateMachine aus)
+    if (buttons.wasClicked(Button::OK)) {
         endRequested = true;
     }
 }
 
-void SchiessBetriebMenu::draw() {
-    // Beim ersten Aufruf: Komplettes Display zeichnen
-    if (firstDraw) {
-        display.fillScreen(ST77XX_BLACK);
-        drawHeader();
-        drawGroupSequence();
-        drawTimer();
-        drawEndButton();
-        drawHelp();
-
-        firstDraw = false;
-    }
-    // Selective Redraw: Nur bei Phasenwechsel (Vorbereitung ↔ Schießbetrieb)
-    // Da wir keine Sekunden mehr anzeigen, kein Update bei jeder Sekunde nötig
-    else if (needsUpdate) {
-        updateTimer();
-    }
-
-    needsUpdate = false;
-}
-
-void SchiessBetriebMenu::setTournamentConfig(uint8_t shootingTime, uint8_t shooterCount,
+void SchiessBetriebMenu::setTournamentConfig(uint16_t time, uint8_t count,
                                              Groups::Type group, Groups::Position position) {
-    // Prüfe ob sich Gruppe/Position geändert hat (erfordert komplettes Neuzeichnen)
-    bool groupChanged = (this->currentGroup != group) || (this->currentPosition != position);
+    bool groupChanged = (currentGroup != group) || (currentPosition != position);
 
-    this->shootingTime = shootingTime;
-    this->shooterCount = shooterCount;
-    this->currentGroup = group;
-    this->currentPosition = position;
+    shootingTime = time;
+    shooterCount = count;
+    currentGroup = group;
+    currentPosition = position;
 
     if (groupChanged) {
-        firstDraw = true;  // Komplettes Neuzeichnen
         needsUpdate = true;
     }
 }
 
 void SchiessBetriebMenu::setPreparationPhase(bool inPrep, uint32_t remainingMs) {
-    this->inPreparationPhase = inPrep;
-    this->remainingSec = (remainingMs + 999) / 1000;  // Aufrunden auf Sekunden
+    inPreparationPhase = inPrep;
+    lastDrawnSec = 0xFFFFFFFF;  // Countdown-Fenster neu zeichnen
     needsUpdate = true;
+    (void)remainingMs;  // Restzeit kommt über updateCountdown()
 }
 
 void SchiessBetriebMenu::setShootingPhase(uint32_t remainingMs) {
-    this->inPreparationPhase = false;
-    this->remainingSec = (remainingMs + 999) / 1000;  // Aufrunden auf Sekunden
-    needsUpdate = true;
+    setPreparationPhase(false, remainingMs);
 }
 
-//=============================================================================
-// Private Hilfsfunktionen für Selective Drawing
-//=============================================================================
+void SchiessBetriebMenu::draw() {
+    Adafruit_GFX& g = epd.gfx();
 
-void SchiessBetriebMenu::drawHeader() {
-    // Überschrift: "Schiessbetrieb" in Orange (Portrait: TextSize 2, zentriert)
-    display.setTextSize(2);
-    display.setTextColor(ST77XX_ORANGE);
+    // Inhalt unterhalb der Statuszeile löschen
+    g.fillRect(0, Display::STATUS_H, EpaperDisplay::WIDTH,
+               EpaperDisplay::HEIGHT - Display::STATUS_H, GxEPD_WHITE);
+    g.setTextColor(GxEPD_BLACK);
 
-    int16_t x1, y1;
-    uint16_t w, h;
-    display.getTextBounds(F("Schiessbetrieb"), 0, 0, &x1, &y1, &w, &h);
-    display.setCursor((display.width() - w) / 2, 15);
-    display.print(F("Schiessbetrieb"));
+    // Überschrift
+    epd.printCentered("Schiessbetrieb", 30, 2);
 
-    // Trennlinie
-    display.drawFastHLine(10, 50, display.width() - 20, Display::COLOR_GRAY);
-}
-
-void SchiessBetriebMenu::drawGroupSequence() {
-    // Gruppensequenz anzeigen (nur bei 3-4 Schützen)
-    if (shooterCount == 4) {
-        // Portrait: Auf zwei Zeilen aufteilen für 240px Breite
-        display.setTextSize(2);
-
-        // Bestimme welcher Teil gelb sein soll
-        bool highlightAB1 = (currentGroup == Groups::Type::GROUP_AB && currentPosition == Groups::Position::POS_1);
-        bool highlightCD1 = (currentGroup == Groups::Type::GROUP_CD && currentPosition == Groups::Position::POS_1);
-        bool highlightCD2 = (currentGroup == Groups::Type::GROUP_CD && currentPosition == Groups::Position::POS_2);
-        bool highlightAB2 = (currentGroup == Groups::Type::GROUP_AB && currentPosition == Groups::Position::POS_2);
-
-        // Zeile 1: "{A/B -> C/D}"
-        display.setCursor(10, 60);
-        display.setTextColor(Display::COLOR_GRAY);
-        display.print(F("{"));
-        display.setTextColor(highlightAB1 ? ST77XX_YELLOW : Display::COLOR_GRAY);
-        display.print(F("A/B"));
-        display.setTextColor(Display::COLOR_GRAY);
-        display.print(F(" -> "));
-        display.setTextColor(highlightCD2 ? ST77XX_YELLOW : Display::COLOR_GRAY);
-        display.print(F("C/D"));
-        display.setTextColor(Display::COLOR_GRAY);
-        display.print(F("}"));
-
-        // Zeile 2: "{C/D -> A/B}"
-        display.setCursor(10, 85);
-        display.setTextColor(Display::COLOR_GRAY);
-        display.print(F("{"));
-        display.setTextColor(highlightCD1 ? ST77XX_YELLOW : Display::COLOR_GRAY);
-        display.print(F("C/D"));
-        display.setTextColor(Display::COLOR_GRAY);
-        display.print(F(" -> "));
-        display.setTextColor(highlightAB2 ? ST77XX_YELLOW : Display::COLOR_GRAY);
-        display.print(F("A/B"));
-        display.setTextColor(Display::COLOR_GRAY);
-        display.print(F("}"));
-    }
-    // Bei 1-2 Schützen: Keine Gruppenanzeige
-}
-
-void SchiessBetriebMenu::drawTimer() {
-    // Phasentext statt Timer
+    // Phasentext (V2: "Vorbereitung" orange / "Alles ins Gold" grün —
+    // auf s/w-e-Paper nur Text)
     const char* phaseText = inPreparationPhase ? "Vorbereitung" : "Alles ins Gold";
-    uint16_t phaseColor = inPreparationPhase ? Display::COLOR_ORANGE : ST77XX_GREEN;
+    epd.printCentered(phaseText, 54, 2);
 
-    // Portrait: Positionen angepasst (mehr vertikaler Platz)
-    // Bei 3-4 Schützen: Nach Gruppensequenz (2 Zeilen bei Y=60 und Y=85)
-    uint16_t phaseY = (shooterCount == 4) ? 120 : 80;
-
-    display.setTextSize(2);
-    display.setTextColor(phaseColor);
-
-    // Text horizontal zentrieren
-    int16_t x1, y1;
-    uint16_t w, h;
-    display.getTextBounds(phaseText, 0, 0, &x1, &y1, &w, &h);
-    uint16_t phaseX = (display.width() - w) / 2;
-
-    display.setCursor(phaseX, phaseY);
-    display.print(phaseText);
-
-    // Aktuelle Gruppe groß darunter anzeigen (nur bei 3-4 Schützen)
+    // Aktuelle Gruppe (nur bei 3-4 Schützen): invertierter Balken
     if (shooterCount == 4) {
         const char* groupText = (currentGroup == Groups::Type::GROUP_AB) ? "A/B" : "C/D";
-
-        display.setTextSize(6);  // Sehr groß
-        display.setTextColor(ST77XX_YELLOW);
-
-        // Text zentrieren
-        display.getTextBounds(groupText, 0, 0, &x1, &y1, &w, &h);
-        uint16_t groupX = (display.width() - w) / 2;
-        uint16_t groupY = 155;  // Unterhalb der Phase (Portrait: mehr Platz)
-
-        display.setCursor(groupX, groupY);
-        display.print(groupText);
+        const int16_t gy = 148;
+        g.fillRect(60, gy - 4, 80, 32, GxEPD_BLACK);
+        g.setTextColor(GxEPD_WHITE);
+        epd.printCentered(groupText, gy, 3);
+        g.setTextColor(GxEPD_BLACK);
     }
+
+    // Hilfetext unten
+    g.setTextSize(1);
+    g.setCursor(10, EpaperDisplay::HEIGHT - 24);
+    g.print("OK: Passe beenden");
+    g.setCursor(10, EpaperDisplay::HEIGHT - 12);
+    g.print("OK 2s halten: ALARM");
+
+    // Countdown-Fenster initial füllen (Refresh übernimmt die StateMachine)
+    if (lastDrawnSec != 0xFFFFFFFF) {
+        drawCountdownValue(lastDrawnSec);
+    }
+
+    needsUpdate = false;
 }
 
-void SchiessBetriebMenu::drawEndButton() {
-    // Button "Passe beenden" (Portrait: weiter unten, mehr Platz)
-    const uint16_t btnY = 240;
-    const uint16_t btnH = 35;
-    const uint16_t margin = 20;
-    uint16_t btnW = display.width() - 2 * margin;
+void SchiessBetriebMenu::drawCountdownValue(uint32_t remainingSec) {
+    Adafruit_GFX& g = epd.gfx();
 
-    // Grauer Hintergrund (wie bei anderen Buttons)
-    display.fillRect(margin, btnY, btnW, btnH, Display::COLOR_DARKGRAY);
+    // Countdown-Fenster löschen (data-model.md §7)
+    g.fillRect(Display::COUNTDOWN_X, Display::COUNTDOWN_Y,
+               Display::COUNTDOWN_W, Display::COUNTDOWN_H, GxEPD_WHITE);
+    g.setTextColor(GxEPD_BLACK);
 
-    // Oranger Rahmen
-    display.drawRect(margin, btnY, btnW, btnH, Display::COLOR_ORANGE);
+    // Vorbereitung: Sekunden ("10"); Schießphase: mm:ss ("2:00")
+    char buf[8];
+    if (inPreparationPhase) {
+        snprintf(buf, sizeof(buf), "%lu", (unsigned long)remainingSec);
+    } else {
+        snprintf(buf, sizeof(buf), "%lu:%02lu",
+                 (unsigned long)(remainingSec / 60), (unsigned long)(remainingSec % 60));
+    }
 
-    display.setTextSize(2);
-    display.setTextColor(Display::COLOR_ORANGE);
-
-    // Text zentrieren
+    // Größe 4 (Zeichen 24x32): "4:00" = 96 px — passt ins 120-px-Fenster
     int16_t x1, y1;
     uint16_t w, h;
-    display.getTextBounds("Passe beenden", 0, 0, &x1, &y1, &w, &h);
-    display.setCursor(margin + (btnW - w) / 2, btnY + (btnH - h) / 2);
-    display.print(F("Passe beenden"));
+    g.setTextSize(4);
+    g.getTextBounds(buf, 0, 0, &x1, &y1, &w, &h);
+    g.setCursor(Display::COUNTDOWN_X + (Display::COUNTDOWN_W - w) / 2,
+                Display::COUNTDOWN_Y + (Display::COUNTDOWN_H - h) / 2);
+    g.print(buf);
 }
 
-void SchiessBetriebMenu::drawHelp() {
-    // Hinweis unten (Portrait: mehr Platz)
-    display.setTextSize(1);
-    display.setTextColor(Display::COLOR_GRAY);
-    display.setCursor(10, display.height() - 20);
-    display.print(F("OK: Passe beenden"));
-}
+void SchiessBetriebMenu::updateCountdown(uint32_t remainingSec) {
+    if (remainingSec == lastDrawnSec) return;
+    lastDrawnSec = remainingSec;
 
-void SchiessBetriebMenu::updateTimer() {
-    // Portrait: Positionen angepasst
-    const uint16_t phaseY = (shooterCount == 4) ? 120 : 80;
+    drawCountdownValue(remainingSec);
 
-    // Lösche gesamten Bereich (Phase + große Gruppe bei 3-4 Schützen)
-    const uint16_t clearHeight = (shooterCount == 4) ? 100 : 25;
-    display.fillRect(0, phaseY, display.width(), clearHeight, ST77XX_BLACK);
-
-    // Phasentext und -farbe
-    const char* phaseText = inPreparationPhase ? "Vorbereitung" : "Alle ins Gold";
-    uint16_t phaseColor = inPreparationPhase ? Display::COLOR_ORANGE : ST77XX_GREEN;
-
-    // Text horizontal zentrieren
-    display.setTextSize(2);
-    int16_t x1, y1;
-    uint16_t w, h;
-    display.getTextBounds(phaseText, 0, 0, &x1, &y1, &w, &h);
-    uint16_t phaseX = (display.width() - w) / 2;
-
-    // Phasentext neu zeichnen
-    display.setTextColor(phaseColor);
-    display.setCursor(phaseX, phaseY);
-    display.print(phaseText);
-
-    // Aktuelle Gruppe groß darunter anzeigen (nur bei 3-4 Schützen)
-    if (shooterCount == 4) {
-        const char* groupText = (currentGroup == Groups::Type::GROUP_AB) ? "A/B" : "C/D";
-
-        display.setTextSize(6);  // Sehr groß
-        display.setTextColor(ST77XX_YELLOW);
-
-        // Text zentrieren
-        display.getTextBounds(groupText, 0, 0, &x1, &y1, &w, &h);
-        uint16_t groupX = (display.width() - w) / 2;
-        uint16_t groupY = 155;  // Unterhalb der Phase (Portrait)
-
-        display.setCursor(groupX, groupY);
-        display.print(groupText);
-    }
+    // Partial-Refresh nur des Countdown-Fensters (1 Hz, kein Blitzen — SC-007)
+    epd.partialUpdate(Display::COUNTDOWN_X, Display::COUNTDOWN_Y,
+                      Display::COUNTDOWN_W, Display::COUNTDOWN_H);
 }

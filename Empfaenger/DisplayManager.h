@@ -5,6 +5,8 @@
  * Kapselt die Anzeige-Logik für:
  * - 7-Segment Timer-Anzeige (3 Ziffern)
  * - Gruppen-LEDs (A/B und C/D)
+ *
+ * PORT aus V2 (Empfaenger/DisplayManager.h) — Logik unverändert (FR-003).
  */
 
 #pragma once
@@ -45,8 +47,26 @@ public:
      */
     void clearGroups();
 
+    /**
+     * @brief True, wenn seit dem letzten clearDirty() das LED-Array verändert
+     *        wurde und ein FastLED.show() aussteht.
+     *
+     * Die Anzeige-Methoden rufen bewusst KEIN show() mehr selbst auf, sondern
+     * markieren nur "dirty". Der Aufrufer (loop) führt pro Iteration genau EIN
+     * show() aus. Hintergrund: WS2811 braucht zwischen zwei Frames eine LOW-
+     * Reset-Pause; mehrere show() in schneller Folge (z.B. displayTimer + 2×
+     * setGroup) verschieben sonst den ersten Pixel und mischen Farben.
+     */
+    bool isDirty() const { return dirty_; }
+
+    /**
+     * @brief Setzt das Dirty-Flag zurück (nach einem ausgeführten show()).
+     */
+    void clearDirty() { dirty_ = false; }
+
 private:
-    CRGB* leds;  // Zeiger auf LED-Array
+    CRGB* leds;          // Zeiger auf LED-Array
+    bool dirty_ = false; // Anzeige verändert, show() steht aus
 
     /**
      * @brief Zeigt eine Zahl auf der 7-Segment Anzeige

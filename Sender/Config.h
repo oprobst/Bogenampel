@@ -1,32 +1,33 @@
 /**
  * @file Config.h
- * @brief Zentrale Konfigurationsdatei für Bogenampel Sender
+ * @brief Zentrale Konfigurationsdatei für Bogenampel V3 Sender (Bedieneinheit)
  *
  * Enthält alle Hardware-Pin-Definitionen, Timing-Konstanten und
- * Konfigurationsparameter für den Sender (Bedieneinheit).
+ * Konfigurationsparameter für den Sender.
  *
- * Hardware: Arduino Nano V3
- * - ST7789 TFT Display (240x320) über TXS0108EPW Level Shifter
- * - NRF24L01 Funkmodul
- * - 3x Taster, 3x Status-LEDs
- * - Batteriespannungsmessung (A4) - LiPo 3.0V - 4.2V direkt
+ * Hardware: ESP32-S3-WROOM-1U-N16R8 ("Universal-Fernbedienung", IC2)
+ * - Waveshare 1.54" e-Paper V2 (SSD1681, 200x200) als rohes Panel an J1
+ * - ESP-NOW Funk (integriert, kein externes Modul)
+ * - 2 Taster (SW2/GPIO15 = CONFIG + Einschalten, SW1/GPIO9 = OK), Power-Latch (TPS62742)
+ * - LiPo-Lader MCP73837, Batteriespannungsmessung über Teiler
  *
- * @date 2025-12-13
- * @version 1.0
+ * Verbindliche Pin-Quelle: specs/004-v3-esp32-port/contracts/hardware-pins.md
+ * (extrahiert aus Schaltung-Sender/BogenampelV3.kicad_sch Rev 3.0)
+ *
+ * @date 2026-06-11
+ * @version 3.0
  */
 
 #pragma once
 
 #include <Arduino.h>
-#include <avr/pgmspace.h>
-#include <RF24.h>  // Für rf24_pa_dbm_e und rf24_datarate_e
 
 //=============================================================================
 // DEBUG-KONFIGURATION (muss VOR allen anderen Definitionen stehen!)
 //=============================================================================
 
 // Debugging aktivieren/deaktivieren
-#define DEBUG_ENABLED 1  // 1 = Debug-Ausgaben an, 0 = aus
+#define DEBUG_ENABLED 1  // 1 = Debug-Ausgaben an (USB-CDC), 0 = aus
 
 // Verkürzte Zeiten für Tests (nur wenn DEBUG_ENABLED = 1)
 #define DEBUG_SHORT_TIMES 0  // 1 = Verkürzte Zeiten, 0 = Normale Zeiten
@@ -38,122 +39,154 @@
 namespace Pins {
 
     //-------------------------------------------------------------------------
-    // SPI-Bus (gemeinsam für Display und NRF24L01)
+    // Power-Management (TPS62742 + Latch)
     //-------------------------------------------------------------------------
-    constexpr uint8_t SPI_SCK  = 13;  // Hardware SPI Clock
-    constexpr uint8_t SPI_MOSI = 11;  // Hardware SPI Master Out Slave In
-    constexpr uint8_t SPI_MISO = 12;  // Hardware SPI Master In Slave Out
+    constexpr uint8_t LATCH = 16;  // über D1 (BAS40-05) an EN des TPS62742;
+                                   // ERSTE Aktion in setup(): OUTPUT + HIGH!
+                                   // LOW = Selbstabschaltung
+    constexpr uint8_t LOAD  = 7;   // TPS62742 LOAD-Eingang: schaltet 3V3_LOAD-Rail
+                                   // fürs Display; HIGH vor Display-Init, LOW vor Power-Off
 
     //-------------------------------------------------------------------------
-    // ST7789 TFT Display (über TXS0108EPW Level Shifter)
+    // Taster (SW2 = BTN1, SW1 = BTN2) — die Namen bezeichnen den PIN, nicht die
+    // Bedienrolle. Die Rollen sind in ButtonManager::readRawState() zugeordnet
+    // und wurden an die Gehäusebeschriftung angepasst:
+    //   BTN1 (GPIO15) → Rolle CONFIG (Weiter/Ändern), zugleich Einschalt-Taster
+    //   BTN2 (GPIO9)  → Rolle OK (Bestätigen, Alarm 2s, Power-Off 3s)
+    // Welcher Taster einschaltet, legt der Power-Latch in der Hardware fest.
     //-------------------------------------------------------------------------
-    constexpr uint8_t TFT_CS   = A2;  // Display Chip Select (UI_CS → DSPL_CS)
-    constexpr uint8_t TFT_DC   = 10;  // Display Data/Command (UI_DC/RS → DSPL_DC/RS)
-    constexpr uint8_t TFT_RST  = A3;  // Display Reset (UI_RES → DSPL_RES)
-    // Hinweis: TFT_MOSI, TFT_SCK, TFT_MISO = SPI-Bus (siehe oben)
-    // Backlight ist fest an 3.3V (kein PWM-Control)
+    constexpr uint8_t BTN1 = 15;   // SW2: AKTIV HIGH (externer Teiler
+                                   // R2/R7 an +BATT, 100nF C1); KEINE internen Pulls!
+    constexpr uint8_t BTN2 = 9;    // SW1: gegen GND, INPUT_PULLUP, aktiv LOW
 
     //-------------------------------------------------------------------------
-    // NRF24L01 Funkmodul
+    // Batterie / USB / Lader (MCP73837)
     //-------------------------------------------------------------------------
-    constexpr uint8_t NRF_CE   = 9;   // NRF24 Chip Enable (D9)
-    constexpr uint8_t NRF_CSN  = 8;   // NRF24 Chip Select (D8)
-    // Hinweis: NRF_MOSI, NRF_SCK, NRF_MISO = SPI-Bus (siehe oben)
+    constexpr uint8_t ADC_BAT = 10;  // ADC1_CH9, Teiler R4/R8 = 150k/100k an +BATT
+                                     // → V_BAT = V_ADC × 2,5 (Sensor stromlos wenn aus)
+    constexpr uint8_t USB_CON = 8;   // VBUS-Teiler (R16/R18), aktiv HIGH bei USB
+    constexpr uint8_t C_ST1   = 11;  // Lader STAT1 (Open-Drain → INPUT_PULLUP)
+    constexpr uint8_t C_ST2   = 12;  // Lader STAT2 (Open-Drain → INPUT_PULLUP)
+    constexpr uint8_t C_PG    = 17;  // Lader Power Good (Open-Drain → INPUT_PULLUP)
+    constexpr uint8_t C_PRG   = 18;  // Ladestrom-Umschaltung über R20 an PROG2;
+                                     // bleibt INPUT (hochohmig) = Default-Ladestrom
 
     //-------------------------------------------------------------------------
-    // Eingänge: Taster (alle mit internem Pull-Up, aktiv LOW)
+    // e-Paper (Waveshare 1.54" V2 / SSD1681, rohes Panel an J1, write-only SPI)
     //-------------------------------------------------------------------------
-    constexpr uint8_t BTN_LEFT   = 5;  // J1: Menü-Navigation links
-    constexpr uint8_t BTN_OK     = 6;  // J2: Menü-Auswahl bestätigen
-    constexpr uint8_t BTN_RIGHT  = 7;  // J3: Menü-Navigation rechts
+    constexpr uint8_t EPD_CS   = 21;  // J1 Pin 12 (CS_D)
+    constexpr uint8_t EPD_DC   = 47;  // J1 Pin 11
+    constexpr uint8_t EPD_RST  = 48;  // J1 Pin 10
+    constexpr uint8_t EPD_BUSY = 38;  // J1 Pin 9
+    constexpr uint8_t SPI_CLK  = 14;  // J1 Pin 13
+    constexpr uint8_t SPI_MOSI = 13;  // J1 Pin 14 (kein MISO — e-Paper write-only)
 
-    //-------------------------------------------------------------------------
-    // Ausgänge: Status-LEDs
-    //-------------------------------------------------------------------------
-    constexpr uint8_t LED_RED = A0;  // D1: Rote LED (Debug/Status)
-
-    //-------------------------------------------------------------------------
-    // Ausgänge: Buzzer
-    //-------------------------------------------------------------------------
-    constexpr uint8_t BUZZER = 2;  // D4: KY-006 Passiver Buzzer für Tastenton
-
-    //-------------------------------------------------------------------------
-    // Analoge Eingänge
-    //-------------------------------------------------------------------------
-    constexpr uint8_t VOLTAGE_SENSE = A4;  // LiPo-Spannung direkt (3.0V - 4.2V)
+    // Hinweis: GPIO19/20 = natives USB (CDC für Debug/Flash), GPIO35-37 = Octal-PSRAM
+    // (N16R8) — NICHT benutzen!
 
 } // namespace Pins
 
 //=============================================================================
-// DISPLAY KONFIGURATION
+// DISPLAY KONFIGURATION (e-Paper, 200x200)
 //=============================================================================
 
 namespace Display {
 
-    // Display-Auflösung (ST7789)
-    constexpr uint16_t WIDTH  = 240;
-    constexpr uint16_t HEIGHT = 320;
+    // Panel-Auflösung (GDEH0154D67 / SSD1681)
+    constexpr uint16_t WIDTH  = 200;
+    constexpr uint16_t HEIGHT = 200;
 
-    // Display-Orientierung (0, 1, 2, 3 = 0°, 90°, 180°, 270°)
-    constexpr uint8_t ROTATION = 0;  // 0 = 0° (Portrait: 240x320)
+    // Display-Orientierung (GxEPD2: 0-3) — 2 = um 180° gedreht
+    constexpr uint8_t ROTATION = 2;
 
-    // Hinweis: Adafruit_ST7789 nutzt Standard-Farbdefinitionen:
-    // ST77XX_BLACK, ST77XX_WHITE, ST77XX_RED, ST77XX_GREEN, ST77XX_BLUE, etc.
-    // Hier nur Custom-Farben in RGB565:
-    constexpr uint16_t COLOR_GRAY    = 0x8410;
-    constexpr uint16_t COLOR_DARKGRAY = 0x4208;
-    constexpr uint16_t COLOR_ORANGE  = 0xFD20;
+    // Partial-Refresh-Fenster (data-model.md §7)
+    // Statuszeile (oben): Akku %, USB-/Lade-Symbol, Funkstatus
+    constexpr uint16_t STATUS_X = 0;
+    constexpr uint16_t STATUS_Y = 0;
+    constexpr uint16_t STATUS_W = 200;
+    constexpr uint16_t STATUS_H = 24;
 
-    // Status-Bereich (obere rechte Ecke für Batterie/USB-Symbol)
-    constexpr uint8_t STATUS_AREA_X = 200;
-    constexpr uint8_t STATUS_AREA_Y = 5;
-    constexpr uint8_t STATUS_AREA_WIDTH = 35;
-    constexpr uint8_t STATUS_AREA_HEIGHT = 20;
+    // Countdown-Fenster (zentriert): mm:ss bzw. Sekunden, 1 Hz partial
+    constexpr uint16_t COUNTDOWN_X = 40;
+    constexpr uint16_t COUNTDOWN_Y = 76;
+    constexpr uint16_t COUNTDOWN_W = 120;
+    constexpr uint16_t COUNTDOWN_H = 64;
+
+    // Ghosting-Budget: So viele Partial-Refreshes (Fenster + Screenwechsel)
+    // dürfen aufeinander folgen, bevor der nächste Screenwechsel einmal voll
+    // durchblitzt und die Restschatten löscht (R-2).
+    constexpr uint8_t PARTIAL_REFRESH_LIMIT = 20;
 
 } // namespace Display
 
 //=============================================================================
-// RF KOMMUNIKATION (NRF24L01)
+// OTA (WiFi-Station im Wartungsmodus + ArduinoOTA)
 //=============================================================================
 
-namespace RF {
+// wifi_credentials.h (gitignored) definiert WIFI_SSID_OVERRIDE + WIFI_PASS_OVERRIDE.
+// Vorlage: wifi_credentials.h.example im Repo-Root.
+#if __has_include("wifi_credentials.h")
+    #include "wifi_credentials.h"
+#endif
 
-    // SPI-Frequenz für NRF24L01 (max 10 MHz)
-    constexpr uint32_t SPI_FREQUENCY = 10000000UL;  // 10 MHz
+namespace OTA {
 
-    // RF-Kanal (0-125, 2.4 GHz + Kanal MHz)
-    constexpr uint8_t CHANNEL = 76;  // 2.476 GHz
+    constexpr const char* HOSTNAME = "bogenampel-sender";
 
-    // RF-Datenrate (verwende RF24-Library Enums direkt)
-    // RF24_250KBPS = robuster bei schlechten Verbindungen/langen Kabeln!
-    constexpr rf24_datarate_e DATA_RATE = RF24_250KBPS;
+    // Heimnetz-WLAN für den Wartungsmodus — aus wifi_credentials.h. Ohne
+    // Zugangsdaten bleibt der Wartungsmodus in der CONNECTING-Anzeige stehen;
+    // einen SoftAP-Fallback gibt es bewusst nicht (Kanalkonflikt-Vermeidung,
+    // identisch zum Empfänger).
+    // Kanal-Hinweis: ESP-NOW läuft auf Kanal 1; sobald sich der Sender in ein
+    // Netz auf einem anderen Kanal einbucht, ist ESP-NOW tot. Genau deshalb
+    // sind Wartungsmodus und Normalbetrieb strikt getrennt.
+#ifdef WIFI_SSID_OVERRIDE
+    constexpr const char* WIFI_SSID = WIFI_SSID_OVERRIDE;
+    constexpr const char* WIFI_PASS = WIFI_PASS_OVERRIDE;
+#else
+    constexpr const char* WIFI_SSID = "";
+    constexpr const char* WIFI_PASS = "";
+#endif
+    constexpr uint16_t WIFI_TIMEOUT = 10000;  // ms bis zum nächsten Verbindungsversuch
 
-    // RF-Power Level (verwende RF24-Library Enums direkt)
-    // RF24_PA_MAX = 0dBm (höchste Leistung, ~50m Reichweite)
-    // WICHTIG: Benötigt externe 3.3V Versorgung (AMS1117) + 100µF Kondensator!
-    constexpr rf24_pa_dbm_e POWER_LEVEL = RF24_PA_MIN;
-    
+} // namespace OTA
 
-    // Pipe-Adressen (5 Bytes)
-    // Sender schreibt an Pipe 0, Empfänger liest von Pipe 0
-    const uint8_t PIPE_ADDRESS[5] PROGMEM = {'B', '4', 'M', 'P', 'L'};  // "BAMPL" = Bogenampel
+//=============================================================================
+// FUNK (ESP-NOW)
+//=============================================================================
 
-    // Auto-ACK Einstellungen
-    constexpr bool AUTO_ACK_ENABLED = true;  // ACK aktivieren für Verbindungskontrolle
+namespace Radio {
 
-    // Retry-Einstellungen (für ACK-Retransmission)
-    constexpr uint8_t RETRY_DELAY = 5;    // Delay: (delay + 1) * 250µs = 1.5ms
-    constexpr uint8_t RETRY_COUNT = 15;   // Max 15 Retries
+    // WLAN-Kanal (fest, beide Geräte identisch — espnow-protocol.md)
+    constexpr uint8_t CHANNEL = 1;
 
-    // Payload-Größe
-    constexpr uint8_t PAYLOAD_SIZE = 2;   // 2 Bytes (Command + Checksum)
+    // Transport-Retry (Send-Callback NACK → erneut senden)
+    constexpr uint8_t MAX_RETRIES = 3;          // max. 3 Versuche
+    constexpr uint16_t RETRY_DELAY_MS = 50;     // 50 ms Abstand
+    constexpr uint16_t TRANSMIT_TIMEOUT_MS = 500;  // Gesamtbudget pro Kommando (FR-007)
 
-    // Connection Quality Test
-    constexpr uint8_t QUALITY_TEST_PINGS = 10;        // Anzahl Pings für Qualitätstest
-    constexpr uint16_t QUALITY_TEST_DURATION_MS = 5000;  // 5 Sekunden für Test
-    constexpr uint16_t QUALITY_TEST_INTERVAL_MS = 500;   // 500ms zwischen Pings (10 in 5s)
+    // Discovery (FT_HELLO-Broadcast bis FT_HELLO_ACK)
+    constexpr uint16_t HELLO_INTERVAL_MS = 1000;   // max. 1 Hz (Anfangsphase)
 
-} // namespace RF
+    // Backoff: Ist nach HELLO_FAST_COUNT Versuchen kein Empfänger aufgetaucht,
+    // ist er vermutlich aus. Dann genügt ein langsamer Suchlauf — das hält den
+    // Log lesbar und spart Sendezeit. Beim Einschalten des Empfängers dauert die
+    // Erkennung dann max. HELLO_SLOW_INTERVAL_MS.
+    constexpr uint8_t  HELLO_FAST_COUNT = 10;         // ~10 s im 1-Hz-Raster
+    constexpr uint16_t HELLO_SLOW_INTERVAL_MS = 5000; // danach alle 5 s
+
+    // Nur die ersten HELLO_LOG_COUNT Broadcasts werden geloggt — danach meldet
+    // sich die Discovery erst wieder, wenn ein Empfänger antwortet.
+    constexpr uint8_t HELLO_LOG_COUNT = 3;
+
+    // Kanal-Wächter: Prüfintervall für den tatsächlichen WLAN-Home-Channel
+    constexpr uint16_t CHANNEL_CHECK_MS = 2000;
+
+    // Connection Quality Test (Splash, R-5)
+    constexpr uint8_t QUALITY_TEST_PINGS = 10;        // Anzahl Pings
+    constexpr uint16_t QUALITY_TEST_INTERVAL_MS = 250;  // 250 ms Raster (10 in 2,5 s)
+
+} // namespace Radio
 
 //=============================================================================
 // BATTERIE-ÜBERWACHUNG
@@ -161,17 +194,13 @@ namespace RF {
 
 namespace Battery {
 
-    // LiPo-Spannungsgrenzen (in Millivolt)
+    // LiPo-Spannungsgrenzen (in Millivolt, V2-Schwellen)
     constexpr uint16_t VOLTAGE_MIN_MV = 3000;   // 3.0V = 0% (LiPo Cutoff)
     constexpr uint16_t VOLTAGE_MAX_MV = 4200;   // 4.2V = 100% (LiPo voll)
     constexpr uint16_t VOLTAGE_LOW_MV = 3300;   // 3.3V = ~10% (Low Battery Warnung)
 
-    // Kein Spannungsteiler - LiPo direkt an ADC (max 4.2V < 5V Referenz)
-    constexpr float DIVIDER_RATIO = 1.0f;  // Vbat = Vmeasured * 1.0
-
-    // ADC-Referenzspannung (Arduino Nano: 5V)
-    constexpr float ADC_VREF = 5.0f;
-    constexpr uint16_t ADC_MAX = 1023;  // 10-bit ADC
+    // Spannungsteiler R4/R8 = 150k/100k → V_BAT = V_ADC × 2,5
+    constexpr float DIVIDER_RATIO = 2.5f;
 
     // Median-Filter Größe
     constexpr uint8_t FILTER_SIZE = 5;  // 5 Messwerte für Median
@@ -192,12 +221,8 @@ namespace Timing {
     constexpr uint16_t QUALITY_DISPLAY_DURATION_MS = 5000;  // 5 Sekunden Qualitätsanzeige
 
     // Button Debouncing
-    constexpr uint8_t DEBOUNCE_MS = 80;          // 80ms Entprellzeit (erhöht für robustere Erkennung)
+    constexpr uint8_t DEBOUNCE_MS = 80;          // 80ms Entprellzeit (V2-Wert)
     constexpr uint16_t MENU_LOCKOUT_MS = 400;    // 400ms Eingabesperre nach Zustandswechsel
-
-    // Buzzer Click-Ton
-    constexpr uint16_t CLICK_FREQUENCY_HZ = 1600;  // 1,6 kHz für satten Klick
-    constexpr uint8_t CLICK_DURATION_MS = 25;      // 25ms kurzer Klick
 
     // Schießbetrieb
     #if DEBUG_SHORT_TIMES
@@ -206,28 +231,71 @@ namespace Timing {
         constexpr uint16_t PREPARATION_TIME_MS = 10000;  // 10 Sekunden Vorbereitungsphase
     #endif
 
-    // Alarm Detection
-    constexpr uint16_t ALARM_THRESHOLD_MS = 2000;  // 2 Sekunden OK-Button halten für Alarm
+    // Tastergesten (Rolle OK)
+    constexpr uint16_t ALARM_THRESHOLD_MS = 2000;    // 2s halten im Schießbetrieb = Alarm
+    constexpr uint16_t POWER_OFF_HOLD_MS = 3000;     // 3s halten (außerhalb Schießbetrieb) = Aus
 
-    // Display-Aktualisierung
-    constexpr uint16_t DISPLAY_UPDATE_MS = 100;  // 100ms (10 fps)
-
-    // LED-Blink-Intervalle
-    constexpr uint16_t LED_BLINK_FAST_MS = 250;   // Schnelles Blinken
-    constexpr uint16_t LED_BLINK_SLOW_MS = 1000;  // Langsames Blinken
-
-    // RF-Timeout
-    constexpr uint16_t RF_TRANSMIT_TIMEOUT_MS = 500;  // Max 500ms für Übertragung (inkl. Retries)
+    // Alarm-App-Retries (V2-Werte; jede Wiederholung = neuer Frame mit neuer seq)
     constexpr uint16_t ALARM_RETRY_DELAY_MS = 200;   // 200ms zwischen Alarm-Retries
     constexpr uint8_t ALARM_MAX_RETRIES = 3;         // 3 Versuche für Alarm-Kommando
 
 } // namespace Timing
 
 //=============================================================================
-// HINWEIS: KOMMANDO-DEFINITIONEN
+// NVS-KONFIGURATION (ersetzt AVR-EEPROM, R-6)
 //=============================================================================
-// Die RF-Kommando-Definitionen befinden sich in Commands.h
-// (RadioCommand, RadioPacket, calculateChecksum, validateChecksum)
+
+namespace NVS {
+
+    constexpr const char* NAMESPACE_NAME = "bogenampel";
+    constexpr const char* KEY_SHOOTING_TIME = "timeS";  // uint16: 120 oder 240
+    constexpr const char* KEY_SHOOTER_COUNT = "count";  // uint8: 2 oder 4
+
+} // namespace NVS
+
+//=============================================================================
+// GRUPPEN-DEFINITIONEN (für Anzeige auf Display)
+//=============================================================================
+
+namespace Groups {
+
+    // Gruppen-Typen
+    enum class Type : uint8_t {
+        GROUP_AB = 0,  // Gruppe A/B
+        GROUP_CD = 1   // Gruppe C/D
+    };
+
+    // Gruppen-Namen
+    constexpr const char* NAME_AB = "A/B";
+    constexpr const char* NAME_CD = "C/D";
+
+    // Positions-Marker für 4-State Cycle (siehe Spec 002-shooter-groups)
+    enum class Position : uint8_t {
+        POS_1 = 1,  // Position 1
+        POS_2 = 2   // Position 2
+    };
+
+} // namespace Groups
+
+//=============================================================================
+// TURNIER-KONFIGURATION (Wertebereiche, Persistenz in ConfigStore)
+//=============================================================================
+
+namespace TournamentDefaults {
+
+    // Gültige Werte für shootingTime (Sekunden)
+    constexpr uint16_t TIME_120_SEC = 120;
+    constexpr uint16_t TIME_240_SEC = 240;
+
+    // Gültige Werte für shooterCount
+    constexpr uint8_t SHOOTERS_1_2 = 2;   // Anzeige: "1-2 Schützen"
+    constexpr uint8_t SHOOTERS_3_4 = 4;   // Anzeige: "3-4 Schützen"
+
+    // Default-Werte (bei fehlenden/ungültigen NVS-Einträgen, FR-005)
+    constexpr uint16_t DEFAULT_TIME = TIME_120_SEC;
+    constexpr uint8_t DEFAULT_COUNT = SHOOTERS_1_2;
+
+} // namespace TournamentDefaults
 
 //=============================================================================
 // SYSTEMKONSTANTEN
@@ -235,12 +303,12 @@ namespace Timing {
 
 namespace System {
 
-    // Versionsinformation (im Flash gespeichert)
-    const char VERSION[] PROGMEM = "Bogenampeln V1.0";
-    const char BUILD_DATE[] PROGMEM = __DATE__;
-    const char BUILD_TIME[] PROGMEM = __TIME__;
+    // Versionsinformation
+    constexpr const char* VERSION = "Bogenampel V3.0";
+    constexpr const char* BUILD_DATE = __DATE__;
+    constexpr const char* BUILD_TIME = __TIME__;
 
-    // Serial Baud Rate (für Debugging)
+    // Serial Baud Rate (USB-CDC, für Debugging)
     constexpr uint32_t SERIAL_BAUD = 115200;
 
     #if DEBUG_ENABLED
@@ -256,121 +324,24 @@ namespace System {
 } // namespace System
 
 //=============================================================================
-// GRUPPEN-DEFINITIONEN (für Anzeige auf Display)
+// KONFIGURATION VALIDIEREN (zur Compile-Zeit)
 //=============================================================================
 
-namespace Groups {
-
-    // Gruppen-Typen
-    enum class Type : uint8_t {
-        GROUP_AB = 0,  // Gruppe A/B
-        GROUP_CD = 1   // Gruppe C/D
-    };
-
-    // Gruppen-Namen (im Flash)
-    const char GROUP_AB[] PROGMEM = "A/B";
-    const char GROUP_CD[] PROGMEM = "C/D";
-
-    // Positions-Marker für 4-State Cycle (siehe Spec 002-shooter-groups)
-    enum class Position : uint8_t {
-        POS_1 = 1,  // Position 1
-        POS_2 = 2   // Position 2
-    };
-
-} // namespace Groups
-
-//=============================================================================
-// EEPROM KONFIGURATION
-//=============================================================================
-
-namespace EEPROM_Config {
-
-    // EEPROM-Adressen
-    constexpr uint16_t CONFIG_ADDR = 0;  // TournamentConfig ab Adresse 0
-
-    /**
-     * @brief Turnier-Konfiguration (gespeichert im EEPROM)
-     *
-     * Diese Struktur wird im EEPROM gespeichert, um die Konfiguration
-     * über Power-Cycles hinweg zu erhalten.
-     */
-    struct TournamentConfig {
-        uint8_t shootingTime;   // 120 oder 240 (Sekunden)
-        uint8_t shooterCount;   // 2 (1-2 Schützen) oder 4 (3-4 Schützen)
-        uint8_t checksum;       // CRC8-Checksumme zur Validierung
-    } __attribute__((packed));
-
-    // Gültige Werte für shootingTime
-    enum class ShootingTime : uint8_t {
-        TIME_120_SEC = 120,
-        TIME_240_SEC = 240
-    };
-
-    // Gültige Werte für shooterCount
-    enum class ShooterCount : uint8_t {
-        SHOOTERS_1_2 = 2,   // Anzeige: "1-2 Schützen"
-        SHOOTERS_3_4 = 4    // Anzeige: "3-4 Schützen"
-    };
-
-    // Default-Werte
-    constexpr uint8_t DEFAULT_TIME = static_cast<uint8_t>(ShootingTime::TIME_120_SEC);
-    constexpr uint8_t DEFAULT_COUNT = static_cast<uint8_t>(ShooterCount::SHOOTERS_1_2);
-
-} // namespace EEPROM_Config
-
-//=============================================================================
-// HELPER MAKROS
-//=============================================================================
-
-// Flash-String-Helper (PROGMEM)
-#define F(string_literal) (reinterpret_cast<const __FlashStringHelper *>(PSTR(string_literal)))
-
-// Sichere Pin-Modi-Definitionen
-#define SAFE_PIN_MODE(pin, mode) do { pinMode(pin, mode); } while(0)
-#define SAFE_DIGITAL_WRITE(pin, value) do { digitalWrite(pin, value); } while(0)
-#define SAFE_DIGITAL_READ(pin) digitalRead(pin)
-
-// Array-Größe ermitteln
-#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
-
-// Min/Max (falls nicht von Arduino.h definiert)
-#ifndef min
-    #define min(a, b) ((a) < (b) ? (a) : (b))
-#endif
-#ifndef max
-    #define max(a, b) ((a) > (b) ? (a) : (b))
-#endif
-
-//=============================================================================
-// ENDE DER KONFIGURATION
-//=============================================================================
-
-/**
- * @brief Konfiguration validieren (zur Compile-Zeit)
- *
- * Stellt sicher, dass keine Pin-Konflikte existieren und
- * alle Werte in gültigen Bereichen liegen.
- */
 namespace ConfigValidation {
 
-    // Prüfe, dass SPI-Pins korrekt sind (Hardware SPI)
-    static_assert(Pins::SPI_SCK == 13, "SPI SCK must be D13 on Arduino Nano");
-    static_assert(Pins::SPI_MOSI == 11, "SPI MOSI must be D11 on Arduino Nano");
-    static_assert(Pins::SPI_MISO == 12, "SPI MISO must be D12 on Arduino Nano");
+    // BTN1/SW2 liegt auf ADC2 (GPIO15) → darf nur digital gelesen werden (Funk aktiv!)
+    static_assert(Pins::BTN1 == 15, "BTN1 must stay on GPIO15 (digital only, ADC2!)");
 
-    // Prüfe, dass Chip Select Pins unterschiedlich sind
-    static_assert(Pins::TFT_CS != Pins::NRF_CSN, "TFT_CS and NRF_CSN must be different");
+    // Taster-Pins unterschiedlich
+    static_assert(Pins::BTN1 != Pins::BTN2, "Button pins must be unique");
 
-    // Prüfe, dass Button-Pins unterschiedlich sind
-    static_assert(Pins::BTN_LEFT != Pins::BTN_OK, "Button pins must be unique");
-    static_assert(Pins::BTN_LEFT != Pins::BTN_RIGHT, "Button pins must be unique");
-    static_assert(Pins::BTN_OK != Pins::BTN_RIGHT, "Button pins must be unique");
+    // ADC_BAT muss auf ADC1 liegen (GPIO1-10 beim ESP32-S3)
+    static_assert(Pins::ADC_BAT <= 10, "ADC_BAT must be on ADC1 (radio blocks ADC2)");
 
-    // Prüfe Display-Auflösung
-    static_assert(Display::WIDTH == 240, "ST7789 width is 240 pixels");
-    static_assert(Display::HEIGHT == 320, "ST7789 height is 320 pixels");
-
-    // Prüfe RF-Payload-Größe
-    static_assert(RF::PAYLOAD_SIZE <= 32, "NRF24L01 max payload is 32 bytes");
+    // Partial-Fenster innerhalb des Panels
+    static_assert(Display::COUNTDOWN_X + Display::COUNTDOWN_W <= Display::WIDTH,
+                  "Countdown window exceeds panel width");
+    static_assert(Display::COUNTDOWN_Y + Display::COUNTDOWN_H <= Display::HEIGHT,
+                  "Countdown window exceeds panel height");
 
 } // namespace ConfigValidation

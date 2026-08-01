@@ -1,177 +1,190 @@
 /**
  * @file StateMachine.cpp
- * @brief State Machine Implementierung (Tournament Control)
+ * @brief State Machine Implementierung (Tournament Control, V3)
  */
 
 #include "StateMachine.h"
 #include "Commands.h"
 
-// Forward-Deklarationen für Radio-Funktionen (implementiert in Sender.ino)
-extern TransmissionResult sendCommand(RadioCommand cmd);
-extern bool testReceiverConnection();
-extern uint8_t testConnectionQuality();
-extern bool initializeRadio();
+// 1-Hz-Flag und Timer-Reset aus Sender.cpp (esp_timer, R-7)
+extern volatile bool senderSecondTick;
+extern void resetSenderTimer();
 
-// Forward-Deklarationen für Batterie-Funktionen (implementiert in Sender.ino)
-extern uint16_t readBatteryVoltage();
-extern bool isUsbPowered();
-
-StateMachine::StateMachine(Adafruit_ST7789& tft, ButtonManager& btnMgr)
-    : display(tft)
+StateMachine::StateMachine(EpaperDisplay& epdRef, ButtonManager& btnMgr, RadioManager& radioMgr,
+                           PowerManager& powerMgr, ConfigStore& store)
+    : epd(epdRef)
     , buttons(btnMgr)
-    , splashScreen(tft)
-    , configMenu(tft, btnMgr)
-    , pfeileHolenMenu(tft, btnMgr)
-    , schiessBetriebMenu(tft, btnMgr)
-    , alarmScreen(tft, btnMgr)
+    , radio(radioMgr)
+    , power(powerMgr)
+    , configStore(store)
+    , splashScreen(epdRef)
+    , configMenu(epdRef, btnMgr)
+    , pfeileHolenMenu(epdRef, btnMgr)
+    , schiessBetriebMenu(epdRef, btnMgr)
+    , alarmScreen(epdRef)
     , currentState(State::STATE_SPLASH)
-    , previousState(State::STATE_SPLASH)
     , stateStartTime(0)
-    , shootingTime(EEPROM_Config::DEFAULT_TIME)
-    , shooterCount(EEPROM_Config::DEFAULT_COUNT)
-    , radioInitialized(false)
-    , connectionTested(false)
-    , connectionSuccessful(false)
+    , shootingTime(TournamentDefaults::DEFAULT_TIME)
+    , shooterCount(TournamentDefaults::DEFAULT_COUNT)
     , qualityTestDone(false)
     , connectionQuality(0)
     , qualityDisplayStartTime(0)
+    , searchStatusShown(false)
     , lastConnectionCheck(0)
-    , initialPingsDone(false)
+    , lastPingOk(false)
     , currentGroup(Groups::Type::GROUP_AB)     // Start mit A/B
-    , currentPosition(Groups::Position::POS_1) { // Start mit Position 1
+    , currentPosition(Groups::Position::POS_1) // Start mit Position 1
+    , inPreparationPhase(false)
+    , preparationSecondsRemaining(0)
+    , shootingSecondsRemaining(0)
+    , shootingDurationMs(0) {
 }
 
 void StateMachine::begin() {
+    // Konfiguration aus NVS laden (FR-005)
+    configStore.load();
+    shootingTime = configStore.getShootingTime();
+    shooterCount = configStore.getShooterCount();
+
     // Starte mit Splash Screen
     enterSplash();
 }
 
-void StateMachine::setRadioInitialized(bool initialized) {
-    radioInitialized = initialized;
-}
-
 void StateMachine::update() {
-    // State Handler aufrufen
     switch (currentState) {
-        case State::STATE_SPLASH:
-            handleSplash();
-            break;
-
-        case State::STATE_CONFIG_MENU:
-            handleConfigMenu();
-            break;
-
-        case State::STATE_PFEILE_HOLEN:
-            handlePfeileHolen();
-            break;
-
-        case State::STATE_SCHIESS_BETRIEB:
-            handleSchiessBetrieb();
-            break;
-
-        case State::STATE_ALARM:
-            handleAlarm();
-            break;
+        case State::STATE_SPLASH:         handleSplash(); break;
+        case State::STATE_CONFIG_MENU:    handleConfigMenu(); break;
+        case State::STATE_PFEILE_HOLEN:   handlePfeileHolen(); break;
+        case State::STATE_SCHIESS_BETRIEB: handleSchiessBetrieb(); break;
+        case State::STATE_ALARM:          handleAlarm(); break;
     }
 }
 
 void StateMachine::setState(State newState) {
     if (newState == currentState) return;
 
-    // Exit aktueller State
-    switch (currentState) {
-        case State::STATE_SPLASH: exitSplash(); break;
-        case State::STATE_CONFIG_MENU: exitConfigMenu(); break;
-        case State::STATE_PFEILE_HOLEN: exitPfeileHolen(); break;
-        case State::STATE_SCHIESS_BETRIEB: exitSchiessBetrieb(); break;
-        case State::STATE_ALARM: exitAlarm(); break;
-    }
-
-    // Zustand wechseln
-    previousState = currentState;
     currentState = newState;
     stateStartTime = millis();
 
-    // Enter neuer State
     switch (currentState) {
-        case State::STATE_SPLASH: enterSplash(); break;
-        case State::STATE_CONFIG_MENU: enterConfigMenu(); break;
-        case State::STATE_PFEILE_HOLEN: enterPfeileHolen(); break;
+        case State::STATE_SPLASH:          enterSplash(); break;
+        case State::STATE_CONFIG_MENU:     enterConfigMenu(); break;
+        case State::STATE_PFEILE_HOLEN:    enterPfeileHolen(); break;
         case State::STATE_SCHIESS_BETRIEB: enterSchiessBetrieb(); break;
-        case State::STATE_ALARM: enterAlarm(); break;
+        case State::STATE_ALARM:           enterAlarm(); break;
     }
 }
 
 //=============================================================================
-// STATE_SPLASH
+// Statuszeile + Power-Off (T023/T024)
+//=============================================================================
+
+void StateMachine::refreshStatusLine() {
+    EpaperDisplay::ChargeIcon icon;
+    switch (power.chargeState()) {
+        case ChargeState::CHARGING:  icon = EpaperDisplay::ChargeIcon::CHARGING; break;
+        case ChargeState::COMPLETE:  icon = EpaperDisplay::ChargeIcon::COMPLETE; break;
+        case ChargeState::SUSPENDED: icon = EpaperDisplay::ChargeIcon::SUSPENDED; break;
+        case ChargeState::TEST_MODE: icon = EpaperDisplay::ChargeIcon::FAULT; break;
+        default:                     icon = EpaperDisplay::ChargeIcon::NONE; break;
+    }
+
+    bool radioOk = radio.isPeerDiscovered()
+                && (currentState != State::STATE_PFEILE_HOLEN || lastPingOk);
+
+    epd.drawStatusLine(power.batteryPercent(), power.isUsbConnected(), icon,
+                       power.isLowBattery(), radioOk);
+    epd.showStatusLine();
+}
+
+void StateMachine::checkPowerOffGesture() {
+    // ≥ 3 s halten = Power-Off — NICHT im Schießbetrieb (dort = Alarm, FR-015).
+    // Beide Taster schalten aus: Eingeschaltet wird hardwareseitig immer über
+    // CONFIG (Power-Latch), also muss dieselbe Taste auch ausschalten können.
+    // Beim Einschalt-Druck greift der Boot-Lockout, die Geste kann also nicht
+    // direkt beim Hochfahren auslösen.
+    if (buttons.wasHeldFor(Button::OK, Timing::POWER_OFF_HOLD_MS)
+        || buttons.wasHeldFor(Button::CONFIG, Timing::POWER_OFF_HOLD_MS)) {
+        doPowerOff();
+    }
+}
+
+void StateMachine::doPowerOff() {
+    DEBUG_PRINTLN("Power-Off-Sequenz");
+
+    // Config ist bereits gespeichert (Save-on-Confirm, R-6) — kein Save nötig
+
+    // Abschalt-Screen
+    Adafruit_GFX& g = epd.gfx();
+    g.fillScreen(GxEPD_WHITE);
+    g.setTextColor(GxEPD_BLACK);
+    epd.printCentered("Auf Wiedersehen!", 90, 2);
+    epd.printCentered("Geraet schaltet ab...", 120, 1);
+    epd.fullRefresh();
+
+    // Panel in Tiefschlaf, Rail aus, dann Latch loslassen (FR-018, R-13)
+    epd.hibernate();
+    epd.railOff();
+    power.latchOff();  // kehrt nicht zurück
+}
+
+//=============================================================================
+// STATE_SPLASH (inkl. Verbindungstest, US5/T033)
 //=============================================================================
 
 void StateMachine::enterSplash() {
-    // Verbindungstest-Variablen zurücksetzen
-    connectionTested = false;
-    connectionSuccessful = false;
     qualityTestDone = false;
     connectionQuality = 0;
     qualityDisplayStartTime = 0;
-    lastConnectionCheck = 0;  // Sofort testen
+    searchStatusShown = false;
 
-    // Splash Screen zeichnen (zeigt initial "Suche Empfaengermodul..." an)
+    // Splash zeichnen: ein Voll-Refresh (R-2)
     splashScreen.draw();
-
-    // Status je nach Radio-Initialisierung aktualisieren
-    if (!radioInitialized) {
-        splashScreen.updateConnectionStatus("Suche Funkmodul");
-    }
+    epd.fullRefresh();
 }
 
 void StateMachine::handleSplash() {
-    // Taste zum Überspringen prüfen (jederzeit möglich)
-    if (buttons.isAnyPressed()) {
+    // Klick auf einen der beiden Taster: Splash überspringen (neu in V3, US5-Szenario 3)
+    if (buttons.wasClicked(Button::OK) || buttons.wasClicked(Button::CONFIG)) {
         setState(State::STATE_CONFIG_MENU);
         return;
     }
 
-    // Fall 1: Radio-Modul nicht initialisiert
-    // -> Versuche alle Sekunde das Modul zu initialisieren
-    if (!radioInitialized) {
-        if (millis() - lastConnectionCheck >= 1000) {
-            radioInitialized = initializeRadio();
-            lastConnectionCheck = millis();
+    // Power-Off-Geste (OK ≥ 3 s)
+    checkPowerOffGesture();
 
-            if (!radioInitialized) {
-                splashScreen.updateConnectionStatus("Suche Funkmodul");
-            }
+    // Fall 1: Discovery läuft noch (RadioManager broadcastet HELLO, 1 Hz)
+    if (!radio.isPeerDiscovered()) {
+        if (!searchStatusShown) {
+            searchStatusShown = true;
+            splashScreen.updateConnectionStatus("Suche Empfaenger...");
         }
-        // Splash Screen bleibt solange bestehen, bis Modul gefunden wird
+
+        // Ohne Empfänger: nach Splash-Dauer trotzdem freigeben (US5-Szenario 2)
+        if (timeInState(Timing::SPLASH_DURATION_MS)) {
+            splashScreen.showConnectionQuality(0);  // "Keine Verbindung"
+            setState(State::STATE_CONFIG_MENU);
+        }
         return;
     }
 
-    // Fall 2: Radio initialisiert, aber Quality Test noch nicht durchgeführt
+    // Fall 2: Empfänger gefunden, Quality Test noch nicht durchgeführt
     if (!qualityTestDone) {
-        // Status anzeigen
-        splashScreen.updateConnectionStatus("Teste Verbindung");
+        splashScreen.updateConnectionStatus("Teste Verbindung...");
 
-        // Connection Quality Test durchführen (blockierend, ~5 Sekunden)
-        connectionQuality = testConnectionQuality();
+        // 10 Pings im 250-ms-Raster (blockierend ~2,5 s, R-5)
+        connectionQuality = radio.pingQualityTest();
         qualityTestDone = true;
-        connectionTested = true;
-        connectionSuccessful = (connectionQuality > 0);
         qualityDisplayStartTime = millis();
 
-        // Qualität anzeigen
         splashScreen.showConnectionQuality(connectionQuality);
         return;
     }
 
-    // Fall 3: Quality Test durchgeführt - zeige Qualität für 5 Sekunden
-    uint32_t qualityDisplayTime = millis() - qualityDisplayStartTime;
-    if (qualityDisplayTime >= Timing::QUALITY_DISPLAY_DURATION_MS) {
-        // 5 Sekunden sind vorbei -> zum Config Menu
+    // Fall 3: Qualität wird angezeigt — nach Ablauf weiter ins Menü
+    if (millis() - qualityDisplayStartTime >= Timing::QUALITY_DISPLAY_DURATION_MS) {
         setState(State::STATE_CONFIG_MENU);
     }
-}
-
-void StateMachine::exitSplash() {
 }
 
 //=============================================================================
@@ -179,118 +192,105 @@ void StateMachine::exitSplash() {
 //=============================================================================
 
 void StateMachine::enterConfigMenu() {
-    // ConfigMenu initialisieren
     configMenu.begin();
-    configMenu.draw();
+    configMenu.setConfig(shootingTime, shooterCount);
 
-    // Initiale Pings zurücksetzen für nächsten Pfeile-Holen State
-    initialPingsDone = false;
+    epd.clearBuffer();
+    refreshStatusLine();  // Statuszeile in den Puffer + Partial (vor Vollbild ok)
+    configMenu.draw();
+    epd.refreshScreen();
 }
 
 void StateMachine::handleConfigMenu() {
-    // ConfigMenu aktualisieren
+    checkPowerOffGesture();
+
     configMenu.update();
 
-    // Display neu zeichnen wenn nötig
+    // Navigation: Partial-Refresh des Inhaltsbereichs (kein Blitzen)
     if (configMenu.needsRedraw()) {
         configMenu.draw();
+        epd.partialUpdate(0, Display::STATUS_H, EpaperDisplay::WIDTH,
+                          EpaperDisplay::HEIGHT - Display::STATUS_H);
+    }
+
+    // Statuszeile bei neuen Messwerten aktualisieren
+    if (power.update()) {
+        refreshStatusLine();
     }
 
     // Prüfen ob "Start" bestätigt wurde
     if (configMenu.isComplete()) {
-        // Konfiguration übernehmen
+        // Konfiguration übernehmen und SOFORT persistieren (R-6, SC-008)
         shootingTime = configMenu.getShootingTime();
         shooterCount = configMenu.getShooterCount();
+        configStore.set(shootingTime, shooterCount);
+        configStore.save();
+
+        // Turnier beginnt immer mit A/B, Position 1
+        currentGroup = Groups::Type::GROUP_AB;
+        currentPosition = Groups::Position::POS_1;
 
         // Sende CMD_INIT an Empfänger
-        sendCommand(CMD_INIT);
+        radio.sendCommand(CMD_INIT);
 
-        // Gehe zu PFEILE_HOLEN
         setState(State::STATE_PFEILE_HOLEN);
     }
-}
-
-void StateMachine::exitConfigMenu() {
 }
 
 //=============================================================================
 // STATE_PFEILE_HOLEN
 //=============================================================================
 
-void StateMachine::enterPfeileHolen() {
-    // PfeileHolenMenu initialisieren
-    pfeileHolenMenu.begin();
-
-    // Turnierkonfiguration setzen (inkl. Schützengruppen)
-    pfeileHolenMenu.setTournamentConfig(shooterCount, currentGroup, currentPosition);
-
-    pfeileHolenMenu.draw();
-
-    // Gruppen-Signal sofort senden (damit Empfänger die richtige Gruppe anzeigt)
+void StateMachine::sendGroupCommand() {
     // Bei 1-2 Schützen: CMD_GROUP_NONE (beide Gruppen aus)
-    // Bei 3-4 Schützen: Berücksichtige Gruppe UND Position
+    // Bei 3-4 Schützen: Gruppe UND Position berücksichtigen (halbe Passe)
     RadioCommand groupCmd;
     if (shooterCount <= 2) {
-        groupCmd = CMD_GROUP_NONE;  // Keine Gruppen bei 1-2 Schützen
+        groupCmd = CMD_GROUP_NONE;
+    } else if (currentPosition == Groups::Position::POS_1) {
+        groupCmd = (currentGroup == Groups::Type::GROUP_AB) ? CMD_GROUP_AB : CMD_GROUP_CD;
     } else {
-        // Bei 3-4 Schützen: Prüfe ob erste oder zweite Hälfte der Passe
-        if (currentPosition == Groups::Position::POS_1) {
-            // Erste Hälfte (ganze Passe)
-            groupCmd = (currentGroup == Groups::Type::GROUP_AB) ? CMD_GROUP_AB : CMD_GROUP_CD;
-        } else {
-            // Zweite Hälfte (halbe Passe)
-            groupCmd = (currentGroup == Groups::Type::GROUP_AB) ? CMD_GROUP_FINISH_AB : CMD_GROUP_FINISH_CD;
-        }
+        groupCmd = (currentGroup == Groups::Type::GROUP_AB) ? CMD_GROUP_FINISH_AB
+                                                            : CMD_GROUP_FINISH_CD;
     }
-    sendCommand(groupCmd);
+    radio.sendCommand(groupCmd);
+}
 
-    // Verbindungstest-Timer zurücksetzen (sofort testen)
+void StateMachine::enterPfeileHolen() {
+    pfeileHolenMenu.begin();
+    pfeileHolenMenu.setTournamentConfig(shooterCount, currentGroup, currentPosition);
+
+    epd.clearBuffer();
+    refreshStatusLine();
+    pfeileHolenMenu.draw();
+    epd.refreshScreen();  // Zustandswechsel ohne Blitzen (Ghosting-Regel R-2)
+
+    // Gruppen-Signal sofort senden (Empfänger zeigt die richtige Gruppe)
+    sendGroupCommand();
+
+    // Verbindungstest-Timer: sofort testen
     lastConnectionCheck = 0;
 }
 
 void StateMachine::handlePfeileHolen() {
-    // Beim ersten Aufruf: 4 schnelle Pings durchführen um die Ping-Historie zu füllen
-    if (!initialPingsDone) {
-        // 4 schnelle Pings im Abstand von 200ms
-        for (uint8_t i = 0; i < 4; i++) {
-            bool connected = testReceiverConnection();
-            pfeileHolenMenu.updateConnectionStatus(connected);
+    checkPowerOffGesture();
 
-            // Warte 200ms bis zum nächsten Ping (außer beim letzten)
-            if (i < 3) {
-                delay(200);
-            }
-        }
-
-        // Initiale Batteriemessung durchführen
-        uint16_t voltage = readBatteryVoltage();
-        bool usbPowered = isUsbPowered();
-        pfeileHolenMenu.updateBatteryStatus(voltage, usbPowered);
-
-        // Flags setzen
-        initialPingsDone = true;
+    // Verbindungstest alle 5 Sekunden (PING + Statuszeile, V2-Verhalten)
+    if (lastConnectionCheck == 0 || millis() - lastConnectionCheck >= 5000) {
         lastConnectionCheck = millis();
+        lastPingOk = (radio.sendCommand(CMD_PING) == TX_SUCCESS);
+        power.update();
+        refreshStatusLine();
+    } else if (power.update()) {
+        refreshStatusLine();
     }
 
-    // Verbindungstest alle 5 Sekunden durchführen (nach den initialen Pings)
-    if (millis() - lastConnectionCheck >= 5000) {
-        bool connected = testReceiverConnection();
-        pfeileHolenMenu.updateConnectionStatus(connected);
-
-        // Batteriemessung durchführen
-        uint16_t voltage = readBatteryVoltage();
-        bool usbPowered = isUsbPowered();
-        pfeileHolenMenu.updateBatteryStatus(voltage, usbPowered);
-
-        lastConnectionCheck = millis();
-    }
-
-    // PfeileHolenMenu aktualisieren
     pfeileHolenMenu.update();
 
-    // Display neu zeichnen wenn nötig
     if (pfeileHolenMenu.needsRedraw()) {
         pfeileHolenMenu.draw();
+        epd.partialUpdate(0, Display::STATUS_H, EpaperDisplay::WIDTH,
+                          EpaperDisplay::HEIGHT - Display::STATUS_H);
     }
 
     // Prüfen ob eine Aktion gewählt wurde
@@ -299,50 +299,18 @@ void StateMachine::handlePfeileHolen() {
         pfeileHolenMenu.resetAction();
 
         switch (action) {
-            case PfeileHolenAction::NAECHSTE_PASSE: {
-                // Auto-Erkennung: Ganze oder halbe Passe basierend auf Position
-                // POS_1: Ganze Passe (beide Gruppen)
-                // POS_2: Halbe Passe (nur zweite Gruppe)
-
-                if (currentPosition == Groups::Position::POS_1) {
-                    // === GANZE PASSE ===
-                    // Wechsel in Schießbetrieb (CMD_START wird in enterSchiessBetrieb() gesendet)
-                    setState(State::STATE_SCHIESS_BETRIEB);
-                } else {
-                    // === HALBE PASSE ===
-                    // Starte zweite Hälfte der Passe (nur die aktuelle Gruppe)
-                    // Gruppenwechsel erfolgt erst NACH der Schießphase in handleShootingPhaseEnd()
-
-                    // Wechsel in Schießbetrieb (CMD_START wird in enterSchiessBetrieb() gesendet)
-                    setState(State::STATE_SCHIESS_BETRIEB);
-                }
+            case PfeileHolenAction::NAECHSTE_PASSE:
+                // Auto-Erkennung ganze/halbe Passe über currentPosition —
+                // CMD_START wird in enterSchiessBetrieb() gesendet (V2)
+                setState(State::STATE_SCHIESS_BETRIEB);
                 break;
-            }
 
-            case PfeileHolenAction::REIHENFOLGE: {
+            case PfeileHolenAction::REIHENFOLGE:
                 // Schützengruppen-Abfolge einen Schritt weiterschalten
                 advanceToNextGroup();
-
-                // Sende GROUP-Kommando an Empfänger (damit Anzeige sofort aktualisiert wird)
-                RadioCommand groupCmd;
-                if (shooterCount <= 2) {
-                    groupCmd = CMD_GROUP_NONE;  // Keine Gruppen bei 1-2 Schützen
-                } else {
-                    // Bei 3-4 Schützen: Prüfe ob erste oder zweite Gruppe in der Passe
-                    if (currentPosition == Groups::Position::POS_1) {
-                        // Erste Gruppe (ganze Passe)
-                        groupCmd = (currentGroup == Groups::Type::GROUP_AB) ? CMD_GROUP_AB : CMD_GROUP_CD;
-                    } else {
-                        // Zweite Gruppe (halbe Passe)
-                        groupCmd = (currentGroup == Groups::Type::GROUP_AB) ? CMD_GROUP_FINISH_AB : CMD_GROUP_FINISH_CD;
-                    }
-                }
-                sendCommand(groupCmd);
-
-                // Neue Gruppe/Position an PfeileHolenMenu übergeben
+                sendGroupCommand();
                 pfeileHolenMenu.setTournamentConfig(shooterCount, currentGroup, currentPosition);
                 break;
-            }
 
             case PfeileHolenAction::NEUSTART:
                 // Zurück zur Konfiguration
@@ -355,9 +323,6 @@ void StateMachine::handlePfeileHolen() {
     }
 }
 
-void StateMachine::exitPfeileHolen() {
-}
-
 //=============================================================================
 // STATE_SCHIESS_BETRIEB
 //=============================================================================
@@ -365,91 +330,97 @@ void StateMachine::exitPfeileHolen() {
 void StateMachine::enterSchiessBetrieb() {
     // Starte mit Vorbereitungsphase (10 Sekunden, oder 5s im DEBUG)
     inPreparationPhase = true;
-    preparationSecondsRemaining = Timing::PREPARATION_TIME_MS / 1000;  // 10s oder 5s
+    preparationSecondsRemaining = Timing::PREPARATION_TIME_MS / 1000;
 
     // Schießzeit setzen (normal oder verkürzt für DEBUG)
     #if DEBUG_SHORT_TIMES
-        // DEBUG: 15s für beide Modi
         shootingDurationMs = 15000UL;
         shootingSecondsRemaining = 15;
     #else
-        shootingDurationMs = shootingTime * 1000UL;  // Sekunden → Millisekunden
-        shootingSecondsRemaining = shootingTime;     // 120s oder 240s
+        shootingDurationMs = shootingTime * 1000UL;
+        shootingSecondsRemaining = shootingTime;
     #endif
 
-    // Sende START-Kommando sofort (Empfänger startet eigene 10s Vorbereitungsphase)
+    // Sende START-Kommando sofort (Empfänger startet eigene 10s Vorbereitung)
     RadioCommand cmd = (shootingTime == 120) ? CMD_START_120 : CMD_START_240;
-    sendCommand(cmd);
+    radio.sendCommand(cmd);
 
-    // SOFORT danach: Starte Sender-Timer (Interrupt-basiert, synchron mit Empfänger)
-    extern void resetSenderTimer();  // Funktion aus Sender.ino
+    // SOFORT danach: Sender-Timer neu starten (synchron mit Empfänger, R-7)
     resetSenderTimer();
 
-    // Menü initialisieren
+    // Menü initialisieren und zeichnen (Screenwechsel-Refresh, kein Blitzen)
     schiessBetriebMenu.begin();
-    schiessBetriebMenu.setTournamentConfig(shootingTime, shooterCount, currentGroup, currentPosition);
-
-    // Vorbereitungsphase setzen
+    schiessBetriebMenu.setTournamentConfig(shootingTime, shooterCount,
+                                           currentGroup, currentPosition);
     schiessBetriebMenu.setPreparationPhase(true, Timing::PREPARATION_TIME_MS);
 
-    // Initial zeichnen
+    epd.clearBuffer();
+    refreshStatusLine();
     schiessBetriebMenu.draw();
+    epd.refreshScreen();
+    schiessBetriebMenu.updateCountdown(preparationSecondsRemaining);
 }
 
 void StateMachine::handleSchiessBetrieb() {
-    // Prüfe ob eine Sekunde vergangen ist (Interrupt-Flag aus Sender.ino)
-    extern volatile bool senderSecondTick;
+    // ALARM-Geste: OK ≥ 2 s gehalten (FR-015 — Power-Off hier nicht verfügbar)
+    if (buttons.wasHeldFor(Button::OK, Timing::ALARM_THRESHOLD_MS)) {
+        setState(State::STATE_ALARM);
+        return;
+    }
 
+    // Prüfe ob eine Sekunde vergangen ist (esp_timer-Flag aus Sender.cpp)
     if (senderSecondTick) {
-        senderSecondTick = false;  // Flag zurücksetzen
+        senderSecondTick = false;
 
-        // Fall 1: Vorbereitungsphase (10 Sekunden oder 5s im DEBUG, orange Countdown)
+        // Fall 1: Vorbereitungsphase (10 Sekunden, Countdown in Sekunden)
         if (inPreparationPhase) {
-            // Dekrementiere verbleibende Zeit
             if (preparationSecondsRemaining > 0) {
                 preparationSecondsRemaining--;
             }
 
-            // Prüfe ob Vorbereitungsphase vorbei
             if (preparationSecondsRemaining == 0) {
                 // Beende Vorbereitungsphase → Wechsel zur Schießphase
                 inPreparationPhase = false;
 
-                DEBUG_PRINTLN(F("Prep END -> Shooting START"));
+                DEBUG_PRINTLN("Prep END -> Shooting START");
 
-                // Display aktualisieren (nur beim Phasenwechsel!)
+                // Phasenwechsel: Screen neu zeichnen (Partial des Inhalts)
                 schiessBetriebMenu.setShootingPhase(shootingSecondsRemaining * 1000);
+                schiessBetriebMenu.draw();
+                epd.partialUpdate(0, Display::STATUS_H, EpaperDisplay::WIDTH,
+                                  EpaperDisplay::HEIGHT - Display::STATUS_H);
+                schiessBetriebMenu.updateCountdown(shootingSecondsRemaining);
+            } else {
+                // 1-Hz-Countdown im Partial-Fenster (SC-007)
+                schiessBetriebMenu.updateCountdown(preparationSecondsRemaining);
             }
         }
-        // Fall 2: Eigentliche Schießphase (120/240 Sekunden oder 15s im DEBUG, grün)
+        // Fall 2: Eigentliche Schießphase (120/240 Sekunden)
         else {
-            // Dekrementiere verbleibende Zeit
             if (shootingSecondsRemaining > 0) {
                 shootingSecondsRemaining--;
             }
 
             // Automatisches Ende bei Zeitablauf
             if (shootingSecondsRemaining == 0) {
-                handleShootingPhaseEnd(false);  // Kein manualStop: Empfänger piept autonom
+                handleShootingPhaseEnd(false);  // Kein manualStop: Empfänger endet AUTONOM
                 return;
             }
+
+            schiessBetriebMenu.updateCountdown(shootingSecondsRemaining);
         }
     }
 
-    // Menu aktualisieren (jeder Frame, nicht nur bei Sekunden-Tick)
+    // Menu aktualisieren (OK kurz = "Passe beenden")
     schiessBetriebMenu.update();
-    if (schiessBetriebMenu.needsRedraw()) {
-        schiessBetriebMenu.draw();
-    }
 
-    // Prüfe ob "Passe beenden" gedrückt wurde (in BEIDEN Phasen möglich)
     if (schiessBetriebMenu.isEndRequested()) {
         schiessBetriebMenu.resetEndRequest();
 
         if (inPreparationPhase) {
             // Während Vorbereitungsphase: Abbruch
             advanceToNextGroup();
-            sendCommand(CMD_STOP);
+            radio.sendCommand(CMD_STOP);
             setState(State::STATE_PFEILE_HOLEN);
         } else {
             // Während Schießphase: Manueller Abbruch → CMD_STOP senden
@@ -459,102 +430,109 @@ void StateMachine::handleSchiessBetrieb() {
 }
 
 /**
- * @brief Behandelt das Ende der Schießphase (automatisch oder manuell)
- *
- * Für 1-2 Schützen: Sende STOP, gehe zu PFEILE_HOLEN
- * Für 3-4 Schützen:
- *   - Nach erster Gruppe (A/B): Starte zweite Gruppe (C/D)
- *   - Nach zweiter Gruppe (C/D): Sende STOP, gehe zu PFEILE_HOLEN
+ * REGRESSION-GUARD (FR-004a, V2-Bugfix "Empfänger autonom"):
+ * - Zeitablauf (manualStop == false) sendet NIEMALS CMD_STOP — der Empfänger
+ *   beendet die Passe selbst (3 Pieptöne, rot, "000") ohne Funk (SC-012).
+ * - Das CMD_START_* für die zweite Gruppe (3-4 Schützen) ist nur ein
+ *   Sync-Signal; der Empfänger ignoriert es, wenn seine Vorbereitungsphase
+ *   bereits autonom läuft (Protokoll-Regel 3).
  */
 void StateMachine::handleShootingPhaseEnd(bool manualStop) {
     if (shooterCount <= 2) {
         // 1-2 Schützen: Nur eine Gruppe
-        // Bei manuellem Abbruch: STOP senden (Empfänger stoppt Timer + 3 Pieptöne)
-        // Bei natürlichem Timer-Ende: Empfänger piept autonom, kein CMD_STOP nötig
         if (manualStop) {
-            sendCommand(CMD_STOP);
+            radio.sendCommand(CMD_STOP);
         }
 
         // Wechsle zur nächsten Gruppe (für nächste Passe)
         advanceToNextGroup();
 
-        // Gehe zu PFEILE_HOLEN
         setState(State::STATE_PFEILE_HOLEN);
     } else {
         // 3-4 Schützen: Zwei Gruppen pro Passe
-        // Prüfe welche Position gerade fertig ist (BEFORE advanceToNextGroup!)
         // POS_1 = erste Gruppe der Passe → zweite Gruppe starten
         // POS_2 = zweite Gruppe der Passe → Ende der Passe
         if (currentPosition == Groups::Position::POS_1) {
-            // Erste Gruppe der Passe fertig → Starte zweite Gruppe
-            advanceToNextGroup();  // Wechsle zur zweiten Gruppe
+            // Erste Gruppe fertig → Starte zweite Gruppe
+            advanceToNextGroup();
 
-            // Sender-Timer für zweite Gruppe neu starten (Interrupt-basiert)
+            // Sender-Timer für zweite Gruppe neu aufsetzen
             inPreparationPhase = true;
-            preparationSecondsRemaining = Timing::PREPARATION_TIME_MS / 1000;  // 10s oder 5s
-            shootingSecondsRemaining = shootingDurationMs / 1000;  // Wiederherstellen
+            preparationSecondsRemaining = Timing::PREPARATION_TIME_MS / 1000;
+            shootingSecondsRemaining = shootingDurationMs / 1000;
 
-            // Empfänger startet zweite Gruppe autonom – CMD_START nur als Sync-Signal
-            // (wird vom Empfänger ignoriert, falls er bereits autonom in der Prep-Phase ist)
+            // Empfänger startet zweite Gruppe autonom – CMD_START nur als Sync
             RadioCommand startCmd = (shootingTime == 120) ? CMD_START_120 : CMD_START_240;
-            sendCommand(startCmd);
+            radio.sendCommand(startCmd);
 
             // Timer zurücksetzen für synchronen Start
-            extern void resetSenderTimer();
             resetSenderTimer();
 
             // Menü für zweite Gruppe aktualisieren
-            schiessBetriebMenu.setTournamentConfig(shootingTime, shooterCount, currentGroup, currentPosition);
+            schiessBetriebMenu.setTournamentConfig(shootingTime, shooterCount,
+                                                   currentGroup, currentPosition);
             schiessBetriebMenu.setPreparationPhase(true, Timing::PREPARATION_TIME_MS);
             schiessBetriebMenu.draw();
+            epd.partialUpdate(0, Display::STATUS_H, EpaperDisplay::WIDTH,
+                              EpaperDisplay::HEIGHT - Display::STATUS_H);
+            schiessBetriebMenu.updateCountdown(preparationSecondsRemaining);
         } else {
-            // Zweite Gruppe der Passe fertig (POS_2) → Ende der Passe
-            // Bei manuellem Abbruch: STOP senden (Empfänger stoppt Timer + 3 Pieptöne)
-            // Bei natürlichem Timer-Ende: Empfänger piept autonom, kein CMD_STOP nötig
+            // Zweite Gruppe fertig (POS_2) → Ende der Passe
             if (manualStop) {
-                sendCommand(CMD_STOP);
+                radio.sendCommand(CMD_STOP);
             }
 
-            // Wechsle zur nächsten Gruppe (für nächste Passe)
             advanceToNextGroup();
 
-            // Gehe zu PFEILE_HOLEN
             setState(State::STATE_PFEILE_HOLEN);
         }
     }
 }
 
-void StateMachine::exitSchiessBetrieb() {
+//=============================================================================
+// STATE_ALARM (T028)
+//=============================================================================
+
+TransmissionResult StateMachine::sendAlarmWithRetry() {
+    // App-Level-Retries (V2): jede Wiederholung ist ein NEUER Frame mit neuer
+    // seq (sendCommand vergibt sie) und erfolgt nur nach TX_TIMEOUT/TX_ERROR;
+    // der Empfänger ignoriert CMD_ALARM bei laufendem Alarm (Contract Regel 6)
+    TransmissionResult result = TX_ERROR;
+
+    for (uint8_t retry = 0; retry < Timing::ALARM_MAX_RETRIES; retry++) {
+        if (retry > 0) {
+            delay(Timing::ALARM_RETRY_DELAY_MS);
+        }
+
+        result = radio.sendCommand(CMD_ALARM);
+
+        if (result == TX_SUCCESS) {
+            return TX_SUCCESS;
+        }
+    }
+
+    return result;
 }
 
-//=============================================================================
-// STATE_ALARM
-//=============================================================================
-
 void StateMachine::enterAlarm() {
-    // Alarm-Screen initialisieren
-    alarmScreen.begin();
-    alarmScreen.draw();
+    DEBUG_PRINTLN("ALARM triggered");
 
-    // CMD_ALARM an Empfänger senden
-    sendCommand(CMD_ALARM);
+    // CMD_ALARM mit Retries senden, Zustellstatus anzeigen (US3-Szenario 3)
+    TransmissionResult result = sendAlarmWithRetry();
 
-    DEBUG_PRINTLN(F("ALARM triggered"));
+    alarmScreen.draw(result == TX_SUCCESS);
+    epd.refreshScreen();
 }
 
 void StateMachine::handleAlarm() {
-    // AlarmScreen aktualisieren
-    alarmScreen.update();
+    // Power-Off-Geste bleibt verfügbar (Gesten-Tabelle data-model.md §3)
+    checkPowerOffGesture();
 
-    // Automatisches Ende nach ~4 Sekunden (8 Blinks × 500ms)
-    // (8 × 500ms = 4000ms, aber wir geben etwas Puffer)
-    if (timeInState(4500)) {
-        // Zurück zu Pfeile Holen
+    // OK kurz: Alarm quittieren → CMD_STOP → Pfeile holen
+    if (buttons.wasClicked(Button::OK)) {
+        radio.sendCommand(CMD_STOP);
         setState(State::STATE_PFEILE_HOLEN);
     }
-}
-
-void StateMachine::exitAlarm() {
 }
 
 //=============================================================================
@@ -568,22 +546,18 @@ bool StateMachine::timeInState(uint32_t milliseconds) const {
 void StateMachine::advanceToNextGroup() {
     // 4-Zyklus: AB_POS1 -> CD_POS2 -> CD_POS1 -> AB_POS2 -> AB_POS1
     if (currentGroup == Groups::Type::GROUP_AB && currentPosition == Groups::Position::POS_1) {
-        // State 1 -> State 2
         currentGroup = Groups::Type::GROUP_CD;
         currentPosition = Groups::Position::POS_2;
     }
     else if (currentGroup == Groups::Type::GROUP_CD && currentPosition == Groups::Position::POS_2) {
-        // State 2 -> State 3
         currentGroup = Groups::Type::GROUP_CD;
         currentPosition = Groups::Position::POS_1;
     }
     else if (currentGroup == Groups::Type::GROUP_CD && currentPosition == Groups::Position::POS_1) {
-        // State 3 -> State 4
         currentGroup = Groups::Type::GROUP_AB;
         currentPosition = Groups::Position::POS_2;
     }
     else { // AB_POS2
-        // State 4 -> State 1
         currentGroup = Groups::Type::GROUP_AB;
         currentPosition = Groups::Position::POS_1;
     }
