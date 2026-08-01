@@ -1,21 +1,55 @@
-Schaltung/*.lck
-Schaltung/fp-info-cache
-Schaltung/Bogenampel-backups/*
-Schaltung/**/*.*-bak
+# =============================================================================
+# KiCad
+# =============================================================================
+# Bewusst musterbasiert statt pro Ordner: die Schaltungs-Ordner wurden bereits
+# mehrfach umbenannt (Schaltung_v3 -> Schaltung-Sender_v3 -> Schaltung-Sender),
+# und jedes Mal liefen die alten Pfadregeln ins Leere — die Auto-Backups
+# landeten dann ungefiltert im Repo. Diese Regeln greifen unabhaengig davon,
+# wie die Ordner heissen oder wie viele es werden.
 
-Schaltung_v3/**/*.lck
-Schaltung_v3/**/fp-info-cache
-Schaltung_v3/**/*-backups/
-Schaltung_v3/**/*.*-bak
+# Auto-Backups: KiCad legt bei JEDEM Speichern ein ZIP an. Bestandsaufnahme
+# 2026-08-01: allein Schaltung-Sender/BogenampelV3-backups/ = 27 MB.
+**/*-backups/
 
+# Sperrdateien laufender KiCad-Sitzungen
+*.lck
+~*.lck
+
+# Footprint-/Symbol-Cache — wird lokal neu erzeugt, mehrere MB gross
+**/fp-info-cache
+
+# Alt-, Autosave- und Rettungsstaende, die KiCad selbst anlegt
+*-bak
+*.bak
+*.bck
+*.kicad_sch-bak
+*.kicad_pcb-bak
+*.kicad_prl-bak
+*.recovered.*.kicad_pcb
+_autosave-*
+*.000
+*.tmp
+
+# Zwischenformate aus Autorouter-/Netzlisten-Export
+*.dsn
+*.ses
+*.net
+
+# Hinweis: *.csv wird bewusst NICHT ignoriert, anders als in den
+# Standard-KiCad-Templates. Exportierte Netzlisten/Stuecklisten sind die einzige
+# ohne KiCad lesbare Referenz fuer die Pin-Belegung (contracts/hardware-pins.md)
+# und sollen daher versionierbar bleiben.
+
+# =============================================================================
 # PlatformIO (V3-Firmware)
+# =============================================================================
 .pio/
 SenderV3/.pio/
 EmpfaengerV3/.pio/
 
-# KiCad temporäre Dateien
-Schaltung_v3/**/*.recovered.*.kicad_pcb
-
+# =============================================================================
+# Lokale Konfiguration / Werkzeuge
+# =============================================================================
 # WiFi-Zugangsdaten (lokal, nicht einchecken)
 wifi_credentials.h
 **/.vscode/
