@@ -22,6 +22,9 @@ RadioManager::RadioManager()
     , initialized(false)
     , seq(0)
     , lastHelloMs(0)
+    , helloCount(0)
+    , lastChannelCheckMs(0)
+    , lastKnownChannel(0)
     , sendResultPending(false)
     , sendAcked(false)
     , helloAckPending(false) {
@@ -32,9 +35,18 @@ RadioManager::RadioManager()
 bool RadioManager::begin() {
     instance = this;
 
-    // WLAN in AP_STA-Modus, fester Kanal (R-3); AP_STA erlaubt SoftAP (OTA) und
-    // ESP-NOW gleichzeitig auf Kanal 1
-    WiFi.mode(WIFI_AP_STA);
+    // Reiner STA-Modus, fester Kanal (R-3). KEIN AP_STA/SoftAP: OTA läuft im
+    // separaten Wartungsmodus (CONFIG+OK beim Boot), nie parallel zu ESP-NOW —
+    // ein Radio, ein Kanal (identisch zum Empfänger, FR-006).
+    WiFi.mode(WIFI_STA);
+
+    // Auto-Reconnect aus und eine im NVS gespeicherte Verbindung trennen: sonst
+    // zieht der STA-Teil den Kanal auf den eines fremden Routers und ESP-NOW
+    // sendet ins Leere ("Peer channel is not equal to the home channel").
+    WiFi.persistent(false);
+    WiFi.setAutoReconnect(false);
+    WiFi.disconnect(false, false);
+
     esp_wifi_set_channel(Radio::CHANNEL, WIFI_SECOND_CHAN_NONE);
 
     if (esp_now_init() != ESP_OK) {
@@ -46,11 +58,7 @@ bool RadioManager::begin() {
     esp_now_register_recv_cb(onRecvStatic);
 
     // Broadcast-Peer für die Discovery registrieren
-    esp_now_peer_info_t peer = {};
-    memcpy(peer.peer_addr, BROADCAST_MAC, 6);
-    peer.channel = Radio::CHANNEL;
-    peer.encrypt = false;
-    if (esp_now_add_peer(&peer) != ESP_OK) {
+    if (!addOrModPeer(BROADCAST_MAC)) {
         DEBUG_PRINTLN("ESP-NOW broadcast peer FAILED");
         return false;
     }
@@ -59,8 +67,47 @@ bool RadioManager::begin() {
     seq = (uint8_t)esp_random();
 
     initialized = true;
-    DEBUG_PRINTF("ESP-NOW init OK (Kanal %u)\n", Radio::CHANNEL);
+
+    // Tatsächlich eingestellten Kanal zurücklesen — Soll und Ist können
+    // auseinanderlaufen, und dann schweigt ESP-NOW ohne weitere Erklärung.
+    uint8_t primary = 0;
+    wifi_second_chan_t second = WIFI_SECOND_CHAN_NONE;
+    esp_wifi_get_channel(&primary, &second);
+    lastKnownChannel = primary;
+    DEBUG_PRINTF("ESP-NOW init OK (Kanal %u, Soll %u)\n", primary, Radio::CHANNEL);
     return true;
+}
+
+bool RadioManager::addOrModPeer(const uint8_t* mac) {
+    esp_now_peer_info_t peer = {};
+    memcpy(peer.peer_addr, mac, 6);
+    peer.channel = 0;  // 0 = aktueller Home-Channel (siehe Header)
+    peer.encrypt = false;
+
+    esp_err_t err = esp_now_is_peer_exist(mac) ? esp_now_mod_peer(&peer)
+                                               : esp_now_add_peer(&peer);
+    return err == ESP_OK;
+}
+
+void RadioManager::enforceChannel() {
+    uint32_t now = millis();
+    if (now - lastChannelCheckMs < Radio::CHANNEL_CHECK_MS) return;
+    lastChannelCheckMs = now;
+
+    uint8_t primary = 0;
+    wifi_second_chan_t second = WIFI_SECOND_CHAN_NONE;
+    if (esp_wifi_get_channel(&primary, &second) != ESP_OK) return;
+    if (primary == Radio::CHANNEL) {
+        lastKnownChannel = primary;
+        return;
+    }
+
+    // Nur bei echter Änderung loggen — sonst hätten wir den Spam nur ersetzt.
+    if (primary != lastKnownChannel) {
+        DEBUG_PRINTF("WLAN-Kanal war %u statt %u — korrigiere\n", primary, Radio::CHANNEL);
+    }
+    lastKnownChannel = primary;
+    esp_wifi_set_channel(Radio::CHANNEL, WIFI_SECOND_CHAN_NONE);
 }
 
 void RadioManager::update() {
@@ -75,9 +122,18 @@ void RadioManager::update() {
 
     if (peerDiscovered) return;
 
-    // FT_HELLO-Broadcast, max. 1 Hz bis FT_HELLO_ACK (Regel 4)
+    // Kanal-Wächter nur solange kein Empfänger gefunden ist: läuft die
+    // Discovery, ist ein abgewanderter Kanal die wahrscheinlichste Ursache.
+    enforceChannel();
+
+    // FT_HELLO-Broadcast bis FT_HELLO_ACK (Regel 4); 1 Hz in der Anfangsphase,
+    // danach im langsamen Raster (Empfänger vermutlich aus).
+    uint32_t interval = (helloCount < Radio::HELLO_FAST_COUNT)
+                            ? Radio::HELLO_INTERVAL_MS
+                            : Radio::HELLO_SLOW_INTERVAL_MS;
+
     uint32_t now = millis();
-    if (now - lastHelloMs >= Radio::HELLO_INTERVAL_MS || lastHelloMs == 0) {
+    if (now - lastHelloMs >= interval || lastHelloMs == 0) {
         lastHelloMs = now;
         sendHello();
     }
@@ -93,7 +149,18 @@ void RadioManager::sendHello() {
     packet.checksum = calculateChecksum(packet.command);
 
     esp_now_send(BROADCAST_MAC, (const uint8_t*)&packet, sizeof(packet));
-    DEBUG_PRINTLN("HELLO broadcast");
+
+    // Nur die ersten Versuche protokollieren; danach bleibt die Suche still,
+    // bis ein Empfänger antwortet (handleHelloAck loggt den Fund).
+    if (helloCount < Radio::HELLO_LOG_COUNT) {
+        DEBUG_PRINTLN("HELLO broadcast");
+    } else if (helloCount == Radio::HELLO_LOG_COUNT) {
+        DEBUG_PRINTF("Kein Empfaenger — Suche laeuft weiter alle %u ms (still)\n",
+                     Radio::HELLO_SLOW_INTERVAL_MS);
+    }
+    if (helloCount < 0xFFFF) {
+        helloCount++;
+    }
 }
 
 void RadioManager::handleHelloAck(const uint8_t* mac) {
@@ -107,18 +174,10 @@ void RadioManager::handleHelloAck(const uint8_t* mac) {
     }
 
     memcpy(peerMac, mac, 6);
-
-    esp_now_peer_info_t peer = {};
-    memcpy(peer.peer_addr, peerMac, 6);
-    peer.channel = Radio::CHANNEL;
-    peer.encrypt = false;
-    if (esp_now_is_peer_exist(peerMac)) {
-        esp_now_mod_peer(&peer);
-    } else {
-        esp_now_add_peer(&peer);
-    }
+    addOrModPeer(peerMac);
 
     peerDiscovered = true;
+    helloCount = 0;  // Backoff für eine spätere Neusuche zurücksetzen
     DEBUG_PRINTF("Empfaenger gefunden: %02X:%02X:%02X:%02X:%02X:%02X\n",
                  peerMac[0], peerMac[1], peerMac[2], peerMac[3], peerMac[4], peerMac[5]);
 }

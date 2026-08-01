@@ -78,6 +78,27 @@ private:
     void sendHello();
     void handleHelloAck(const uint8_t* mac);
 
+    /**
+     * @brief Registriert einen Peer auf dem aktuellen Home-Channel
+     *
+     * peer.channel = 0 heißt für ESP-NOW ausdrücklich „aktueller Kanal des
+     * Interfaces". Ein fester Kanal in der Peer-Info wird dagegen bei jedem
+     * Send gegen den Home-Channel geprüft; weicht er ab, bricht der Treiber
+     * mit „Peer channel is not equal to the home channel" ab — pro Sendeversuch
+     * eine Fehlerzeile. Da beide Geräte ohnehin per esp_wifi_set_channel() auf
+     * Radio::CHANNEL stehen, ist 0 gleichwertig, aber nicht zerbrechlich.
+     */
+    static bool addOrModPeer(const uint8_t* mac);
+
+    /**
+     * @brief Prüft den tatsächlichen Home-Channel und korrigiert ihn (R-3)
+     *
+     * Sicherheitsnetz: Seit der Normalbetrieb ohne WiFi läuft, sollte der Kanal
+     * nicht mehr wandern. Täte er es doch, wäre ESP-NOW stumm — der Wächter
+     * holt den Kanal zurück und loggt nur die Änderung, nicht den Dauerzustand.
+     */
+    void enforceChannel();
+
     // ESP-NOW-Callbacks (Signaturen abhängig von der IDF-Version — Guards halten
     // den Code über arduino-esp32-Core-Updates der PIO-Platform hinweg baubar)
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 4, 0)
@@ -99,6 +120,10 @@ private:
 
     uint8_t seq;                    // Sequenznummer (pro Boot zufällig, ++ pro Kommando)
     uint32_t lastHelloMs;           // Zeitpunkt des letzten HELLO-Broadcasts
+    uint16_t helloCount;            // gesendete HELLOs seit dem letzten Fund (Backoff/Log)
+
+    uint32_t lastChannelCheckMs;    // letzter Lauf des Kanal-Wächters
+    uint8_t lastKnownChannel;       // zuletzt geloggter Home-Channel (0 = noch keiner)
 
     // Send-Callback-Synchronisation (Callback läuft im WiFi-Task)
     volatile bool sendResultPending;

@@ -33,28 +33,28 @@ void ConfigMenu::update() {
 
     if (cursorLine == 0) {
         // Zeile 0: Zeit auswählen (120/240)
-        if (buttons.wasClicked(Button::BTN2)) {
+        if (buttons.wasClicked(Button::CONFIG)) {
             shootingTime = (shootingTime == 120) ? 240 : 120;
             needsUpdate = true;
-        } else if (buttons.wasClicked(Button::BTN1)) {
+        } else if (buttons.wasClicked(Button::OK)) {
             cursorLine = 1;
             needsUpdate = true;
         }
     } else if (cursorLine == 1) {
         // Zeile 1: Schützenanzahl auswählen (1-2/3-4)
-        if (buttons.wasClicked(Button::BTN2)) {
+        if (buttons.wasClicked(Button::CONFIG)) {
             shooterCount = (shooterCount == 2) ? 4 : 2;
             needsUpdate = true;
-        } else if (buttons.wasClicked(Button::BTN1)) {
+        } else if (buttons.wasClicked(Button::OK)) {
             cursorLine = 2;
             needsUpdate = true;
         }
     } else {
-        // Zeile 2: "Start" — BTN2 = Wrap-around zurück zur Konfiguration
-        if (buttons.wasClicked(Button::BTN2)) {
+        // Zeile 2: "Start" — CONFIG = Wrap-around zurück zur Konfiguration
+        if (buttons.wasClicked(Button::CONFIG)) {
             cursorLine = 0;
             needsUpdate = true;
-        } else if (buttons.wasClicked(Button::BTN1)) {
+        } else if (buttons.wasClicked(Button::OK)) {
             complete = true;
         }
     }
@@ -136,7 +136,7 @@ void ConfigMenu::draw() {
     g.setCursor(10, EpaperDisplay::HEIGHT - 24);
     g.print("Pfeil: aendern   OK: weiter");
     g.setCursor(10, EpaperDisplay::HEIGHT - 12);
-    g.print("OK 3s halten: Ausschalten");
+    g.print("Taste 3s halten: Aus");
 
     needsUpdate = false;
 }

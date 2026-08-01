@@ -7,8 +7,11 @@
  * elektrisch identisch zum Standard-Modul, Treiberklasse GxEPD2_154_D67 (R-1).
  *
  * Refresh-Strategie (R-2):
- * - Voll-Refresh (~2 s, blitzt) nur bei Screen-/Zustandswechsel
+ * - refreshScreen() für Screen-/Zustandswechsel: Partial-Waveform über das
+ *   volle Fenster (~0,5 s, blitzt NICHT); alle PARTIAL_REFRESH_LIMIT Refreshes
+ *   automatisch einmal voll, um angesammeltes Ghosting zu löschen
  * - Partial-Refresh (~300-400 ms) für 1-Hz-Countdown und Statuszeile
+ * - fullRefresh() (~2,6 s, blitzt) nur noch erzwungen: Splash, Abschalt-Screen
  * - LOAD-Rail (GPIO7) MUSS vor init() an sein (FR-018); vor Power-Off
  *   hibernate() und Rail aus (sonst Geisterbilder)
  */
@@ -39,7 +42,24 @@ public:
     Adafruit_GFX& gfx() { return display; }
 
     /**
-     * @brief Voll-Refresh des gesamten Panels (~2 s, nur bei Screenwechsel!)
+     * @brief Standard-Ausgabe bei Screen-/Zustandswechsel (~0,5 s, kein Blitzen)
+     *
+     * Gibt den gesamten Puffer über die schnelle Partial-Waveform aus. Das Panel
+     * invertiert dabei NICHT mehrfach schwarz/weiß — der Wechsel bleibt ruhig.
+     *
+     * Preis: Ghosting sammelt sich an. Deshalb zählt der Wrapper alle Partials
+     * (auch die Fenster-Updates von Countdown/Statuszeile) mit und schaltet nach
+     * Display::PARTIAL_REFRESH_LIMIT selbsttätig auf einen Voll-Refresh um. Der
+     * fällt so immer auf einen Screenwechsel und nie mitten in den Countdown.
+     */
+    void refreshScreen();
+
+    /**
+     * @brief Erzwungener Voll-Refresh des gesamten Panels (~2,6 s, blitzt)
+     *
+     * Nur dort verwenden, wo das Blitzen akzeptabel und ein garantiert
+     * schattenfreies Bild gefragt ist: Splash und Abschalt-Screen. Für alle
+     * übrigen Screenwechsel refreshScreen() nehmen.
      */
     void fullRefresh();
 
@@ -74,8 +94,12 @@ public:
 
     /**
      * @brief Lader-Anzeige-Zustand für die Statuszeile
+     *
+     * SUSPENDED = Eingangsspannung liegt an, es wird aber nicht geladen
+     * (Temperatur-/Timer-Fehler oder Lader im Standby) — muss sichtbar bleiben
+     * und darf nicht als COMPLETE durchgehen.
      */
-    enum class ChargeIcon : uint8_t { NONE, CHARGING, COMPLETE, FAULT };
+    enum class ChargeIcon : uint8_t { NONE, CHARGING, COMPLETE, SUSPENDED, FAULT };
 
     /**
      * @brief Zeichnet die Statuszeile in den Puffer (FR-016/FR-017, T023)
@@ -105,4 +129,8 @@ private:
     // Volle Pufferung: 200x200/8 = 5 kB — unkritisch auf dem ESP32-S3
     GxEPD2_BW<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT> display;
     bool railEnabled;
+
+    // Ghosting-Buchhaltung für refreshScreen()
+    uint8_t partialCount;   // Partials seit dem letzten Voll-Refresh
+    bool forceFullNext;     // nächster Screenwechsel muss voll sein (nach begin/hibernate)
 };

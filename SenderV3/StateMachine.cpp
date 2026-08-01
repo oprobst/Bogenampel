@@ -82,10 +82,11 @@ void StateMachine::setState(State newState) {
 void StateMachine::refreshStatusLine() {
     EpaperDisplay::ChargeIcon icon;
     switch (power.chargeState()) {
-        case ChargeState::CHARGING: icon = EpaperDisplay::ChargeIcon::CHARGING; break;
-        case ChargeState::COMPLETE: icon = EpaperDisplay::ChargeIcon::COMPLETE; break;
-        case ChargeState::FAULT:    icon = EpaperDisplay::ChargeIcon::FAULT; break;
-        default:                    icon = EpaperDisplay::ChargeIcon::NONE; break;
+        case ChargeState::CHARGING:  icon = EpaperDisplay::ChargeIcon::CHARGING; break;
+        case ChargeState::COMPLETE:  icon = EpaperDisplay::ChargeIcon::COMPLETE; break;
+        case ChargeState::SUSPENDED: icon = EpaperDisplay::ChargeIcon::SUSPENDED; break;
+        case ChargeState::TEST_MODE: icon = EpaperDisplay::ChargeIcon::FAULT; break;
+        default:                     icon = EpaperDisplay::ChargeIcon::NONE; break;
     }
 
     bool radioOk = radio.isPeerDiscovered()
@@ -97,8 +98,13 @@ void StateMachine::refreshStatusLine() {
 }
 
 void StateMachine::checkPowerOffGesture() {
-    // BTN1 ≥ 3 s = Power-Off — NICHT im Schießbetrieb (dort = Alarm, FR-015)
-    if (buttons.wasHeldFor(Button::BTN1, Timing::POWER_OFF_HOLD_MS)) {
+    // ≥ 3 s halten = Power-Off — NICHT im Schießbetrieb (dort = Alarm, FR-015).
+    // Beide Taster schalten aus: Eingeschaltet wird hardwareseitig immer über
+    // CONFIG (Power-Latch), also muss dieselbe Taste auch ausschalten können.
+    // Beim Einschalt-Druck greift der Boot-Lockout, die Geste kann also nicht
+    // direkt beim Hochfahren auslösen.
+    if (buttons.wasHeldFor(Button::OK, Timing::POWER_OFF_HOLD_MS)
+        || buttons.wasHeldFor(Button::CONFIG, Timing::POWER_OFF_HOLD_MS)) {
         doPowerOff();
     }
 }
@@ -138,13 +144,13 @@ void StateMachine::enterSplash() {
 }
 
 void StateMachine::handleSplash() {
-    // BTN1 kurz: Splash überspringen (neu in V3, US5-Szenario 3)
-    if (buttons.wasClicked(Button::BTN1) || buttons.wasClicked(Button::BTN2)) {
+    // Klick auf einen der beiden Taster: Splash überspringen (neu in V3, US5-Szenario 3)
+    if (buttons.wasClicked(Button::OK) || buttons.wasClicked(Button::CONFIG)) {
         setState(State::STATE_CONFIG_MENU);
         return;
     }
 
-    // Power-Off-Geste (BTN1 ≥ 3 s)
+    // Power-Off-Geste (OK ≥ 3 s)
     checkPowerOffGesture();
 
     // Fall 1: Discovery läuft noch (RadioManager broadcastet HELLO, 1 Hz)
@@ -192,7 +198,7 @@ void StateMachine::enterConfigMenu() {
     epd.clearBuffer();
     refreshStatusLine();  // Statuszeile in den Puffer + Partial (vor Vollbild ok)
     configMenu.draw();
-    epd.fullRefresh();
+    epd.refreshScreen();
 }
 
 void StateMachine::handleConfigMenu() {
@@ -257,7 +263,7 @@ void StateMachine::enterPfeileHolen() {
     epd.clearBuffer();
     refreshStatusLine();
     pfeileHolenMenu.draw();
-    epd.fullRefresh();  // Zustandswechsel = Voll-Refresh (Ghosting-Regel R-2)
+    epd.refreshScreen();  // Zustandswechsel ohne Blitzen (Ghosting-Regel R-2)
 
     // Gruppen-Signal sofort senden (Empfänger zeigt die richtige Gruppe)
     sendGroupCommand();
@@ -342,7 +348,7 @@ void StateMachine::enterSchiessBetrieb() {
     // SOFORT danach: Sender-Timer neu starten (synchron mit Empfänger, R-7)
     resetSenderTimer();
 
-    // Menü initialisieren und zeichnen (Voll-Refresh beim Zustandswechsel)
+    // Menü initialisieren und zeichnen (Screenwechsel-Refresh, kein Blitzen)
     schiessBetriebMenu.begin();
     schiessBetriebMenu.setTournamentConfig(shootingTime, shooterCount,
                                            currentGroup, currentPosition);
@@ -351,13 +357,13 @@ void StateMachine::enterSchiessBetrieb() {
     epd.clearBuffer();
     refreshStatusLine();
     schiessBetriebMenu.draw();
-    epd.fullRefresh();
+    epd.refreshScreen();
     schiessBetriebMenu.updateCountdown(preparationSecondsRemaining);
 }
 
 void StateMachine::handleSchiessBetrieb() {
-    // ALARM-Geste: BTN1 ≥ 2 s gehalten (FR-015 — Power-Off hier nicht verfügbar)
-    if (buttons.wasHeldFor(Button::BTN1, Timing::ALARM_THRESHOLD_MS)) {
+    // ALARM-Geste: OK ≥ 2 s gehalten (FR-015 — Power-Off hier nicht verfügbar)
+    if (buttons.wasHeldFor(Button::OK, Timing::ALARM_THRESHOLD_MS)) {
         setState(State::STATE_ALARM);
         return;
     }
@@ -405,7 +411,7 @@ void StateMachine::handleSchiessBetrieb() {
         }
     }
 
-    // Menu aktualisieren (BTN1 kurz = "Passe beenden")
+    // Menu aktualisieren (OK kurz = "Passe beenden")
     schiessBetriebMenu.update();
 
     if (schiessBetriebMenu.isEndRequested()) {
@@ -515,15 +521,15 @@ void StateMachine::enterAlarm() {
     TransmissionResult result = sendAlarmWithRetry();
 
     alarmScreen.draw(result == TX_SUCCESS);
-    epd.fullRefresh();
+    epd.refreshScreen();
 }
 
 void StateMachine::handleAlarm() {
     // Power-Off-Geste bleibt verfügbar (Gesten-Tabelle data-model.md §3)
     checkPowerOffGesture();
 
-    // BTN1 kurz: Alarm quittieren → CMD_STOP → Pfeile holen
-    if (buttons.wasClicked(Button::BTN1)) {
+    // OK kurz: Alarm quittieren → CMD_STOP → Pfeile holen
+    if (buttons.wasClicked(Button::OK)) {
         radio.sendCommand(CMD_STOP);
         setState(State::STATE_PFEILE_HOLEN);
     }

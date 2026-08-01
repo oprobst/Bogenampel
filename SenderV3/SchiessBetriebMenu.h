@@ -7,7 +7,7 @@
  * - Vorbereitungsphase (10 s, Countdown in Sekunden)
  * - Schießphase (120/240 s, Countdown mm:ss)
  * - Gruppenanzeige bei 3-4 Schützen
- * - BTN1 kurz = "Passe beenden", BTN1 ≥ 2 s = Alarm (StateMachine)
+ * - OK kurz = "Passe beenden", OK ≥ 2 s = Alarm (StateMachine)
  */
 
 #pragma once
@@ -26,7 +26,7 @@ public:
     void begin();
 
     /**
-     * @brief Update-Funktion (in loop() aufrufen) — BTN1 kurz = Passe beenden
+     * @brief Update-Funktion (in loop() aufrufen) — OK kurz = Passe beenden
      */
     void update();
 
@@ -79,7 +79,7 @@ private:
 
     // UI-State
     bool needsUpdate;
-    bool endRequested;                 // "Passe beenden" (BTN1 kurz)
+    bool endRequested;                 // "Passe beenden" (OK kurz)
 
     /**
      * @brief Restzeit ins Countdown-Fenster zeichnen (nur Puffer)

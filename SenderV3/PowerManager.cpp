@@ -70,24 +70,33 @@ bool PowerManager::update() {
 }
 
 void PowerManager::readChargerStatus() {
-    // MCP73837: Open-Drain, LOW = aktiv
+    // MCP73837: Open-Drain, LOW = aktiv, HIGH = Hi-Z (interner Pullup zieht hoch)
     bool pgOk = (digitalRead(Pins::C_PG) == LOW);    // Eingangsspannung gültig
     bool st1 = (digitalRead(Pins::C_ST1) == LOW);    // STAT1 aktiv
     bool st2 = (digitalRead(Pins::C_ST2) == LOW);    // STAT2 aktiv
 
     if (!pgOk) {
+        // PG Hi-Z = Shutdown (kein Eingang über UVLO)
         charge = ChargeState::NO_INPUT;
     } else if (st1 && st2) {
-        charge = ChargeState::FAULT;        // Timer-/Temperatur-Fehler
+        // Einziger Zustand mit beiden STAT aktiv — nicht "Fehler", sondern der
+        // LDO-Testmodus (THERM über VDD-100 mV). Im Betrieb unerwartet.
+        charge = ChargeState::TEST_MODE;
     } else if (st1) {
-        charge = ChargeState::CHARGING;     // Ladevorgang läuft
+        charge = ChargeState::CHARGING;     // Precondition / CC / CV
     } else if (st2) {
-        charge = ChargeState::COMPLETE;     // Ladung abgeschlossen
+        charge = ChargeState::COMPLETE;     // Charge Complete – Standby
     } else {
-        // PG ok, aber kein STAT aktiv: Standby (kein Akku / Shutdown) —
-        // für die Anzeige wie "voll" behandeln
-        charge = ChargeState::COMPLETE;
+        // PG aktiv, beide STAT Hi-Z: Standby (PROG1/PROG2 floating),
+        // Temperature Fault oder Timer Fault. Table 5-1 unterscheidet die drei
+        // nicht — gemeinsam ist ihnen, dass NICHT geladen wird. Früher wurde
+        // dieser Zweig als COMPLETE ("voll") angezeigt und hat damit einen
+        // offenen THERM-Pin als vollen Akku kaschiert.
+        charge = ChargeState::SUSPENDED;
     }
+
+    DEBUG_PRINTF("Lader: ST1=%c ST2=%c PG=%c -> %d\n",
+                 st1 ? 'L' : 'Z', st2 ? 'L' : 'Z', pgOk ? 'L' : 'Z', (int)charge);
 }
 
 uint8_t PowerManager::batteryPercent() const {

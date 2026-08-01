@@ -7,8 +7,8 @@
  * - e-Paper-Rendering über die Menü-Klassen (EpaperDisplay statt ST7789)
  * - ESP-NOW (RadioManager statt globaler RF24-Funktionen)
  * - NVS (ConfigStore statt EEPROM)
- * - 2-Tasten-Gesten: BTN1 kurz = OK, BTN1 ≥2s = Alarm (Schießbetrieb),
- *   BTN1 ≥3s = Power-Off (außerhalb Schießbetrieb, FR-015)
+ * - 2-Tasten-Gesten: OK kurz = bestätigen, OK ≥2s = Alarm (Schießbetrieb),
+ *   beide Taster ≥3s = Power-Off (außerhalb Schießbetrieb, FR-015)
  *
  * REGRESSION-GUARD (FR-004a): handleShootingPhaseEnd(false) bei Zeitablauf
  * sendet KEIN CMD_STOP — der Empfänger beendet die Passe autonom; das
@@ -168,7 +168,7 @@ private:
     void refreshStatusLine();
 
     /**
-     * @brief Power-Off-Geste prüfen (BTN1 ≥ 3 s) und ggf. abschalten (FR-015)
+     * @brief Power-Off-Geste prüfen (beide Taster ≥ 3 s) und ggf. abschalten (FR-015)
      */
     void checkPowerOffGesture();
 

@@ -59,7 +59,10 @@ RadioCommand RadioManager::nextCommand() {
 void RadioManager::registerPeer(const uint8_t* mac) {
     esp_now_peer_info_t peer = {};
     memcpy(peer.peer_addr, mac, 6);
-    peer.channel = Radio::CHANNEL;
+    // 0 = aktueller Home-Channel. Ein fester Kanal wird bei jedem Send gegen den
+    // Home-Channel geprüft und bricht bei Abweichung mit „Peer channel is not
+    // equal to the home channel" ab — pro Sendeversuch eine Fehlerzeile.
+    peer.channel = 0;
     peer.encrypt = false;
 
     if (esp_now_is_peer_exist(mac)) {

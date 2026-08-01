@@ -27,8 +27,8 @@ void SchiessBetriebMenu::begin() {
 }
 
 void SchiessBetriebMenu::update() {
-    // BTN1 kurz = "Passe beenden" (BTN1 ≥ 2s = Alarm, wertet die StateMachine aus)
-    if (buttons.wasClicked(Button::BTN1)) {
+    // OK kurz = "Passe beenden" (OK ≥ 2s = Alarm, wertet die StateMachine aus)
+    if (buttons.wasClicked(Button::OK)) {
         endRequested = true;
     }
 }

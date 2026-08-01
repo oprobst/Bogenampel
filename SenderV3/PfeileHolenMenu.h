@@ -4,7 +4,7 @@
  *
  * PORT aus V2 (Sender/PfeileHolenMenu.h):
  * - Optionen: Nächste Passe / Abfolge (nur 3-4 Schützen) / Neustart
- * - BTN2: Cursor weiter (Wrap-around), BTN1: Aktion ausführen
+ * - CONFIG: Cursor weiter (Wrap-around), OK: Aktion ausführen
  * - Verbindungs-/Batteriestatus wandert in V3 in die Statuszeile (T023)
  */
 

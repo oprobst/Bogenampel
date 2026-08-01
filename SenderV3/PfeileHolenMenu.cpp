@@ -48,13 +48,13 @@ void PfeileHolenMenu::update() {
     // 1-2 Schützen: 2 (Nächste Passe, Neustart); 3-4: 3 (+ Abfolge)
     uint8_t numButtons = (shooterCount == 4) ? 3 : 2;
 
-    // BTN2: Cursor weiter mit Wrap-around
-    if (buttons.wasClicked(Button::BTN2)) {
+    // CONFIG: Cursor weiter mit Wrap-around
+    if (buttons.wasClicked(Button::CONFIG)) {
         cursorPosition = (cursorPosition + 1) % numButtons;
         needsUpdate = true;
     }
-    // BTN1: Aktion auswählen
-    else if (buttons.wasClicked(Button::BTN1)) {
+    // OK: Aktion auswählen
+    else if (buttons.wasClicked(Button::OK)) {
         // Bei 1-2 Schützen: Position 1 = Neustart (Abfolge entfällt)
         if (shooterCount == 2 && cursorPosition == 1) {
             selectedAction = PfeileHolenAction::NEUSTART;

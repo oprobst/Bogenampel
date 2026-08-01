@@ -4,10 +4,10 @@
  *
  * PORT aus V2 (Sender/ConfigMenu.h) — Logik des gelebten V2-Stands
  * ("Ändern"-los, Wrap-around):
- * - Zeile 0: Zeit (120s / 240s)        — BTN2 wechselt, BTN1 bestätigt
- * - Zeile 1: Schützen (1-2 / 3-4)      — BTN2 wechselt, BTN1 bestätigt
- * - Zeile 2: Start                     — BTN2 zurück zu Zeile 0 (Wrap),
- *                                        BTN1 startet das Turnier
+ * - Zeile 0: Zeit (120s / 240s)        — CONFIG wechselt, OK bestätigt
+ * - Zeile 1: Schützen (1-2 / 3-4)      — CONFIG wechselt, OK bestätigt
+ * - Zeile 2: Start                     — CONFIG zurück zu Zeile 0 (Wrap),
+ *                                        OK startet das Turnier
  *
  * Rendering ausschließlich über die EpaperDisplay-API (kein direkter
  * Panel-Zugriff): draw() zeichnet in den Puffer, die StateMachine entscheidet

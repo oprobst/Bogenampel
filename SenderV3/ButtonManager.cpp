@@ -5,8 +5,7 @@
 
 #include "ButtonManager.h"
 
-ButtonManager::ButtonManager()
-    : bootLockout(false) {
+ButtonManager::ButtonManager() {
     for (uint8_t i = 0; i < static_cast<uint8_t>(Button::COUNT); i++) {
         buttons[i].pressed = false;
         buttons[i].lastRawState = false;
@@ -14,25 +13,27 @@ ButtonManager::ButtonManager()
         buttons[i].pressTime = 0;
         buttons[i].clickedFlag = false;
         buttons[i].reportedHoldMs = 0;
+        buttons[i].bootLockout = false;
     }
 }
 
 void ButtonManager::begin() {
-    // BTN1: aktiv HIGH über externen Teiler R2/R7 — KEINE internen Pulls
+    // SW2/GPIO15 (Rolle CONFIG): aktiv HIGH über externen Teiler R2/R7 —
+    // KEINE internen Pulls
     pinMode(Pins::BTN1, INPUT);
-    // BTN2: gegen GND, kein externer Pullup → interner Pullup, aktiv LOW
+    // SW1/GPIO9 (Rolle OK): gegen GND, kein externer Pullup → interner Pullup
     pinMode(Pins::BTN2, INPUT_PULLUP);
 
-    // Initiale Zustände lesen
+    // Initiale Zustände lesen. Wer jetzt schon gedrückt ist, steht im
+    // Boot-Lockout: CONFIG hält beim Einschalten den Latch, und im
+    // Wartungsmodus werden beide Taster gehalten — ohne Lockout liefe dort
+    // nach 3 s die Power-Off-Geste von OK los.
     for (uint8_t i = 0; i < static_cast<uint8_t>(Button::COUNT); i++) {
         Button btn = static_cast<Button>(i);
         buttons[i].lastRawState = readRawState(btn);
         buttons[i].pressed = buttons[i].lastRawState;
+        buttons[i].bootLockout = buttons[i].pressed;
     }
-
-    // Boot-Lockout: BTN1 ist der Einschalt-Taster — solange er seit dem
-    // Einschalt-Druck nicht losgelassen wurde, sind alle BTN1-Gesten gesperrt
-    bootLockout = buttons[static_cast<uint8_t>(Button::BTN1)].pressed;
 }
 
 void ButtonManager::update() {
@@ -59,8 +60,8 @@ void ButtonManager::update() {
                 state.pressTime = now;
                 state.reportedHoldMs = 0;
 
-                // BTN2 hat keine Halte-Geste → Klick sofort beim Drücken
-                if (btn == Button::BTN2) {
+                // CONFIG hat keine Halte-Geste → Klick sofort beim Drücken
+                if (btn == Button::CONFIG && !state.bootLockout) {
                     state.clickedFlag = true;
                 }
             }
@@ -68,14 +69,13 @@ void ButtonManager::update() {
             else if (!rawPressed && state.pressed) {
                 state.pressed = false;
 
-                if (btn == Button::BTN1) {
-                    if (bootLockout) {
-                        // Einschalt-Druck endet hier — ab jetzt Gesten erlaubt
-                        bootLockout = false;
-                    } else if ((now - state.pressTime) < Timing::ALARM_THRESHOLD_MS) {
-                        // Kurz gehalten → Klick (lange Drücke sind Gesten)
-                        state.clickedFlag = true;
-                    }
+                if (state.bootLockout) {
+                    // Einschalt-/Modus-Druck endet hier — ab jetzt zählt er
+                    state.bootLockout = false;
+                } else if (btn == Button::OK
+                           && (now - state.pressTime) < Timing::ALARM_THRESHOLD_MS) {
+                    // Kurz gehalten → Klick (lange Drücke sind Gesten)
+                    state.clickedFlag = true;
                 }
             }
         }
@@ -107,8 +107,8 @@ bool ButtonManager::wasHeldFor(Button btn, uint16_t ms) {
     ButtonState& state = buttons[idx];
     if (!state.pressed) return false;
 
-    // Boot-Lockout: Einschalt-Druck darf keine Geste auslösen
-    if (btn == Button::BTN1 && bootLockout) return false;
+    // Boot-Lockout: Einschalt-/Modus-Druck darf keine Geste auslösen
+    if (state.bootLockout) return false;
 
     uint32_t duration = millis() - state.pressTime;
     if (duration >= ms && state.reportedHoldMs < ms) {
@@ -130,10 +130,18 @@ bool ButtonManager::isAnyPressed() const {
 //=============================================================================
 
 bool ButtonManager::readRawState(Button btn) const {
-    if (btn == Button::BTN1) {
-        // Aktiv HIGH (Teiler R2/R7 an +BATT, ~2,5-3,5 V bei gedrücktem Taster)
+    if (btn == Button::CONFIG) {
+        // SW2/GPIO15, aktiv HIGH (Teiler R2/R7 an +BATT, ~2,5-3,5 V gedrückt).
+        // Dieser Taster hält beim Einschalten den Power-Latch — das ist
+        // Hardware und per Firmware nicht auf den anderen Taster verlegbar.
         return digitalRead(Pins::BTN1) == HIGH;
     }
-    // BTN2: aktiv LOW (interner Pullup)
+    // Rolle OK → SW1/GPIO9, aktiv LOW (interner Pullup)
     return digitalRead(Pins::BTN2) == LOW;
+}
+
+bool ButtonManager::isBootLockoutActive(Button btn) const {
+    uint8_t idx = static_cast<uint8_t>(btn);
+    if (idx >= static_cast<uint8_t>(Button::COUNT)) return false;
+    return buttons[idx].bootLockout;
 }

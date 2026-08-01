@@ -4,7 +4,7 @@
  *
  * PORT aus V2 (Sender/AlarmScreen.h): statisches Alarm-UI (auf e-Paper kein
  * Blinken nötig/sinnvoll), erweitert um Zustellstatus (US3-Szenario 3) und
- * den Quittierungs-Hinweis (BTN1 kurz = quittieren → CMD_STOP).
+ * den Quittierungs-Hinweis (OK kurz = quittieren → CMD_STOP).
  */
 
 #pragma once

@@ -9,7 +9,9 @@
 
 EpaperDisplay::EpaperDisplay()
     : display(GxEPD2_154_D67(Pins::EPD_CS, Pins::EPD_DC, Pins::EPD_RST, Pins::EPD_BUSY))
-    , railEnabled(false) {
+    , railEnabled(false)
+    , partialCount(0)
+    , forceFullNext(true) {
 }
 
 void EpaperDisplay::begin() {
@@ -27,23 +29,55 @@ void EpaperDisplay::begin() {
     display.setRotation(Display::ROTATION);
     display.setTextColor(GxEPD_BLACK);
     clearBuffer();
+
+    // Frisch initialisiertes Panel hat kein gültiges Referenzbild im RAM —
+    // das erste Bild muss voll geschrieben werden (GxEPD2 erzwingt das intern
+    // ebenfalls über _initial_refresh; hier explizit für unsere Buchhaltung).
+    partialCount = 0;
+    forceFullNext = true;
 }
 
 void EpaperDisplay::clearBuffer() {
     display.fillScreen(GxEPD_WHITE);
 }
 
+void EpaperDisplay::refreshScreen() {
+    // Ghosting-Budget aufgebraucht (oder Panel frisch initialisiert)?
+    // Dann jetzt einmal voll durchblitzen statt beim nächsten Mal.
+    if (forceFullNext || partialCount >= Display::PARTIAL_REFRESH_LIMIT) {
+        fullRefresh();
+        return;
+    }
+
+    // Partial-Waveform über das volle Fenster: schreibt nur die geänderten
+    // Pixel um, ohne den schwarz/weiß-Invertierungszyklus des Voll-Refresh.
+    display.setFullWindow();
+    display.display(true);
+    partialCount++;
+}
+
 void EpaperDisplay::fullRefresh() {
     display.setFullWindow();
     display.display(false);  // Voll-Refresh (setzt Ghosting zurück, R-2)
+    partialCount = 0;
+    forceFullNext = false;
 }
 
 void EpaperDisplay::partialUpdate(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
     display.displayWindow(x, y, w, h);  // Partial-Refresh aus dem Puffer
+
+    // Zählt aufs Ghosting-Budget: der 1-Hz-Countdown und die Statuszeile
+    // hinterlassen genauso Restschatten wie ein Screenwechsel. Ausgewertet
+    // wird der Zähler nur in refreshScreen() — ein Voll-Refresh darf niemals
+    // mitten in einen laufenden Countdown platzen.
+    if (partialCount < 255) {
+        partialCount++;
+    }
 }
 
 void EpaperDisplay::hibernate() {
     display.hibernate();
+    forceFullNext = true;  // nach dem Aufwachen fehlt das Referenzbild im Panel-RAM
 }
 
 void EpaperDisplay::railOff() {
@@ -97,6 +131,8 @@ void EpaperDisplay::drawStatusLine(uint8_t batteryPercent, bool usbConnected, Ch
         midText = "laedt...";
     } else if (charge == ChargeIcon::COMPLETE && usbConnected) {
         midText = "voll";
+    } else if (charge == ChargeIcon::SUSPENDED) {
+        midText = "laedt nicht!";        // Temperatur-/Timer-Fehler oder Standby
     } else if (charge == ChargeIcon::FAULT) {
         midText = "Ladefehler!";
     } else if (usbConnected) {

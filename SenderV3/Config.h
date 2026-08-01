@@ -8,7 +8,7 @@
  * Hardware: ESP32-S3-WROOM-1U-N16R8 ("Universal-Fernbedienung", IC2)
  * - Waveshare 1.54" e-Paper V2 (SSD1681, 200x200) als rohes Panel an J1
  * - ESP-NOW Funk (integriert, kein externes Modul)
- * - 2 Taster (BTN1 = Power/OK, BTN2 = Weiter), Power-Latch (TPS62742)
+ * - 2 Taster (SW2/GPIO15 = CONFIG + Einschalten, SW1/GPIO9 = OK), Power-Latch (TPS62742)
  * - LiPo-Lader MCP73837, Batteriespannungsmessung über Teiler
  *
  * Verbindliche Pin-Quelle: specs/004-v3-esp32-port/contracts/hardware-pins.md
@@ -48,11 +48,16 @@ namespace Pins {
                                    // fürs Display; HIGH vor Display-Init, LOW vor Power-Off
 
     //-------------------------------------------------------------------------
-    // Taster (SW2 = BTN1, SW1 = BTN2)
+    // Taster (SW2 = BTN1, SW1 = BTN2) — die Namen bezeichnen den PIN, nicht die
+    // Bedienrolle. Die Rollen sind in ButtonManager::readRawState() zugeordnet
+    // und wurden an die Gehäusebeschriftung angepasst:
+    //   BTN1 (GPIO15) → Rolle CONFIG (Weiter/Ändern), zugleich Einschalt-Taster
+    //   BTN2 (GPIO9)  → Rolle OK (Bestätigen, Alarm 2s, Power-Off 3s)
+    // Welcher Taster einschaltet, legt der Power-Latch in der Hardware fest.
     //-------------------------------------------------------------------------
-    constexpr uint8_t BTN1 = 15;   // SW2: Power/OK — AKTIV HIGH (externer Teiler
+    constexpr uint8_t BTN1 = 15;   // SW2: AKTIV HIGH (externer Teiler
                                    // R2/R7 an +BATT, 100nF C1); KEINE internen Pulls!
-    constexpr uint8_t BTN2 = 9;    // SW1: Weiter — gegen GND, INPUT_PULLUP, aktiv LOW
+    constexpr uint8_t BTN2 = 9;    // SW1: gegen GND, INPUT_PULLUP, aktiv LOW
 
     //-------------------------------------------------------------------------
     // Batterie / USB / Lader (MCP73837)
@@ -91,8 +96,8 @@ namespace Display {
     constexpr uint16_t WIDTH  = 200;
     constexpr uint16_t HEIGHT = 200;
 
-    // Display-Orientierung (GxEPD2: 0-3)
-    constexpr uint8_t ROTATION = 0;
+    // Display-Orientierung (GxEPD2: 0-3) — 2 = um 180° gedreht
+    constexpr uint8_t ROTATION = 2;
 
     // Partial-Refresh-Fenster (data-model.md §7)
     // Statuszeile (oben): Akku %, USB-/Lade-Symbol, Funkstatus
@@ -107,10 +112,15 @@ namespace Display {
     constexpr uint16_t COUNTDOWN_W = 120;
     constexpr uint16_t COUNTDOWN_H = 64;
 
+    // Ghosting-Budget: So viele Partial-Refreshes (Fenster + Screenwechsel)
+    // dürfen aufeinander folgen, bevor der nächste Screenwechsel einmal voll
+    // durchblitzt und die Restschatten löscht (R-2).
+    constexpr uint8_t PARTIAL_REFRESH_LIMIT = 20;
+
 } // namespace Display
 
 //=============================================================================
-// OTA (WiFi SoftAP + ArduinoOTA)
+// OTA (WiFi-Station im Wartungsmodus + ArduinoOTA)
 //=============================================================================
 
 // wifi_credentials.h (gitignored) definiert WIFI_SSID_OVERRIDE + WIFI_PASS_OVERRIDE.
@@ -122,13 +132,14 @@ namespace Display {
 namespace OTA {
 
     constexpr const char* HOSTNAME = "bogenampel-sender";
-    constexpr const char* AP_SSID  = "Bogenampel-Sender";
-    // AP/OTA-Passwort (WPA2, min. 8 Zeichen)
-    constexpr const char* PASSWORD = "bogenampel";
 
-    // Heimnetz-WLAN für OTA — aus wifi_credentials.h, sonst SoftAP-Fallback.
-    // Kanal-Hinweis: ESP-NOW läuft auf Kanal 1; wenn der Router einen anderen
-    // Kanal verwendet, ist ESP-NOW während des OTA-Flashens nicht aktiv.
+    // Heimnetz-WLAN für den Wartungsmodus — aus wifi_credentials.h. Ohne
+    // Zugangsdaten bleibt der Wartungsmodus in der CONNECTING-Anzeige stehen;
+    // einen SoftAP-Fallback gibt es bewusst nicht (Kanalkonflikt-Vermeidung,
+    // identisch zum Empfänger).
+    // Kanal-Hinweis: ESP-NOW läuft auf Kanal 1; sobald sich der Sender in ein
+    // Netz auf einem anderen Kanal einbucht, ist ESP-NOW tot. Genau deshalb
+    // sind Wartungsmodus und Normalbetrieb strikt getrennt.
 #ifdef WIFI_SSID_OVERRIDE
     constexpr const char* WIFI_SSID = WIFI_SSID_OVERRIDE;
     constexpr const char* WIFI_PASS = WIFI_PASS_OVERRIDE;
@@ -136,7 +147,7 @@ namespace OTA {
     constexpr const char* WIFI_SSID = "";
     constexpr const char* WIFI_PASS = "";
 #endif
-    constexpr uint16_t WIFI_TIMEOUT = 10000;  // ms bis Fallback auf SoftAP
+    constexpr uint16_t WIFI_TIMEOUT = 10000;  // ms bis zum nächsten Verbindungsversuch
 
 } // namespace OTA
 
@@ -155,7 +166,21 @@ namespace Radio {
     constexpr uint16_t TRANSMIT_TIMEOUT_MS = 500;  // Gesamtbudget pro Kommando (FR-007)
 
     // Discovery (FT_HELLO-Broadcast bis FT_HELLO_ACK)
-    constexpr uint16_t HELLO_INTERVAL_MS = 1000;   // max. 1 Hz
+    constexpr uint16_t HELLO_INTERVAL_MS = 1000;   // max. 1 Hz (Anfangsphase)
+
+    // Backoff: Ist nach HELLO_FAST_COUNT Versuchen kein Empfänger aufgetaucht,
+    // ist er vermutlich aus. Dann genügt ein langsamer Suchlauf — das hält den
+    // Log lesbar und spart Sendezeit. Beim Einschalten des Empfängers dauert die
+    // Erkennung dann max. HELLO_SLOW_INTERVAL_MS.
+    constexpr uint8_t  HELLO_FAST_COUNT = 10;         // ~10 s im 1-Hz-Raster
+    constexpr uint16_t HELLO_SLOW_INTERVAL_MS = 5000; // danach alle 5 s
+
+    // Nur die ersten HELLO_LOG_COUNT Broadcasts werden geloggt — danach meldet
+    // sich die Discovery erst wieder, wenn ein Empfänger antwortet.
+    constexpr uint8_t HELLO_LOG_COUNT = 3;
+
+    // Kanal-Wächter: Prüfintervall für den tatsächlichen WLAN-Home-Channel
+    constexpr uint16_t CHANNEL_CHECK_MS = 2000;
 
     // Connection Quality Test (Splash, R-5)
     constexpr uint8_t QUALITY_TEST_PINGS = 10;        // Anzahl Pings
@@ -206,7 +231,7 @@ namespace Timing {
         constexpr uint16_t PREPARATION_TIME_MS = 10000;  // 10 Sekunden Vorbereitungsphase
     #endif
 
-    // Tastergesten (BTN1)
+    // Tastergesten (Rolle OK)
     constexpr uint16_t ALARM_THRESHOLD_MS = 2000;    // 2s halten im Schießbetrieb = Alarm
     constexpr uint16_t POWER_OFF_HOLD_MS = 3000;     // 3s halten (außerhalb Schießbetrieb) = Aus
 
@@ -304,7 +329,7 @@ namespace System {
 
 namespace ConfigValidation {
 
-    // BTN1 liegt auf ADC2 (GPIO15) → darf nur digital gelesen werden (Funk aktiv!)
+    // BTN1/SW2 liegt auf ADC2 (GPIO15) → darf nur digital gelesen werden (Funk aktiv!)
     static_assert(Pins::BTN1 == 15, "BTN1 must stay on GPIO15 (digital only, ADC2!)");
 
     // Taster-Pins unterschiedlich
