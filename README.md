@@ -5,222 +5,177 @@ Sie funktioniert möglichst einfach, mit minimalen Benutzereingaben:
 An der Bedieneinheit wird der Modus (120 oder 240 Sekunden, 1-2 oder 3-4 Schützen)
 vorausgewählt, danach steuern zwei Taster den kompletten Turnierablauf.
 
-> **Aktuelle Hardware-Generation: V3 (ESP32)** — siehe [Version 3](#version-3-aktuell).
-> Die Arduino-Nano-Generation V2 wurde am 2026-08-01 vollständig aus dem
-> Arbeitsverzeichnis entfernt (Firmware, Bibliotheken, KiCad) und ist nur noch
-> über die Git-Historie auffindbar. Die weiter unten stehende V2-Beschreibung
-> bleibt als Dokumentation erhalten — beachte aber, dass die Ordnernamen
-> `Sender/` und `Empfaenger/` seither die **V3**-Firmware enthalten.
+Die Anlage besteht aus zwei Geräten:
 
-## Version 3 (aktuell)
+- **Sender (Bedieneinheit)** — liegt an der Schießlinie, e-Paper-Display, akkubetrieben
+- **Empfänger (Anzeigeeinheit)** — steht am Ziel, große 7-Segment-LED-Anzeige mit Ampelfarben
+
+![Schaltplan Sender](schaltplan-sender.png)
+
+## Hardware
 
 | | Sender (Bedieneinheit) | Empfänger (Anzeigeeinheit) |
 |---|---|---|
-| **Controller** | ESP32-S3-WROOM-1U-N16R8 | Seeed XIAO ESP32C3 |
-| **Anzeige** | 1.54″ e-Paper (SSD1681, 200×200) | WS2812B-Strip, 158 LEDs (unverändert) |
-| **Funk** | ESP-NOW (integriert, Kanal 1) | ESP-NOW (integriert, Kanal 1) |
-| **Versorgung** | LiPo + MCP73837-Lader, USB-C | 5 V USB oder 12 V (Jumper); LED-Strip immer extern |
-| **Bedienung** | 2 Taster: CONFIG (schaltet ein, Weiter/Ändern), OK (Bestätigen, 2 s = Alarm, 3 s = Aus) | Debug-Taster, 3 Potis (Lautstärke, Helligkeit, Lüfter) |
-| **Firmware** | `Sender/` | `Empfaenger/` |
-| **Schaltplan** | `Schaltung-Sender/BogenampelV3.kicad_sch` | `Schaltung-Empfaenger/Empfaenger.kicad_sch` |
+| **Controller** | ESP32-S3-WROOM-1U-N16R8 (16 MB Flash, 8 MB PSRAM) | Seeed XIAO ESP32C3 |
+| **Anzeige** | 1.54″ e-Paper, 200×200 (SSD1681) | LED-Strip WS2811 12 V, 158 LEDs |
+| **Funk** | ESP-NOW, Kanal 1 (im Chip integriert) | ESP-NOW, Kanal 1 |
+| **Versorgung** | LiPo-Akku + MCP73837-Lader, USB-C | 12 V extern oder 5 V USB (JP1) |
+| **Bedienelemente** | 2 Taster (CONFIG, OK) | Debug-Taster, 3 Potis |
+| **Sonstiges** | Soft-Power-Latch (TPS62742) | Piezo 12 V, geregelter Lüfter |
+| **Firmware** | [`Sender/`](Sender/) | [`Empfaenger/`](Empfaenger/) |
+| **Schaltplan** | [`Schaltung-Sender/`](Schaltung-Sender/) | [`Schaltung-Empfaenger/`](Schaltung-Empfaenger/) |
 
-Neu in V3 gegenüber V2:
+Die verbindliche Pin-Belegung steht in
+[`specs/004-v3-esp32-port/contracts/hardware-pins.md`](specs/004-v3-esp32-port/contracts/hardware-pins.md)
+und wird aus den KiCad-Netzlisten abgeleitet. Bei Abweichungen gilt der Schaltplan —
+Änderungen gehören zuerst dorthin, dann in den Code.
 
-- **ESP-NOW statt NRF24**: kein Funkmodul mehr, Discovery zur Laufzeit (kein Pairing),
-  6-Byte-Frames mit magic + Checksumme + Sequenznummer (Dedup bei Retries)
-- **One-Button-Power**: die CONFIG-Taste schaltet ein (Power-Latch), 3 s halten auf einer der beiden Tasten schaltet geordnet ab;
-  Konfiguration bleibt in NVS erhalten
-- **e-Paper-UI**: 1-Hz-Countdown per Partial-Refresh (kein Vollbild-Blitzen),
-  Statuszeile mit Akku-/Lade-/Funkstatus
-- **Lokalregler am Empfänger**: Lautstärke- (D0), Helligkeits- (D1) und Lüfter-Poti (D2)
-  wirken live; Lüfter-PWM 25 kHz
-- **Unverändert**: die 11 Funk-Kommandos, der WA-Timer-Ablauf, der Gruppen-4-Zyklus und
-  das **autonome Passenende des Empfängers** (Zeitablauf braucht keinen Funk)
+Die 158 LEDs verteilen sich auf 16 LEDs Gruppe A/B, 16 LEDs Gruppe C/D und
+3 × 42 LEDs für die dreistellige 7-Segment-Anzeige.
 
-Build & Flash, Hardware-Voraussetzungen und die komplette Abnahme-Checkliste:
-[`specs/004-v3-esp32-port/quickstart.md`](specs/004-v3-esp32-port/quickstart.md).
-Verbindliche Pin-Belegung: [`specs/004-v3-esp32-port/contracts/hardware-pins.md`](specs/004-v3-esp32-port/contracts/hardware-pins.md).
+## Bedienung
+
+Der Sender hat zwei Taster. Welcher Taster einschaltet, legt der Power-Latch in der
+Hardware fest — das ist die **CONFIG**-Taste.
+
+| Taste | kurz | 2 s halten | 3 s halten |
+|---|---|---|---|
+| **CONFIG** | Weiter / Wert ändern | — | Ausschalten |
+| **OK** | Bestätigen / Passe beenden | Alarm (im Schießbetrieb) | Ausschalten |
+
+Einschalten: CONFIG drücken. Ausschalten: eine der beiden Tasten 3 Sekunden halten.
+Die Konfiguration (Schießzeit, Schützenzahl) bleibt im NVS erhalten und steht beim
+nächsten Einschalten wieder zur Verfügung.
+
+## Ablauf einer Passe
+
+| Phase | Anzeige | Dauer |
+|---|---|---|
+| **Stopp** | Rot, `000` | bis zum Start |
+| **Vorbereitung** | Rot, Countdown | 10 s |
+| **Schießzeit** | Grün, Countdown | 120 s oder 240 s |
+| **letzte 30 s** | Orange, Countdown | 30 s |
+| **Ende** | Rot, `000` | — |
+
+Der Piezo quittiert die Phasenwechsel mit kurzen Tonfolgen (3250 Hz), das Passenende
+mit drei Tönen. Ein ausgelöster Alarm blinkt und piept achtmal.
+
+**Wichtig für die Sicherheit**: Der Empfänger zählt eine gestartete Passe **autonom**
+zu Ende. Fällt der Funk aus oder geht der Sender aus, läuft der Timer korrekt ab und
+schaltet danach auf Rot — er bleibt nicht in Grün stehen.
+
+### Gruppen und halbe Passe
+
+Bei 3-4 Schützen wird zwischen den Gruppen A/B und C/D umgeschaltet; die Anzeige folgt
+einem 4er-Zyklus. Zusätzlich lässt sich eine halbe Passe starten, wenn nur noch die
+zweite Gruppe schießt.
+
+## Funk
+
+ESP-NOW auf Kanal 1, ohne externes Funkmodul und ohne Pairing: Der Sender sucht den
+Empfänger beim Start per Broadcast und merkt sich dessen MAC-Adresse zur Laufzeit.
+
+Jeder Frame ist 6 Byte groß und trägt Magic-Bytes, eine Prüfsumme und eine
+Sequenznummer; der Empfänger verwirft doppelte und fehlerhafte Pakete. Übertragen
+werden 11 Kommandos (Start 120/240, Stopp, Init, Alarm, Ping, Gruppenwahl, halbe Passe).
+Beim Start misst der Sender die Verbindungsqualität mit 10 Pings und zeigt das Ergebnis
+im Splash-Screen.
+
+> **Ein Radio, ein Kanal.** Der ESP32 kann nicht gleichzeitig ESP-NOW auf Kanal 1 und
+> WLAN auf einem anderen Kanal betreiben. Deshalb läuft im Normalbetrieb **kein** WiFi —
+> weder ein Accesspoint noch eine Netzwerkverbindung. Für Updates gibt es den
+> Wartungsmodus (siehe unten).
+
+## Bauen und Flashen
+
+PlatformIO ist der einzige unterstützte Build-Pfad. Die `platformio.ini` liegt **zentral
+im Repo-Root**, nicht in den Firmware-Ordnern — das Repo-Root ist das Arbeitsverzeichnis.
+Bibliotheken kommen versioniert über `lib_deps`, es muss nichts manuell installiert werden.
 
 ```bash
-# PlatformIO (einziger unterstützter Build-Pfad, Libraries via lib_deps)
-pio run -t upload -e sender      # ESP32-S3, natives USB (BTN1 halten!)
-pio run -t upload -e empfaenger  # XIAO ESP32C3
+pio run -e sender                 # bauen
+pio run -e empfaenger
+
+pio run -t upload -e sender       # per USB flashen
+pio device monitor -e sender      # 115200 Baud
 ```
 
----
+Zwei Stolpersteine, die beide wie Hardwaredefekte aussehen:
 
-## Version 2 (Legacy: Arduino Nano + NRF24)
+**Beim Sender muss CONFIG während des gesamten Uploads gedrückt bleiben.** Der Reset von
+esptool lässt sonst den Power-Latch fallen; das Gerät schaltet sich mitten im Flashen ab
+und der USB-Port verschwindet.
 
-Basierend auf zwei Arduino Nanos mit nRF24L01+ Funkmodulen.
+**Unter Windows vor jedem Upload `$env:PYTHONIOENCODING="utf-8"` setzen.** Sonst bricht
+der Vorgang mit `UnicodeEncodeError` und `[upload] Error 4294967295` ab — esptool schreibt
+Unicode-Fortschrittsbalken, die eine cp1252-Konsole nicht kodieren kann. Auf den Chip
+wurde zu diesem Zeitpunkt noch nichts geschrieben.
 
-> **Nicht mehr im Arbeitsverzeichnis.** Firmware (`Sender/`, `Empfaenger/`),
-> Bibliotheken (`libraries/`) und KiCad-Projekt (`Schaltung/`) wurden am
-> 2026-08-01 entfernt; letzter Stand: Commit `e632bfb`. Die folgende
-> Beschreibung dokumentiert die Hardware, die so noch gebaut ist.
-> Zum Nachschlagen: `git show e632bfb:Sender/Sender.ino`
+### OTA-Wartungsmodus
 
-## Projektbeschreibung
+Beide Geräte lassen sich drahtlos aktualisieren, aber nur in einem eigenen Betriebsmodus —
+im Normalbetrieb ist WiFi aus (siehe Kasten oben).
 
-Die Bogenampel ermöglicht eine sichere Kontrolle des Schießbetriebs auf Bogenschießplätzen. Ein Arduino (Sender/Fernbedienung) steuert per Funk die Timer-Anzeige am Ziel (Empfänger), die den Schützen durch farbige Countdown-Anzeige signalisiert, wann geschossen werden darf und wann die Scheiben sicher gewechselt werden können.
+- **Sender**: beide Taster gleichzeitig gedrückt halten und einschalten
+- **Empfänger**: mit gehaltenem Debug-Taster (D7) einschalten
 
-### Bedienkonzept
-Die Bogenampel besteht aus zwei Komponenten: 
+Der Sender zeigt daraufhin einen Wartungs-Screen mit WLAN-Status und **seiner eigenen
+IP-Adresse**; beim Empfänger signalisiert die Status-LED durch langsames Blinken, dass er
+bereit ist. Die IP wird als `upload_port` in der `platformio.ini` eingetragen (eine feste
+DHCP-Reservierung ist empfehlenswert, mDNS-Namen lösen über Subnetzgrenzen nicht
+zuverlässig auf).
 
-1. **Bedieneinheit (Sender)**
-   - Liegt an der Schießlinie
-   - Ermöglicht das Starten und Stoppen des Timers per Taster
-   - Sendet Steuerbefehle per Funk an die Anzeigeeinheit
+```bash
+pio run -t upload -e sender-ota
+pio run -t upload -e empfaenger-ota
+```
 
-2. **Anzeigeeinheit (Empfänger)**
-   - Zeigt die verbleibende Zeit auf 3x 7-Segment-Anzeige (in Sekunden)
-   - Visualisiert den Status durch Ampelfarben:
-     - **Rot**: Schießen verboten 10 Sekunden (Schützen dürfen an die Startlinie treten)
-     - **Grün**: Schießen erlaubt (Timer zählt von 120 oder 240 Sekunden herunter)
-     - **Gelb**: Schießen endet bald (30 Sekunden vor Ablauf der Zeit)
-     - **Rot**: Schießen verboten (Timer gestoppt / abgelaufen), Anzeige: 000
-   - Akustische Signale über Piezo-Buzzer
+Voraussetzung ist eine `wifi_credentials.h` im Repo-Root — Vorlage:
+[`wifi_credentials.h.example`](wifi_credentials.h.example). Die Datei ist bewusst nicht
+eingecheckt. Fehlt sie, meldet der Wartungsmodus das auf dem Display und wartet; einen
+Accesspoint-Fallback gibt es absichtlich nicht, weil ein zweites Netz auf fremdem Kanal
+ESP-NOW stilllegen würde.
 
-#### Spannungsversorgung
-
-**Sender:**
-- 9V Block-Batterie (über Ein/Aus-Schalter)
-- Alternativ: 5V USB-Kabel
-
-**Empfänger:**
-- USB Powerbank (5V)
-- Beim Programmieren über USB: Development-Mode-Jumper setzen (reduziert LED-Helligkeit)
-
-#### Funktionen
-
-**Sender**
-* Ein/Aus-Schalter für 9V Block-Batterie
-* 3x Taster für Menü-Navigation und Timer-Steuerung:
-  - Links (J1): Menü-Navigation / Gruppe wechseln
-  - OK (J2): Auswahl bestätigen / Timer starten/stoppen / Alarm (2s gedrückt halten)
-  - Rechts (J3): Menü-Navigation / Halbe Passe
-* TFT-Display (ST7789, 240x320) zeigt Menüs, Timer-Status, Batterie, Gruppen
-* Buzzer für akustisches Feedback bei Tastendruck
-* Status-LED (D1) zeigt Betriebsbereitschaft
-
-**Empfänger**
-* **WS2812B LED-Strip**:
-  - 16 LEDs für Gruppe A/B (mit 4-State Positionsanzeige)
-  - 16 LEDs für Gruppe C/D (mit 4-State Positionsanzeige)
-  - 3x 7-Segment-Anzeige (126 LEDs) für Timer-Countdown in Ampelfarben
-  - **Total: 158 LEDs**
-* **Development-Mode-Jumper (D2)**:
-  - Jumper gesetzt (D2 → GND): LED-Helligkeit auf 25% begrenzt für USB-Programmierung
-  - Jumper offen: Volle LED-Helligkeit (100%) für Powerbank-Betrieb
-* **Piezo-Buzzer (KY-006)**: Akustische Signale bei Timer-Start, Warnung und Ablauf
-* **Debug-Taster (D7)**: Für Entwicklungs- und Testzwecke
-* Status-LEDs (Grün, Gelb, Rot) zeigen Betriebsbereitschaft und Timer-Status
-
-## Hardware-Komponenten
-
-### Sender (Fernbedienung)
-- 1x Arduino Nano
-- 1x ST7789 TFT Display (240x320) mit TXS0108EPW Level Shifter
-- 1x nRF24L01+ Funkmodul (2.4 GHz) mit PCB-Antenne
-- 3x Taster für Menü-Navigation (J1, J2, J3)
-- 1x KY-006 passiver Piezo-Buzzer für Tastentöne
-- 1x Ein/Aus-Schalter
-- 1x Status-LED mit 330Ω Vorwiderstand
-- 1x 10µF Kondensator für nRF24-Stabilisierung
-- 1x Spannungsteiler (10kΩ:10kΩ) für Batterie-Überwachung
-- Stromversorgung: 9V Block-Batterie oder USB
-
-### Empfänger (Anzeigeeinheit)
-- 1x Arduino Nano
-- 1x nRF24L01+ Funkmodul (2.4 GHz) mit PCB-Antenne
-- 1x WS2812B LED-Strip (158 LEDs total):
-  - 16 LEDs für Gruppe A/B
-  - 16 LEDs für Gruppe C/D
-  - 126 LEDs für 3x 7-Segment-Anzeige (je 42 LEDs pro Digit)
-- 1x KY-006 passiver Piezo-Buzzer
-- 1x Debug-Taster
-- 1x Development-Mode-Jumper (D2)
-- 3x Status-LEDs (Grün, Gelb, Rot) mit 330Ω Vorwiderständen
-- 1x 330Ω Schutzwiderstand für LED-Datenleitung
-- 1x 1000µF Kondensator für LED-Stromversorgung
-- 1x 10µF Kondensator für nRF24-Stabilisierung
-- Stromversorgung: USB Powerbank (5V, bis zu 12A bei voller Helligkeit)
-
-## Pin-Belegung
-
-### Sender
-| Pin | Funktion |
-|-----|----------|
-| D9 | nRF24 CE |
-| D8 | nRF24 CSN |
-| D13 | SPI SCK (nRF24 + Display) |
-| D11 | SPI MOSI (nRF24 + Display) |
-| D12 | SPI MISO (nRF24 + Display) |
-| A0 | TFT CS |
-| D10 | TFT DC |
-| A1 | TFT RST |
-| D5 | Taster Links (J1) - mit Pull-up |
-| D6 | Taster OK (J2) - mit Pull-up |
-| D7 | Taster Rechts (J3) - mit Pull-up |
-| D4 | Buzzer (KY-006) |
-| A2 | Status-LED (Rot) |
-| A5 | Batteriespannung (Spannungsteiler 1:1) |
-| 3.3V | nRF24 VCC + Display (via Level Shifter) |
-| 5V/VIN | Ein/Aus-Schalter |
-
-### Empfänger
-| Pin | Funktion |
-|-----|----------|
-| D9 | nRF24 CE |
-| D8 | nRF24 CSN |
-| D13 | SPI SCK (nRF24) |
-| D11 | SPI MOSI (nRF24) |
-| D12 | SPI MISO (nRF24) |
-| D3 | WS2812B LED Strip Datenleitung (158 LEDs) |
-| D4 | KY-006 Buzzer Signal |
-| D7 | Debug-Taster - mit Pull-up |
-| D2 | Development-Mode-Jumper - mit Pull-up |
-| A2 | Status-LED Grün |
-| A3 | Status-LED Gelb |
-| A4 | Status-LED Rot |
-| 3.3V | nRF24 VCC |
-| 5V | LED-Strip + Buzzer + USB Powerbank |
-
-## Funktionsweise
-
-### Timer-Phasen und Ampelfarben
-1. **Rot (Stop)**: Timer gestoppt oder abgelaufen - Scheiben können sicher gewechselt werden
-2. **Gelb (Vorbereitung)**: 10 Sekunden Countdown zur Vorbereitung - Schützen bereit machen
-3. **Grün (Aktiv)**: 120 oder 240 Sekunden Countdown - Schießen erlaubt
-
-### Akustische Signale
-- Start der Vorbereitung (10s): Tiefer Ton (1500 Hz)
-- Start des Countdowns: Hoher Ton (2500 Hz)
-- Timer abgelaufen: Mittlerer Ton (2000 Hz)
-
-### Kommunikation
-Die Kommunikation zwischen Sender und Empfänger erfolgt über nRF24L01+ Funkmodule auf 2.4 GHz:
-- Reichweite: ~20-50m (indoor), bis 100m (Freifeld)
-- Kanal: 76 (2.476 GHz)
-- Datenrate: 250 kbps (robust bei langen Kabeln)
-- Auto-ACK aktiviert für Verbindungskontrolle
-- Paketgröße: 2 Bytes (Command + Checksumme)
-
-**Übertragene Befehle (11 Kommandos):**
-- `CMD_STOP` - Timer stoppen
-- `CMD_START_120` - Timer starten (120s + 10s Vorbereitung)
-- `CMD_START_240` - Timer starten (240s + 10s Vorbereitung)
-- `CMD_INIT` - Empfänger initialisieren (Turnier-Start)
-- `CMD_ALARM` - Not-Alarm auslösen (blinkt 8x rot/gelb)
-- `CMD_PING` - Verbindungstest
-- `CMD_GROUP_AB` / `CMD_GROUP_CD` - Gruppe wechseln (ganze Passe)
-- `CMD_GROUP_NONE` - Keine Gruppe (1-2 Schützen Modus)
-- `CMD_GROUP_FINISH_AB` / `CMD_GROUP_FINISH_CD` - Halbe Passe starten
-
-### Development Mode
-Beim Programmieren des Empfängers über USB muss der Development-Mode-Jumper gesetzt werden:
-- **Jumper gesetzt (D2 → GND)**: LED-Helligkeit wird auf 25% reduziert 
-- **Jumper offen**: Volle LED-Helligkeit 100% 
-
-**Wichtig:** Standard-USB-Ports können maximal 0.5-3A liefern. Die volle LED-Helligkeit würde den Port überlasten und kann zu Schäden führen!
+Der Zugang ist nicht durch ein Passwort geschützt, sondern dadurch, dass der Modus nur mit
+physisch gedrückten Tastern erreichbar ist. Grund: Das ArduinoOTA-Passwort (PBKDF2) ist mit
+der `espota.py` von PlatformIO nicht kompatibel, die Authentifizierung scheitert stumm.
 
 ## Projektstruktur
+
+```text
+platformio.ini          zentrale Build-Konfiguration (beide Geräte)
+Sender/                 Firmware Bedieneinheit (ESP32-S3)
+Empfaenger/             Firmware Anzeigeeinheit (XIAO ESP32C3)
+Schaltung-Sender/       KiCad-Projekt Sender
+Schaltung-Empfaenger/   KiCad-Projekt Empfänger
+schaltplan-*.png        Schaltplan-Exporte, ohne KiCad lesbar
+specs/                  Feature-Spezifikationen, Pin-Contract, Abnahme-Checkliste
+```
+
+Weiterführend: [`HARDWARE.md`](HARDWARE.md) für die Hardware-Spezifikation,
+[`specs/004-v3-esp32-port/quickstart.md`](specs/004-v3-esp32-port/quickstart.md) für die
+vollständige Inbetriebnahme- und Abnahme-Checkliste.
+
+## Bekannte offene Punkte
+
+- **Pegelwandler am LED-Strip**: Die 12-V-WS2811-LEDs erwarten 5-V-Datenpegel, der XIAO
+  liefert 3,3 V. Bei hellen Mischfarben (Gelb, Weiß) kippen dadurch vereinzelt Bits.
+  Abhilfe ist ein 74AHCT125 am Daten-Pin — Bauteil vorhanden, Einbau steht aus.
+- **Schnellladen**: Der Sender lädt derzeit mit 80–100 mA (PROG2 per 10 kΩ auf Low).
+  GPIO18 als Ausgang auf HIGH würde auf 400–500 mA umschalten; das ist als Opt-in
+  vorgesehen, aber noch nicht implementiert.
+
+## Historie
+
+**Version 2** (bis 2026-08-01) basierte auf zwei Arduino Nanos mit nRF24L01+-Funkmodulen,
+einem ST7789-TFT am Sender und einer EEPROM-Konfiguration. Timer-Ablauf, Ampelfarben,
+Gruppenlogik und die 11 Funk-Kommandos wurden unverändert nach V3 übernommen.
+
+Firmware, Bibliotheken und KiCad-Projekt von V2 wurden aus dem Arbeitsverzeichnis
+entfernt und sind über die Git-Historie zugänglich (letzter Stand: Commit `e632bfb`).
+Beachte dabei: Die Ordnernamen `Sender/` und `Empfaenger/` bezeichnen **vor** diesem
+Zeitpunkt die V2-, danach die V3-Firmware.
+
+```bash
+git show e632bfb:Sender/Sender.ino      # V2-Quelltext ansehen
+```
