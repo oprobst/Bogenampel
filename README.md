@@ -47,6 +47,13 @@ Einschalten: CONFIG drücken. Ausschalten: eine der beiden Tasten 3 Sekunden hal
 Die Konfiguration (Schießzeit, Schützenzahl) bleibt im NVS erhalten und steht beim
 nächsten Einschalten wieder zur Verfügung.
 
+**Automatische Abschaltung**: Wird im Konfigurationsmenü oder in „Pfeile holen" 20 Minuten
+lang keine Taste gedrückt, schaltet sich der Sender selbst ab und zeigt dabei
+„Automatische Abschaltung". Im Schießbetrieb und bei stehendem Alarm greift das
+bewusst **nicht** — dort läuft eine Passe bzw. ein Sicherheitszustand. Gedacht ist es
+gegen das im Koffer vergessene Gerät; dagegen hilft keine Stromsparmaßnahme, nur
+Ausschalten.
+
 ## Ablauf einer Passe
 
 | Phase | Anzeige | Dauer |
@@ -86,6 +93,31 @@ im Splash-Screen.
 > weder ein Accesspoint noch eine Netzwerkverbindung. Für Updates gibt es den
 > Wartungsmodus (siehe unten).
 
+## Stromverbrauch des Senders
+
+Gemessen am laufenden Gerät: **0,39 W → 0,20 W**, also etwa doppelte Akkulaufzeit.
+Zwei Maßnahmen, beide in der Firmware:
+
+| Maßnahme | Ersparnis |
+|---|---|
+| CPU-Takt 240 → 80 MHz (`System::CPU_FREQ_NORMAL_MHZ`) | ~10 mA |
+| ESP-NOW-Empfangsfenster duty-cycled statt dauerhaft offen | ~38 mA |
+
+Der Löwenanteil war das Funkmodul: ESP-NOW hält den Empfänger per Default dauerhaft an.
+Der Sender ist nach der Discovery aber ein reiner Sender — das ACK auf eigene Frames
+kommt im Sendefenster zurück, also darf das Empfangsfenster zu bleiben. Während der
+Discovery wird es nur um den HELLO-Broadcast herum geöffnet. Details und Voraussetzungen
+stehen in [`espnow-protocol.md`](specs/004-v3-esp32-port/contracts/espnow-protocol.md),
+Regel 7.
+
+Das **e-Paper ist für den Verbrauch praktisch irrelevant** (unter 2 %) — der
+Sekundencountdown im Schießbetrieb ist bewusst nicht angetastet. Nicht möglich ist das
+Abschalten des PSRAM: `CONFIG_SPIRAM=1` steckt in allen vorkompilierten
+arduino-esp32-Varianten und die Initialisierung hängt nicht an `-DBOARD_HAS_PSRAM`.
+Weiter runter käme man nur mit abgeschaltetem Radio zwischen den Kommandos und
+manuellem Light-Sleep — die automatische Variante scheidet aus, weil `CONFIG_PM_ENABLE`
+in den vorkompilierten Libs fehlt.
+
 ## Bauen und Flashen
 
 PlatformIO ist der einzige unterstützte Build-Pfad. Die `platformio.ini` liegt **zentral
@@ -98,13 +130,25 @@ pio run -e empfaenger
 
 pio run -t upload -e sender       # per USB flashen
 pio device monitor -e sender      # 115200 Baud
+
+pio run -e sender-release         # Feld-Build: ohne Debug-Ausgaben und CDC-Task
 ```
 
-Zwei Stolpersteine, die beide wie Hardwaredefekte aussehen:
+Drei Stolpersteine, die alle wie Hardwaredefekte aussehen:
 
 **Beim Sender muss CONFIG während des gesamten Uploads gedrückt bleiben.** Der Reset von
 esptool lässt sonst den Power-Latch fallen; das Gerät schaltet sich mitten im Flashen ab
-und der USB-Port verschwindet.
+und der USB-Port verschwindet. Zu beachten: `pio run -t upload` startet esptool erst nach
+gut einer Minute Build- und Dependency-Scan — so lange muss der Taster gehalten werden.
+Praktischer ist, das Gerät **mit gehaltenem CONFIG einzuschalten** (dann greift der
+Boot-Lockout und das Halten löst keine Power-Off-Geste aus) und esptool direkt mit den
+vier Images aufzurufen.
+
+**Die Upload-Baudrate darf nicht hochgesetzt werden** (`upload_speed = 115200` in der
+`platformio.ini`). Der Sender flasht über die native USB-Serial/JTAG-Peripherie, wo die
+Baudrate bedeutungslos ist — esptool wechselt beim Board-Default 460800 trotzdem, der Port
+re-enumeriert dabei und der Upload stirbt mitten im Stub-Flasher mit
+`PermissionError(13) ... Cannot configure port`.
 
 **Unter Windows vor jedem Upload `$env:PYTHONIOENCODING="utf-8"` setzen.** Sonst bricht
 der Vorgang mit `UnicodeEncodeError` und `[upload] Error 4294967295` ab — esptool schreibt
@@ -136,6 +180,11 @@ eingecheckt. Fehlt sie, meldet der Wartungsmodus das auf dem Display und wartet;
 Accesspoint-Fallback gibt es absichtlich nicht, weil ein zweites Netz auf fremdem Kanal
 ESP-NOW stilllegen würde.
 
+Zur Fehlersuche: **ArduinoOTA lauscht auf UDP 3232, nicht TCP.** Ein TCP-Portscan meldet den
+Port folgerichtig als geschlossen, auch wenn der Wartungsmodus einwandfrei läuft — daraus
+lässt sich also nichts über die Erreichbarkeit ableiten. espota schickt eine UDP-Einladung,
+woraufhin das Gerät eine TCP-Rückverbindung zum Host aufbaut.
+
 Der Zugang ist nicht durch ein Passwort geschützt, sondern dadurch, dass der Modus nur mit
 physisch gedrückten Tastern erreichbar ist. Grund: Das ArduinoOTA-Passwort (PBKDF2) ist mit
 der `espota.py` von PlatformIO nicht kompatibel, die Authentifizierung scheitert stumm.
@@ -158,6 +207,12 @@ vollständige Inbetriebnahme- und Abnahme-Checkliste.
 
 ## Bekannte offene Punkte
 
+- **Funk mit geschlossenem Empfangsfenster noch nicht im Turnierablauf verifiziert**: Dass
+  das Link-ACK bei `esp_now_set_wake_window(0)` zuverlässig zurückkommt, ist durch die
+  Strommessung und den Treiber-Kontrakt gestützt, aber ein vollständiger Durchlauf
+  (Start, Gruppenwechsel, Alarm, Stop, Empfänger im Betrieb ausschalten → Relink) steht
+  aus. Falls Kommandos zicken: `Radio::PS_WINDOW_CLOSED_MS` in `Sender/Config.h` von 0 auf
+  10 setzen — kostet ~10 mA, hält das Fenster aber zu 10 % offen.
 - **Pegelwandler am LED-Strip**: Die 12-V-WS2811-LEDs erwarten 5-V-Datenpegel, der XIAO
   liefert 3,3 V. Bei hellen Mischfarben (Gelb, Weiß) kippen dadurch vereinzelt Bits.
   Abhilfe ist ein 74AHCT125 am Daten-Pin — Bauteil vorhanden, Einbau steht aus.

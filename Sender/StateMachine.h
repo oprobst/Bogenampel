@@ -173,7 +173,17 @@ private:
     void checkPowerOffGesture();
 
     /**
-     * @brief Geordnetes Ausschalten: Screen → hibernate → LOAD aus → LATCH LOW
+     * @brief Abschaltung nach Inaktivität prüfen (Timing::IDLE_POWER_OFF_MS)
+     *
+     * Nur aus den Wartestates aufrufen: im Schießbetrieb läuft eine Passe ohne
+     * Tastendruck weiter, und ein stehender Alarm darf sich nicht selbst
+     * stilllegen. Als „Aktivität" zählen Tastendrücke und Zustandswechsel.
      */
-    void doPowerOff();
+    void checkIdleTimeout();
+
+    /**
+     * @brief Geordnetes Ausschalten: Screen → hibernate → LOAD aus → LATCH LOW
+     * @param reason optionale zweite Zeile auf dem Abschied-Screen
+     */
+    void doPowerOff(const char* reason = "Geraet schaltet ab...");
 };

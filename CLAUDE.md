@@ -12,6 +12,9 @@ Bogenampel ist eine funkgesteuerte Timer-Anzeige für Bogenschießplätze.
 - **Kommunikation**: ESP-NOW (Kanal 1, 6-Byte-Frames, Discovery zur Laufzeit), 11 Kommandos unverändert
 - **Features**: Timer-Steuerung, Gruppen-Anzeige, Alarm-System, NVS-Konfiguration, autonomes Passenende (FR-004),
   OTA-Wartungsmodus (beide Taster beim Einschalten; im Normalbetrieb läuft kein WiFi)
+- **Stromsparen am Sender** (2026-08-02, gemessen 0,39 W → 0,20 W): CPU 80 MHz,
+  ESP-NOW-Empfangsfenster duty-cycled, Auto-Abschaltung nach 20 min Inaktivität.
+  **Nicht am 1-Hz-Countdown-Refresh drehen** — das e-Paper macht unter 2 % aus.
 
 **Legacy V2 (vollständig entfernt am 2026-08-01):**
 - Arduino Nano + ST7789 TFT bzw. WS2812B + NRF24L01 (2.4 GHz, 250 kbps)
@@ -45,7 +48,8 @@ Sender/               # Bedieneinheit (ESP32-S3 + e-Paper)
   ├── Sender.cpp      # Setup/Loop, Power-Latch zuerst!, esp_timer 1 Hz
   ├── Config.h        # Pins aus contracts/hardware-pins.md, NVS, Timing
   ├── Commands.h      # ESP-NOW-Protokoll (byte-identisch mit Empfaenger/!)
-  ├── RadioManager.*  # ESP-NOW: Discovery, sendCommand+Retry, Qualitätstest
+  ├── RadioManager.*  # ESP-NOW: Discovery, sendCommand+Retry, Qualitätstest,
+  │                   #   Wake-Window (Strom!), Relink nach 3 Fehlversuchen
   ├── PowerManager.*  # Latch, Akku (Median-5), MCP73837-Status, Power-Off
   ├── EpaperDisplay.* # GxEPD2-Wrapper: Voll-/Partial-Refresh, Statuszeile
   ├── ButtonManager.* # 2 Taster; Rolle→Pin NUR in readRawState() zugeordnet
@@ -87,7 +91,13 @@ cd /d/git/Bogenampel   # Repo-Root — platformio.ini liegt HIER, nicht in den F
 pio run -e sender          # bauen (oder -e empfaenger)
 pio run -t upload -e sender # flashen (Sender: BTN1 dabei halten!)
 pio device monitor -e sender # 115200 Baud
+pio run -e sender-release  # Feld-Build ohne Debug-Ausgaben/CDC
 ```
+**Sender-USB-Flash**: `upload_speed` MUSS 115200 bleiben (natives USB-Serial/JTAG — ein
+Baudratenwechsel re-enumeriert den Port und killt den Upload). `pio run -t upload` startet
+esptool erst nach ~65 s Build-Scan; für BTN1-Halten ist ein direkter esptool-Aufruf mit
+den vier Images angenehmer. **OTA-Diagnose**: ArduinoOTA lauscht auf **UDP** 3232 — ein
+TCP-Portscan sagt nichts über die Erreichbarkeit aus.
 Libraries kommen versioniert über `lib_deps` (kein manuelles Installieren).
 Arduino-IDE-Build ist seit 2026-06-11 keine Anforderung mehr (Constitution v2.2.0).
 
@@ -150,6 +160,14 @@ Verbindlich: `specs/004-v3-esp32-port/contracts/hardware-pins.md` (aus KiCad-Net
 - Empfänger: NRF24 CE=D9/CSN=D8; LED-Strip D3; Buzzer D4; Debug D7/D2; Status-LEDs A2-A4
 
 ## Recent Changes
+- 2026-08-02: **Stromverbrauch Sender halbiert** (0,39 W → 0,20 W, gemessen):
+  `setCpuFrequencyMhz(80)` im Normalbetrieb (OTA-Modus bleibt bei 240),
+  ESP-NOW Connectionless Power Save (`esp_now_set_wake_window()` — nach der Discovery
+  zu, währenddessen nur 500 ms je HELLO), Peer-Relink nach 3 Fehlversuchen,
+  Auto-Abschaltung nach 20 min Inaktivität, `env:sender-release`.
+  Nicht machbar: PSRAM abschalten (`CONFIG_SPIRAM=1` in allen vorkompilierten
+  Lib-Varianten) und automatisches Light-Sleep (`CONFIG_PM_ENABLE` fehlt) — beides
+  bräuchte einen eigenen IDF-Build.
 - 005-ota-maintenance-mode: Added C++17, Arduino core for ESP32 (arduino-esp32 3.3.7) + WiFi, ArduinoOTA, ESPmDNS (Arduino-ESP32 built-ins), FastLED (already used); ESP-NOW via `esp_now`/`esp_wifi` (normal path only)
 - 2026-06-11: **V3-Firmware implementiert** (`Sender/`, `Empfaenger/`, damals `SenderV3/`/`EmpfaengerV3/`): ESP-NOW-Transport,
   e-Paper-UI, Soft-Power, NVS, Lokalregler — beide Firmwares bauen mit PlatformIO

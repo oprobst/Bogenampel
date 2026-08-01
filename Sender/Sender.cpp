@@ -97,6 +97,11 @@ void setup() {
     pinMode(Pins::LATCH, OUTPUT);
     digitalWrite(Pins::LATCH, HIGH);
 
+    // Takt runter, bevor irgendetwas anderes läuft — spart ~15-20 mA über die
+    // gesamte Laufzeit. Muss vor Serial.begin() passieren, damit die Baudrate
+    // zum Takt passt. Der Wartungsmodus dreht später wieder auf (setupOta()).
+    setCpuFrequencyMhz(System::CPU_FREQ_NORMAL_MHZ);
+
     // Serial für Debugging (natives USB-CDC)
     #if DEBUG_ENABLED
     Serial.begin(System::SERIAL_BAUD);
@@ -181,6 +186,10 @@ static void setupNormal() {
  * @brief Wartungsmodus: WiFi-Station + ArduinoOTA, KEIN ESP-NOW, kein Timer
  */
 static void setupOta() {
+    // Im Wartungsmodus hängt das Gerät am Netz und soll schnell flashen — hier
+    // ist der volle Takt die richtige Wahl, Akkusparen zweitrangig.
+    setCpuFrequencyMhz(System::CPU_FREQ_OTA_MHZ);
+
     OTAManager::begin(otaUpdateStarted);
     otaScreen.draw();
 }

@@ -79,6 +79,26 @@ private:
     void handleHelloAck(const uint8_t* mac);
 
     /**
+     * @brief Stellt das ESP-NOW-Empfangsfenster ein (Connectionless Power Save)
+     * @param windowMs Millisekunden wach pro Radio::PS_WAKE_INTERVAL_MS;
+     *        0 = Radio nur noch beim Senden an
+     *
+     * Der mit Abstand größte Stromhebel im Gerät: mit dem Default-Fenster
+     * (Maximum) läuft der Empfänger dauerhaft und zieht ~85 mA. Idempotent —
+     * ein unveränderter Wert löst keinen Treiberaufruf aus.
+     */
+    void setWakeWindow(uint16_t windowMs);
+
+    /**
+     * @brief Verwirft den gelernten Peer und startet die Discovery neu
+     *
+     * Ausgelöst nach Radio::RELINK_AFTER_FAILURES erfolglosen Kommandos in
+     * Folge. Macht dabei das Empfangsfenster wieder auf — ohne das käme das
+     * HELLO_ACK nie an und die Discovery liefe ins Leere.
+     */
+    void dropPeer();
+
+    /**
      * @brief Registriert einen Peer auf dem aktuellen Home-Channel
      *
      * peer.channel = 0 heißt für ESP-NOW ausdrücklich „aktueller Kanal des
@@ -124,6 +144,9 @@ private:
 
     uint32_t lastChannelCheckMs;    // letzter Lauf des Kanal-Wächters
     uint8_t lastKnownChannel;       // zuletzt geloggter Home-Channel (0 = noch keiner)
+
+    uint16_t wakeWindowMs;          // aktuell gesetztes Empfangsfenster (Power Save)
+    uint8_t consecutiveFailures;    // erfolglose Kommandos in Folge (Relink-Trigger)
 
     // Send-Callback-Synchronisation (Callback läuft im WiFi-Task)
     volatile bool sendResultPending;

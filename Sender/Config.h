@@ -26,8 +26,12 @@
 // DEBUG-KONFIGURATION (muss VOR allen anderen Definitionen stehen!)
 //=============================================================================
 
-// Debugging aktivieren/deaktivieren
+// Debugging aktivieren/deaktivieren. Per -DDEBUG_ENABLED=0 aus der
+// platformio.ini überschreibbar (env:sender-release) — Debug-Ausgaben über
+// USB-CDC kosten Strom und Zeit, die im Feldbetrieb niemand liest.
+#ifndef DEBUG_ENABLED
 #define DEBUG_ENABLED 1  // 1 = Debug-Ausgaben an (USB-CDC), 0 = aus
+#endif
 
 // Verkürzte Zeiten für Tests (nur wenn DEBUG_ENABLED = 1)
 #define DEBUG_SHORT_TIMES 0  // 1 = Verkürzte Zeiten, 0 = Normale Zeiten
@@ -186,6 +190,45 @@ namespace Radio {
     constexpr uint8_t QUALITY_TEST_PINGS = 10;        // Anzahl Pings
     constexpr uint16_t QUALITY_TEST_INTERVAL_MS = 250;  // 250 ms Raster (10 in 2,5 s)
 
+    //-------------------------------------------------------------------------
+    // Connectionless Power Save (Hauptstromsparmaßnahme, ~85 mA)
+    //
+    // Ohne diese Einstellung hält ESP-NOW den Empfänger dauerhaft an (Default-
+    // Wake-Window = Maximum) — das ist mit Abstand der größte Verbraucher im
+    // Gerät. Der Sender ist nach der Discovery aber ein reiner Sender: das
+    // 802.11-ACK auf den eigenen Frame kommt im Sendefenster zurück, das der
+    // Treiber ohnehin öffnet. Also darf das Empfangsfenster danach zu bleiben.
+    //
+    // Voraussetzung (in den vorkompilierten arduino-esp32-Libs erfüllt):
+    // CONFIG_ESP_WIFI_STA_DISCONNECTED_PM_ENABLE=1 — nur damit wirkt Power
+    // Save auch im nicht verbundenen STA-Zustand, und genau der liegt hier vor.
+    // Dazu muss esp_wifi_set_ps(WIFI_PS_MIN_MODEM) aktiv sein (RadioManager).
+    //-------------------------------------------------------------------------
+    constexpr uint16_t PS_WAKE_INTERVAL_MS = 100;  // Raster für das Wach-Fenster
+
+    // Fenster = Raster → 100 % wach. Falls die HIL-Abnahme zeigt, dass die
+    // Discovery damit unzuverlässig wird, ist hier nichts zu holen; der Wert
+    // ist bereits das Maximum.
+    constexpr uint16_t PS_WINDOW_OPEN_MS = PS_WAKE_INTERVAL_MS;
+
+    // Fenster zu: Radio nur noch zum Senden an. Falls sich zeigt, dass
+    // Kommandos oder HELLO_ACKs damit klemmen, ist das der Wert zum Aufdrehen
+    // (z. B. 10 = 10 % Empfangs-Duty, ~10 mA teurer).
+    constexpr uint16_t PS_WINDOW_CLOSED_MS = 0;
+
+    // Wie lange nach einem HELLO-Broadcast auf das ACK gewartet wird. Der
+    // Empfänger antwortet sofort; danach ist Lauschen bis zum nächsten
+    // Broadcast reine Stromverschwendung. Ohne dieses Zeitfenster stünde das
+    // Radio im Zustand „Empfänger aus" dauerhaft auf Empfang — ausgerechnet
+    // dort, wo das Gerät am ehesten sinnlos vor sich hin läuft.
+    constexpr uint16_t HELLO_LISTEN_MS = 500;
+
+    // Nach so vielen erfolglosen Kommandos in Folge gilt der Empfänger als weg:
+    // Peer verwerfen, Empfangsfenster wieder aufmachen, Discovery neu starten.
+    // Deckt auch den Fall ab, dass ein ANDERER Empfänger eingesetzt wird — den
+    // hat der Sender vorher nie wiedergefunden.
+    constexpr uint8_t RELINK_AFTER_FAILURES = 3;
+
 } // namespace Radio
 
 //=============================================================================
@@ -238,6 +281,18 @@ namespace Timing {
     // Alarm-App-Retries (V2-Werte; jede Wiederholung = neuer Frame mit neuer seq)
     constexpr uint16_t ALARM_RETRY_DELAY_MS = 200;   // 200ms zwischen Alarm-Retries
     constexpr uint8_t ALARM_MAX_RETRIES = 3;         // 3 Versuche für Alarm-Kommando
+
+    // Automatische Abschaltung nach Inaktivität. Greift NUR in den Wartestates
+    // (Config-Menü, Pfeile holen) — im Schießbetrieb läuft eine Passe, im Alarm
+    // darf sich das Gerät nicht selbst stilllegen. Zurückgesetzt wird die Uhr
+    // von jedem Tastendruck und von jedem Zustandswechsel.
+    // Zweck ist weniger der Betriebsstrom als das im Koffer vergessene Gerät:
+    // dagegen hilft keine µA-Optimierung, nur das Ausschalten.
+    #if DEBUG_SHORT_TIMES
+        constexpr uint32_t IDLE_POWER_OFF_MS = 60000UL;        // 1 Minute (DEBUG)
+    #else
+        constexpr uint32_t IDLE_POWER_OFF_MS = 20UL * 60 * 1000;  // 20 Minuten
+    #endif
 
 } // namespace Timing
 
@@ -310,6 +365,16 @@ namespace System {
 
     // Serial Baud Rate (USB-CDC, für Debugging)
     constexpr uint32_t SERIAL_BAUD = 115200;
+
+    // CPU-Takt im Normalbetrieb. 240 MHz sind für eine 1-Hz-Statemachine und
+    // e-Paper-SPI grotesk überdimensioniert und kosten ~15-20 mA. 80 MHz ist
+    // das Minimum, bei dem WLAN/ESP-NOW und natives USB noch arbeiten —
+    // NICHT weiter absenken.
+    constexpr uint32_t CPU_FREQ_NORMAL_MHZ = 80;
+
+    // Im Wartungsmodus hängt das Gerät ohnehin am Netz; dort zählt die
+    // Upload-Dauer mehr als der Akku.
+    constexpr uint32_t CPU_FREQ_OTA_MHZ = 240;
 
     #if DEBUG_ENABLED
         #define DEBUG_PRINT(...)   Serial.print(__VA_ARGS__)

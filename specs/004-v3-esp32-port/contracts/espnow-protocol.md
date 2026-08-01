@@ -13,6 +13,7 @@
 | Verschlüsselung | keine (Validierung über magic + checksum + seq) |
 | Zustellbestätigung | ESP-NOW Send-Callback (`esp_now_send_status_t`) auf Unicast-Frames |
 | App-Retry | max. 3 Versuche, 50 ms Abstand, Gesamtbudget < 500 ms pro Kommando |
+| Power Save (nur Sender) | Connectionless PS, Wake-Interval 100 ms; Empfangsfenster duty-cycled (Regel 7) |
 
 ## Frame-Format (6 Bytes, packed)
 
@@ -66,7 +67,9 @@ enum FrameType : uint8_t {
 4. **Discovery**: Sender sendet FT_HELLO als Broadcast (max. 1 Hz, bis HELLO_ACK empfangen);
    Empfänger antwortet FT_HELLO_ACK unicast und registriert die Sender-MAC als Peer; der Sender
    registriert die Empfänger-MAC. Verbindungsverlust erfordert keine neue Discovery (MACs bleiben
-   gültig); nach Sender-Reboot läuft die Discovery erneut.
+   gültig); nach Sender-Reboot läuft die Discovery erneut. Zusätzlich verwirft der Sender den
+   Peer nach `Radio::RELINK_AFTER_FAILURES` (3) erfolglosen Kommandos in Folge und sucht neu —
+   nur so wird ein **ausgetauschter** Empfänger überhaupt gefunden.
 5. **Qualitätstest (FR-009)**: 10 × FT_PING im 250-ms-Raster während des Splash; Qualität = %
    der per Send-Callback bestätigten Frames. Ohne HELLO_ACK: „keine Verbindung" anzeigen,
    Bedienung trotzdem freigeben.
@@ -79,3 +82,14 @@ enum FrameType : uint8_t {
    500-ms-Budget (FR-007/SC-002) gilt pro Transport-Sendung; die App-Wiederholungen dürfen es
    in Summe überschreiten (Worst Case ~1,5 s bei gestörtem Funk — bewusster Trade-off zugunsten
    der Zustellwahrscheinlichkeit des sicherheitskritischen Alarms).
+7. **Empfangsfenster des Senders (Stromsparen)**: Der Sender ist nach der Discovery ein reiner
+   Sender und hält sein ESP-NOW-Empfangsfenster geschlossen (`esp_now_set_wake_window(0)`); das
+   802.11-ACK auf eigene Frames kommt im Sendefenster zurück und bleibt davon unberührt. Während
+   der Discovery wird das Fenster nur um den HELLO-Broadcast herum geöffnet
+   (`Radio::HELLO_LISTEN_MS` = 500 ms), damit das HELLO_ACK ankommt. Ohne diese Regel läuft das
+   Radio dauerhaft auf Empfang — gemessen ~0,35 W statt ~0,20 W.
+   Voraussetzung ist `CONFIG_ESP_WIFI_STA_DISCONNECTED_PM_ENABLE=1` (in den vorkompilierten
+   arduino-esp32-Libs erfüllt) plus aktives `WIFI_PS_MIN_MODEM`; schlagen die Treiberaufrufe
+   fehl, meldet der Sender das im Log als `WARNUNG: Power Save nicht aktiv`.
+   **Der Empfänger ist ausgenommen** — er muss jederzeit empfangsbereit sein und hängt ohnehin
+   am Netzteil.

@@ -5,7 +5,8 @@
 
 #include "ButtonManager.h"
 
-ButtonManager::ButtonManager() {
+ButtonManager::ButtonManager()
+    : lastActivity(0) {
     for (uint8_t i = 0; i < static_cast<uint8_t>(Button::COUNT); i++) {
         buttons[i].pressed = false;
         buttons[i].lastRawState = false;
@@ -59,6 +60,7 @@ void ButtonManager::update() {
                 state.pressed = true;
                 state.pressTime = now;
                 state.reportedHoldMs = 0;
+                lastActivity = now;
 
                 // CONFIG hat keine Halte-Geste → Klick sofort beim Drücken
                 if (btn == Button::CONFIG && !state.bootLockout) {
@@ -68,6 +70,7 @@ void ButtonManager::update() {
             // Button wurde losgelassen (Flanke)
             else if (!rawPressed && state.pressed) {
                 state.pressed = false;
+                lastActivity = now;
 
                 if (state.bootLockout) {
                     // Einschalt-/Modus-Druck endet hier — ab jetzt zählt er

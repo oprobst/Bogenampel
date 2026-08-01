@@ -90,6 +90,15 @@ public:
      */
     bool isBootLockoutActive(Button btn) const;
 
+    /**
+     * @brief Zeitstempel (millis) der letzten entprellten Tasterflanke
+     *
+     * Grundlage für die automatische Abschaltung nach Inaktivität. Gezählt wird
+     * jede Flanke, auch die des Einschalt-Drucks im Boot-Lockout: der Anwender
+     * war nachweislich am Gerät, unabhängig davon ob die Geste gemeldet wurde.
+     */
+    uint32_t lastActivityMs() const { return lastActivity; }
+
 private:
     /**
      * @brief Zustand eines einzelnen Buttons
@@ -105,6 +114,8 @@ private:
     };
 
     ButtonState buttons[static_cast<uint8_t>(Button::COUNT)];
+
+    uint32_t lastActivity;  // millis der letzten entprellten Flanke
 
     /**
      * @brief Liest den rohen Button-Zustand (true = gedrückt)

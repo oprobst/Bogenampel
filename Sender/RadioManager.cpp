@@ -25,6 +25,8 @@ RadioManager::RadioManager()
     , helloCount(0)
     , lastChannelCheckMs(0)
     , lastKnownChannel(0)
+    , wakeWindowMs(0xFFFF)  // "noch nichts gesetzt" — erster setWakeWindow() greift
+    , consecutiveFailures(0)
     , sendResultPending(false)
     , sendAcked(false)
     , helloAckPending(false) {
@@ -57,6 +59,21 @@ bool RadioManager::begin() {
     esp_now_register_send_cb(onSendStatic);
     esp_now_register_recv_cb(onRecvStatic);
 
+    // Connectionless Power Save aufsetzen. Modem-Sleep explizit anfordern: der
+    // Arduino-Core setzt WIFI_PS_MIN_MODEM zwar per Default, aber erst im
+    // asynchronen STA_START-Event — darauf wollen wir uns hier nicht verlassen.
+    // Ohne aktiven Power-Save-Modus sind Wake-Interval und -Window wirkungslos.
+    esp_err_t psErr = esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    esp_err_t ivErr = esp_wifi_connectionless_module_set_wake_interval(Radio::PS_WAKE_INTERVAL_MS);
+    if (psErr != ESP_OK || ivErr != ESP_OK) {
+        // Ohne diese beiden bleibt das Radio dauerhaft auf Empfang (~85 mA) —
+        // das Gerät funktioniert, hält aber nur einen Bruchteil durch. Muss im
+        // Log sichtbar sein, sonst sucht man den Verbrauch woanders.
+        DEBUG_PRINTF("WARNUNG: Power Save nicht aktiv (set_ps=0x%x, wake_interval=0x%x)\n",
+                     psErr, ivErr);
+    }
+    setWakeWindow(Radio::PS_WINDOW_OPEN_MS);  // bis der Empfänger antwortet
+
     // Broadcast-Peer für die Discovery registrieren
     if (!addOrModPeer(BROADCAST_MAC)) {
         DEBUG_PRINTLN("ESP-NOW broadcast peer FAILED");
@@ -87,6 +104,40 @@ bool RadioManager::addOrModPeer(const uint8_t* mac) {
     esp_err_t err = esp_now_is_peer_exist(mac) ? esp_now_mod_peer(&peer)
                                                : esp_now_add_peer(&peer);
     return err == ESP_OK;
+}
+
+void RadioManager::setWakeWindow(uint16_t windowMs) {
+    if (wakeWindowMs == windowMs) return;
+    wakeWindowMs = windowMs;
+
+    esp_err_t err = esp_now_set_wake_window(windowMs);
+    if (err != ESP_OK) {
+        DEBUG_PRINTF("esp_now_set_wake_window(%u) fehlgeschlagen: 0x%x\n", windowMs, err);
+        return;
+    }
+    DEBUG_PRINTF("Funk-Empfangsfenster: %u ms je %u ms%s\n", windowMs,
+                 Radio::PS_WAKE_INTERVAL_MS,
+                 windowMs == 0 ? " (nur noch Senden)" : "");
+}
+
+void RadioManager::dropPeer() {
+    if (!peerDiscovered) return;
+
+    DEBUG_PRINTF("Empfaenger antwortet nicht (%u Kommandos in Folge) — suche neu\n",
+                 consecutiveFailures);
+
+    esp_now_del_peer(peerMac);
+    memset(peerMac, 0, sizeof(peerMac));
+    peerDiscovered = false;
+    consecutiveFailures = 0;
+
+    // Discovery von vorn: schneller Raster, sofortiger erster Broadcast
+    helloCount = 0;
+    lastHelloMs = 0;
+
+    // Ohne offenes Empfangsfenster käme das HELLO_ACK nie an. update() zieht es
+    // nach HELLO_LISTEN_MS wieder zu.
+    setWakeWindow(Radio::PS_WINDOW_OPEN_MS);
 }
 
 void RadioManager::enforceChannel() {
@@ -133,7 +184,17 @@ void RadioManager::update() {
                             : Radio::HELLO_SLOW_INTERVAL_MS;
 
     uint32_t now = millis();
+
+    // Antwortfenster abgelaufen → Radio bis zum nächsten Broadcast schlafen
+    // legen. Im langsamen Raster sind das 500 ms wach je 5 s statt dauerhaft.
+    if (lastHelloMs != 0 && (now - lastHelloMs) >= Radio::HELLO_LISTEN_MS) {
+        setWakeWindow(Radio::PS_WINDOW_CLOSED_MS);
+    }
+
     if (now - lastHelloMs >= interval || lastHelloMs == 0) {
+        // Fenster VOR dem Senden öffnen — sonst käme das HELLO_ACK, das der
+        // Empfänger unmittelbar zurückschickt, ins geschlossene Radio.
+        setWakeWindow(Radio::PS_WINDOW_OPEN_MS);
         lastHelloMs = now;
         sendHello();
     }
@@ -178,8 +239,15 @@ void RadioManager::handleHelloAck(const uint8_t* mac) {
 
     peerDiscovered = true;
     helloCount = 0;  // Backoff für eine spätere Neusuche zurücksetzen
+    consecutiveFailures = 0;
     DEBUG_PRINTF("Empfaenger gefunden: %02X:%02X:%02X:%02X:%02X:%02X\n",
                  peerMac[0], peerMac[1], peerMac[2], peerMac[3], peerMac[4], peerMac[5]);
+
+    // Ab hier ist der Sender ein reiner Sender — Empfangsfenster zu.
+    // Das 802.11-ACK auf eigene Frames bleibt davon unberührt, es kommt im
+    // Sendefenster zurück. Merkt der Sender an ausbleibenden ACKs, dass der
+    // Empfänger weg ist, macht dropPeer() das Fenster wieder auf.
+    setWakeWindow(Radio::PS_WINDOW_CLOSED_MS);
 }
 
 TransmissionResult RadioManager::transmitOnce(const RadioPacketV3& packet, const uint8_t* mac) {
@@ -228,6 +296,19 @@ TransmissionResult RadioManager::sendCommand(RadioCommand cmd) {
 
     DEBUG_PRINTF("TX %s: %s\n", commandToString(cmd),
                  result == TX_SUCCESS ? "OK" : (result == TX_TIMEOUT ? "TIMEOUT" : "ERROR"));
+
+    // Ausbleibende Link-ACKs sind das einzige Lebenszeichen, das dem Sender bei
+    // geschlossenem Empfangsfenster bleibt. Bleiben sie mehrfach aus, ist der
+    // Empfänger aus, außer Reichweite oder ausgetauscht → Discovery neu.
+    if (result == TX_SUCCESS) {
+        consecutiveFailures = 0;
+    } else if (consecutiveFailures < 0xFF) {
+        consecutiveFailures++;
+        if (consecutiveFailures >= Radio::RELINK_AFTER_FAILURES) {
+            dropPeer();
+        }
+    }
+
     return result;
 }
 

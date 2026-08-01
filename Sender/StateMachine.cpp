@@ -109,7 +109,22 @@ void StateMachine::checkPowerOffGesture() {
     }
 }
 
-void StateMachine::doPowerOff() {
+void StateMachine::checkIdleTimeout() {
+    // Als Aktivität zählt der spätere von beiden: letzter Tastendruck oder
+    // letzter Zustandswechsel. Ohne Letzteres liefe die Uhr über einen ganzen
+    // Turnierverlauf durch, obwohl das Gerät sichtbar arbeitet.
+    uint32_t lastActivity = buttons.lastActivityMs();
+    if ((int32_t)(stateStartTime - lastActivity) > 0) {
+        lastActivity = stateStartTime;
+    }
+
+    if (millis() - lastActivity >= Timing::IDLE_POWER_OFF_MS) {
+        DEBUG_PRINTLN("Idle-Timeout — automatische Abschaltung");
+        doPowerOff("Automatische Abschaltung");
+    }
+}
+
+void StateMachine::doPowerOff(const char* reason) {
     DEBUG_PRINTLN("Power-Off-Sequenz");
 
     // Config ist bereits gespeichert (Save-on-Confirm, R-6) — kein Save nötig
@@ -119,7 +134,7 @@ void StateMachine::doPowerOff() {
     g.fillScreen(GxEPD_WHITE);
     g.setTextColor(GxEPD_BLACK);
     epd.printCentered("Auf Wiedersehen!", 90, 2);
-    epd.printCentered("Geraet schaltet ab...", 120, 1);
+    epd.printCentered(reason, 120, 1);
     epd.fullRefresh();
 
     // Panel in Tiefschlaf, Rail aus, dann Latch loslassen (FR-018, R-13)
@@ -203,6 +218,7 @@ void StateMachine::enterConfigMenu() {
 
 void StateMachine::handleConfigMenu() {
     checkPowerOffGesture();
+    checkIdleTimeout();
 
     configMenu.update();
 
@@ -274,6 +290,7 @@ void StateMachine::enterPfeileHolen() {
 
 void StateMachine::handlePfeileHolen() {
     checkPowerOffGesture();
+    checkIdleTimeout();
 
     // Verbindungstest alle 5 Sekunden (PING + Statuszeile, V2-Verhalten)
     if (lastConnectionCheck == 0 || millis() - lastConnectionCheck >= 5000) {
