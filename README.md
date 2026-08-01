@@ -161,9 +161,13 @@ vollständige Inbetriebnahme- und Abnahme-Checkliste.
 - **Pegelwandler am LED-Strip**: Die 12-V-WS2811-LEDs erwarten 5-V-Datenpegel, der XIAO
   liefert 3,3 V. Bei hellen Mischfarben (Gelb, Weiß) kippen dadurch vereinzelt Bits.
   Abhilfe ist ein 74AHCT125 am Daten-Pin — Bauteil vorhanden, Einbau steht aus.
-- **Schnellladen**: Der Sender lädt derzeit mit 80–100 mA (PROG2 per 10 kΩ auf Low).
-  GPIO18 als Ausgang auf HIGH würde auf 400–500 mA umschalten; das ist als Opt-in
-  vorgesehen, aber noch nicht implementiert.
+- **Ladestrom**: Der Sender lädt mit 80–100 mA. Auf 500 mA umschalten geht **nicht per
+  Firmware**, auch wenn die Leitung dafür vorbereitet aussieht: Der PROG2-Eingang des
+  MCP73837 verlangt für „High" mindestens 0,8 × VDD = 4,0 V (VDD = VUSB = 5 V), ein
+  ESP32-GPIO liefert nur 3,3 V — und landet damit im Shutdown-Fenster, der Lader schaltet
+  ab. Schnellladen braucht eine Hardware-Änderung (R20 als Pull-up nach VUSB, ggf. mit
+  MOSFET zum Umschalten). Details in
+  [`hardware-pins.md`](specs/004-v3-esp32-port/contracts/hardware-pins.md), Befund 4.
 
 ## Historie
 

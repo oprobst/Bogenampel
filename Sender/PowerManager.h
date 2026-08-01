@@ -8,9 +8,18 @@
  *   Median-5-Filter, V2-Schwellen 3,0/3,3/4,2 V (R-11)
  * - Lader MCP73837: STAT1/STAT2/PG Open-Drain → INPUT_PULLUP, Decode nach
  *   Table 5-1 des Datenblatts DS20002071C (R-12)
- * - C_PRG (GPIO18) bleibt hochohmig: R20 (10k) zieht PROG2 auf Low = kleiner
- *   USB-Ladestrom (80-100 mA). GPIO18 auf HIGH wäre der Schnelllade-Opt-in
- *   (400-500 mA) — überstimmt den Pulldown mühelos.
+ * - C_PRG (GPIO18) MUSS hochohmig bleiben: R20 (10k) zieht PROG2 auf Low =
+ *   kleiner USB-Ladestrom (80-100 mA, "1 Unit Load").
+ *
+ *   ⚠ GPIO18 auf OUTPUT HIGH ist KEIN Schnelllade-Opt-in — es schaltet den
+ *   Lader ab. Die PROG2-Schwellen sind relativ zu VDD, und VDD = VUSB = 5 V
+ *   (VAC ist auf dieser Platine unbeschaltet). Damit gilt VIH >= 0,8*VDD =
+ *   4,0 V, waehrend der ESP32 nur 3,3 V liefert. 3,3 V liegt im
+ *   Shutdown-Fenster VSD (0,2*VDD .. 0,8*VDD = 1,0 .. 4,0 V) — derselbe
+ *   Mechanismus, der den Lader schon beim urspruenglichen 100k-R20 stillgelegt
+ *   hat, nur von der anderen Seite. Schnellladen braucht Hardware: R20 als
+ *   Pull-up nach VUSB (fest 500 mA) oder Pull-up + N-MOSFET fuer Umschaltung.
+ *   Details: specs/004-v3-esp32-port/contracts/hardware-pins.md, Befund 4.
  * - USB-Erkennung: GPIO8 (VBUS-Teiler, aktiv HIGH)
  */
 

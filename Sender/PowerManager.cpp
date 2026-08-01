@@ -17,8 +17,10 @@ void PowerManager::begin() {
     pinMode(Pins::C_ST1, INPUT_PULLUP);
     pinMode(Pins::C_ST2, INPUT_PULLUP);
     pinMode(Pins::C_PG, INPUT_PULLUP);
-    // C_PRG bleibt hochohmig (INPUT) = Default-Ladestrom; Schnellladen ist
-    // ein dokumentierter späterer Opt-in
+    // C_PRG MUSS hochohmig bleiben (INPUT): R20 definiert den Pegel.
+    // NICHT auf OUTPUT HIGH setzen — 3,3 V liegen im Shutdown-Fenster des
+    // MCP73837 (VIH = 0,8 × 5 V = 4,0 V), der Lader wuerde abschalten. Siehe
+    // Kopfkommentar in PowerManager.h.
     pinMode(Pins::C_PRG, INPUT);
 
     // USB-Erkennung (VBUS-Teiler, aktiv HIGH)

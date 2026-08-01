@@ -19,7 +19,7 @@
 | C_ST2 (Lader STAT2) | 12 | IN | MCP73837 Open-Drain → `INPUT_PULLUP`; **Hi-Z/Hi-Z/L ist mehrdeutig** — Standby, Temperature Fault und Timer Fault sind nicht unterscheidbar (Befund 2) |
 | C_PG (Lader Power Good) | 17 | IN | MCP73837 Open-Drain → `INPUT_PULLUP`; L = gültige Eingangsspannung liegt an (sagt **nichts** darüber, ob geladen wird) |
 | THERM (J3, kein GPIO) | — | — | IC3 Pin 9 an J3 Pin 2, J3 Pin 1 = GND. **Muss bestückt sein**: NTC oder ersatzweise 10 kΩ — offen ⇒ Temperature Fault, es wird nicht geladen (Befund 2) |
-| C_PRG (Ladestrom) | 18 | IN (hochohmig) | direkt an PROG2, **R20 = 10 kΩ Pulldown** (nicht 100 k, siehe Befund unten) → PROG2 Low = 80–100 mA USB-Ladestrom; GPIO18 als OUTPUT HIGH überstimmt den Pulldown = 400–500 mA (Schnelllade-Opt-in, noch nicht implementiert) |
+| C_PRG (Ladestrom) | 18 | IN (hochohmig) | direkt an PROG2, **R20 = 10 kΩ Pulldown** (nicht 100 k, Befund 3) → PROG2 Low = 80–100 mA USB-Ladestrom. ⚠ **Muss INPUT bleiben** — OUTPUT HIGH schaltet den Lader ab statt schneller zu laden (Befund 4) |
 | e-Paper CS | 21 | OUT | J1 Pin 12 (CS_D) |
 | e-Paper DC | 47 | OUT | J1 Pin 11 |
 | e-Paper RES | 48 | OUT | J1 Pin 10 |
@@ -69,6 +69,40 @@ Display: Waveshare 1.54″ e-Paper V2 (GDEH0154D67/SSD1681, 200×200) als rohes 
    PROG1 (IC3 Pin 6, R19 = 2 kΩ) setzt den Ladestrom für den **AC-Adapter-Eingang** (VAC,
    Pin 1). VAC ist auf dieser Platine **nicht angeschlossen** — PROG1 ist damit funktionslos,
    und ~0 V dort ist normal, kein Fehler.
+
+4. ⚠ **Schnellladen per GPIO18 ist NICHT möglich — der Pin muss INPUT bleiben**
+   (korrigiert 2026-08-01; frühere Fassungen dieses Dokuments, `PowerManager.h` und das
+   README behaupteten das Gegenteil).
+
+   Naheliegende, aber falsche Annahme: GPIO18 als OUTPUT HIGH überstimmt den 10-kΩ-Pulldown,
+   PROG2 wird High und wählt statt „1 Unit Load" (100 mA) die „5 Unit Loads" (500 mA).
+   Elektrisch überstimmt der Ausgang den Pulldown tatsächlich — nur ist der erreichte
+   **Pegel zu niedrig**.
+
+   Die PROG2-Schwellen sind relativ zur Versorgung definiert, und das Datenblatt legt fest:
+   *„The supply voltage (VDD) = VAC when input power source is from AC adapter and the supply
+   voltage (VDD) = VUSB [when from the USB port]."* Da VAC hier unbeschaltet ist, gilt
+   **VDD = VUSB = 5 V** (gemessen an IC3 Pin 2).
+
+   | Grenze | Formel | bei VDD = 5 V |
+   |---|---|---|
+   | V_IH (High) | ≥ 0,8 · VDD | **≥ 4,0 V** |
+   | V_IL (Low) | ≤ 0,2 · VDD | ≤ 1,0 V |
+   | V_SD (Shutdown) | 0,2 · VDD … 0,8 · VDD | 1,0 … 4,0 V |
+
+   Ein ESP32-GPIO liefert 3,3 V. Das erreicht V_IH nicht und landet **im Shutdown-Fenster** —
+   der Lader schaltet ab, statt schneller zu laden. Es ist derselbe Mechanismus, der den
+   Lader schon beim ursprünglichen 100-kΩ-R20 stillgelegt hat (Befund 3), nur von der
+   anderen Seite angefahren.
+
+   Schnellladen erfordert daher eine **Hardware**-Änderung:
+   - **einfach, fest**: R20 als Pull-up nach VUSB statt Pulldown nach GND → PROG2 dauerhaft
+     5 V = 500 mA. Dann aber die Leiterbahn zu GPIO18 auftrennen, sonst sieht der ESP32-Pin
+     5 V (absolutes Maximum 3,6 V; über 100 kΩ wären es ~11 µA durch die Schutzdiode —
+     tolerierbar, aber unsauber). Nicht mehr umschaltbar.
+   - **umschaltbar**: Pull-up nach VUSB plus N-MOSFET, den GPIO18 ansteuert und der PROG2
+     bei Bedarf auf GND zieht. Default 500 mA, Firmware kann drosseln, der GPIO sieht nie
+     mehr als 3,3 V. Kostet ein Bauteil im nächsten Layout.
 
 ## Empfänger — Seeed XIAO ESP32C3 (U2, Zusatzplatine/Lochraster)
 
