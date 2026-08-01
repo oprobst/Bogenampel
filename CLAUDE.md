@@ -6,14 +6,17 @@ Auto-generated from all feature plans. Last updated: 2026-06-11
 
 Bogenampel ist eine funkgesteuerte Timer-Anzeige für Bogenschießplätze.
 
-**Aktuelle Generation V3 (`SenderV3/`, `EmpfaengerV3/`, `Schaltung_v3/`):**
+**Aktuelle Generation V3 (`SenderV3/`, `EmpfaengerV3/`, `Schaltung-Sender/`, `Schaltung-Empfaenger/`):**
 - **Sender (Bedieneinheit)**: ESP32-S3-WROOM-1U + 1.54″ e-Paper (SSD1681) + LiPo/MCP73837 + Power-Latch
 - **Empfänger (Anzeigeeinheit)**: XIAO ESP32C3 + WS2812B LED Strip (158 LEDs) + Lüfter + 3 Potis
 - **Kommunikation**: ESP-NOW (Kanal 1, 6-Byte-Frames, Discovery zur Laufzeit), 11 Kommandos unverändert
-- **Features**: Timer-Steuerung, Gruppen-Anzeige, Alarm-System, NVS-Konfiguration, autonomes Passenende (FR-004)
+- **Features**: Timer-Steuerung, Gruppen-Anzeige, Alarm-System, NVS-Konfiguration, autonomes Passenende (FR-004),
+  OTA-Wartungsmodus (beide Taster beim Einschalten; im Normalbetrieb läuft kein WiFi)
 
-**Legacy V2 (`Sender/`, `Empfaenger/`, `Schaltung/` — eingefroren, FR-025):**
+**Legacy V2 (`Sender/`, `Empfaenger/` — eingefroren, FR-025):**
 - Arduino Nano + ST7789 TFT bzw. WS2812B + NRF24L01 (2.4 GHz, 250 kbps)
+- Die V2-KiCad-Dateien (`Schaltung/`) wurden am 2026-08-01 entfernt und sind
+  nur noch über die Git-Historie auffindbar.
 
 ## Active Technologies
 - C++ (Arduino core for ESP32 / arduino-esp32 3.x, C++17; V2 logic is C++11 and ports without changes) (004-v3-esp32-port)
@@ -54,13 +57,16 @@ EmpfaengerV3/         # V3 Anzeigeeinheit (XIAO ESP32C3) — AKTUELL
   ├── BuzzerManager.* # LEDC-PWM, Lautstärke vom Poti (Duty 0-50%)
   └── FanManager.*    # Lüfter-PWM 25 kHz, Drehzahl vom Poti
 
+Schaltung-Sender/     # V3 KiCad Sender    — autoritative Hardware-Quelle (Constitution V)
+Schaltung-Empfaenger/ # V3 KiCad Empfänger — dito
+schaltplan-sender.png     # Schaltplan-Export, ohne KiCad lesbar
+schaltplan-empfaenger.png
+
 Sender/               # V2 Bedieneinheit (Arduino Nano) — EINGEFROREN (FR-025)
 Empfaenger/           # V2 Anzeigeeinheit (Arduino Nano) — EINGEFROREN (FR-025)
-Schaltung/            # V2 KiCad (Legacy)
-Schaltung_v3/         # V3 KiCad — autoritative Hardware-Quelle (Constitution V)
-TestSender/           # Test-Programme (V2)
-TestEmpfaenger/
-libraries/            # Externe Libraries (nur V2; V3 bezieht über lib_deps/IDE)
+libraries/            # Externe Libraries — NUR V2. Der V3-Build ist davon
+                      # unabhängig (verifiziert 2026-08-01: beide Envs bauen
+                      # ohne den Ordner); V3 bezieht alles über lib_deps.
 specs/                # Feature-Spezifikationen (004-v3-esp32-port = V3-Port)
 ```
 

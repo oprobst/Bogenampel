@@ -12,7 +12,7 @@
  * - LiPo-Lader MCP73837, Batteriespannungsmessung über Teiler
  *
  * Verbindliche Pin-Quelle: specs/004-v3-esp32-port/contracts/hardware-pins.md
- * (extrahiert aus Schaltung_v3/BogenampelV3/BogenampelV3.kicad_sch Rev 3.0)
+ * (extrahiert aus Schaltung-Sender/BogenampelV3.kicad_sch Rev 3.0)
  *
  * @date 2026-06-11
  * @version 3.0

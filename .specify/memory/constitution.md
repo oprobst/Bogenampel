@@ -5,7 +5,7 @@ Version Change: 1.1.0 → 2.0.0 → 2.1.0 (2026-06-10) → 2.2.0 (2026-06-11)
 
 2.0.0 — Rationale: Hardware-Generationswechsel V2 → V3 (ESP32 statt Arduino Nano, ESP-NOW
 statt NRF24L01, e-Paper statt TFT). Autoritative Hardware-Quelle ist jetzt das KiCad-Projekt
-`Schaltung_v3/BogenampelV3/`. MAJOR-Bump wegen grundlegender Neudefinition der
+`Schaltung-Sender/` bzw. `Schaltung-Empfaenger/`. MAJOR-Bump wegen grundlegender Neudefinition der
 Hardware-Standards-Sektion (Versioning-Richtlinie).
 
 2.1.0 — Rationale: USB-Strombegrenzungs-Regel (Entwicklungsmodus, Prinzip I) entfernt —
@@ -21,15 +21,15 @@ unberührt. Entscheidung des Projektverantwortlichen vom 2026-06-11.
 Changes Made:
 - Hardware-Anforderungen vollständig auf V3 umgestellt (ESP32-S3-Sender, XIAO-ESP32C3-Empfänger)
 - Betriebsparameter aktualisiert (Initialisierungszeit < 10 s wegen e-Paper + Funktest)
-- Pin-Belegungen: autoritative Quelle jetzt `Schaltung_v3/BogenampelV3/` (KiCad);
+- Pin-Belegungen: autoritative Quelle jetzt `Schaltung-Sender/` bzw. `Schaltung-Empfaenger/` (KiCad);
   eingefrorener Pin-Contract in `specs/004-v3-esp32-port/contracts/hardware-pins.md`
-- V2-Hardware (Arduino Nano, NRF24, `/Schaltung/`) als eingefrorenes Legacy dokumentiert
+- V2-Hardware (Arduino Nano, NRF24) als eingefrorenes Legacy dokumentiert
 - USB-Strombegrenzungs-Bullet aus Prinzip I entfernt (v2.1.0, siehe oben)
 
 Modified Principles:
 - I. Sicherheit Zuerst — Entwicklungsmodus-Strombegrenzung entfernt (obsolet durch externe LED-Versorgung)
 - III. Embedded-Hardware-Standards — autoritative Schaltplan-Quelle pro Hardware-Generation
-- V. Wartbarkeit & Dokumentation — Schaltplan-Pfad auf `Schaltung_v3/` aktualisiert
+- V. Wartbarkeit & Dokumentation — Schaltplan-Pfad auf `Schaltung-Sender/` und `Schaltung-Empfaenger/` aktualisiert
 
 Templates Status:
 ✅ plan-template.md - Verified alignment
@@ -75,7 +75,7 @@ Arduino-Platform und etablierte Standards nutzen.
   mehr — V3 ist vollständig auf PlatformIO migriert (V2-Legacy bleibt Arduino-IDE-basiert)
 - Verwendete Bibliotheken MÜSSEN stabil, wartbar und Open Source sein
 - Pin-Belegungen MÜSSEN dokumentiert und im Code als Konstanten definiert sein
-- **Pin-Belegungen MÜSSEN exakt mit dem KiCad-Schaltplan der jeweiligen Hardware-Generation übereinstimmen (NON-NEGOTIABLE)**: V3-Firmware (`SenderV3/`, `EmpfaengerV3/`) gegen `Schaltung_v3/BogenampelV3/`; eingefrorene V2-Firmware (`Sender/`, `Empfaenger/`) gegen `/Schaltung/Schaltplan.pdf`
+- **Pin-Belegungen MÜSSEN exakt mit dem KiCad-Schaltplan der jeweiligen Hardware-Generation übereinstimmen (NON-NEGOTIABLE)**: V3-Firmware (`SenderV3/`, `EmpfaengerV3/`) gegen `Schaltung-Sender/` bzw. `Schaltung-Empfaenger/`; eingefrorene V2-Firmware (`Sender/`, `Empfaenger/`) gegen den V2-Schaltplan aus der Git-Historie (`Schaltung/`, entfernt am 2026-08-01)
 - Hardware-Schnittstellen MÜSSEN gegen Fehlbeschaltung geschützt sein (Pull-up/Pull-down Widerstände)
 - Analoge Eingänge MÜSSEN auf ADC1-Pins liegen (ESP32: ADC2 ist bei aktivem Funk unbrauchbar)
 - Stromversorgung MUSS innerhalb spezifizierter Grenzen bleiben (USB: 0,5-3A, Powerbank/Netzteil: bis 12A)
@@ -99,7 +99,7 @@ Alle Funktionen MÜSSEN testbar und validierbar sein.
 Code und Hardware MÜSSEN vollständig dokumentiert sein.
 
 - Alle Pin-Belegungen MÜSSEN im Code und in Hardware-Dokumentation übereinstimmen
-- **Änderungen an Pin-Belegungen MÜSSEN zuerst im KiCad-Schaltplan (V3: `Schaltung_v3/BogenampelV3/`) vorgenommen werden, bevor Code angepasst wird**
+- **Änderungen an Pin-Belegungen MÜSSEN zuerst im KiCad-Schaltplan (V3: `Schaltung-Sender/` bzw. `Schaltung-Empfaenger/`) vorgenommen werden, bevor Code angepasst wird**
 - Funktionen MÜSSEN klare, selbsterklärende Namen haben
 - Zustandsübergänge MÜSSEN mit Kommentaren erklärt sein
 - Hardware-Komponenten MÜSSEN mit Teilenummern und Spezifikationen dokumentiert sein
@@ -121,8 +121,9 @@ Code und Hardware MÜSSEN vollständig dokumentiert sein.
 ### Legacy-Hardware (V2, eingefroren)
 
 Die V2-Firmware (`Sender/`, `Empfaenger/`) und ihre Hardware (Arduino Nano ATmega328P,
-nRF24L01+, ST7789-TFT, `/Schaltung/Schaltplan.pdf`) bleiben unverändert im Repository und
-werden nicht weiterentwickelt. Für V2-Code gilt weiterhin `/Schaltung/` als autoritative Quelle.
+nRF24L01+, ST7789-TFT) bleiben unverändert im Repository und werden nicht
+weiterentwickelt. Die zugehörigen KiCad-Dateien (`Schaltung/`) wurden am 2026-08-01
+entfernt; als autoritative V2-Quelle gilt ihr letzter Stand in der Git-Historie.
 
 ### Betriebsparameter
 
@@ -134,7 +135,7 @@ werden nicht weiterentwickelt. Für V2-Code gilt weiterhin `/Schaltung/` als aut
 
 ### Pin-Belegungen
 
-**AUTORITATIVE QUELLE**: KiCad-Projekt `Schaltung_v3/BogenampelV3/`
+**AUTORITATIVE QUELLE**: KiCad-Projekt `Schaltung-Sender/` bzw. `Schaltung-Empfaenger/`
 (Sender: `BogenampelV3.kicad_sch`, Empfänger: `Zusatzplatine-Empfänger.kicad_sch`)
 
 **Alle Pin-Zuweisungen im Code MÜSSEN exakt mit dem Schaltplan übereinstimmen.**
@@ -176,7 +177,7 @@ dokumentierter Hardware-Reworks: Helligkeits-Poti D5→D1, BTN1-Teiler R7 47k→
 
 ### Review-Anforderungen
 
-- Code-Reviews MÜSSEN Pin-Belegungen gegen den KiCad-Schaltplan der jeweiligen Hardware-Generation prüfen (V3: `Schaltung_v3/BogenampelV3/`)
+- Code-Reviews MÜSSEN Pin-Belegungen gegen den KiCad-Schaltplan der jeweiligen Hardware-Generation prüfen (V3: `Schaltung-Sender/` bzw. `Schaltung-Empfaenger/`)
 - Code-Kommentare MÜSSEN Connector-Bezeichner aus dem Schaltplan referenzieren (z.B. "// J9: WS2812B Stripe Timer")
 - Alle Änderungen an Zustandsmaschine MÜSSEN State-Diagramm-Updates beinhalten
 - Stromverbrauchsänderungen MÜSSEN neu gemessen werden
@@ -210,8 +211,8 @@ dokumentierter Hardware-Reworks: Helligkeits-Poti D5→D1, BTN1-Teiler R7 47k→
 
 Für detaillierte Implementierungsrichtlinien siehe:
 - **README.md**: Projektübersicht und Funktionsbeschreibung
-- **Schaltung_v3/BogenampelV3/**: Autoritative Hardware-Pin-Belegungen V3 (KiCad)
+- **Schaltung-Sender/**, **Schaltung-Empfaenger/**: Autoritative Hardware-Pin-Belegungen V3 (KiCad)
 - **specs/004-v3-esp32-port/contracts/hardware-pins.md**: Eingefrorener Pin-Contract V3
-- **/Schaltung/**: KiCad-Projekt der eingefrorenen V2-Hardware
+- **Schaltung/** (entfernt 2026-08-01): KiCad-Projekt der eingefrorenen V2-Hardware — nur noch in der Git-Historie
 
 **Version**: 2.2.0 | **Ratifiziert**: 2025-12-04 | **Zuletzt geändert**: 2026-06-11

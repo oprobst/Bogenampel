@@ -7,7 +7,8 @@ vorausgewählt, danach steuern zwei Taster den kompletten Turnierablauf.
 
 > **Aktuelle Hardware-Generation: V3 (ESP32)** — siehe [Version 3](#version-3-aktuell).
 > Die Arduino-Nano-Generation V2 ist weiter unten als eingefrorener Legacy-Stand
-> dokumentiert (`Sender/`, `Empfaenger/`, `Schaltung/`).
+> dokumentiert (`Sender/`, `Empfaenger/`). Die V2-KiCad-Dateien wurden am
+> 2026-08-01 entfernt und sind nur noch über die Git-Historie auffindbar.
 
 ## Version 3 (aktuell)
 
@@ -17,9 +18,9 @@ vorausgewählt, danach steuern zwei Taster den kompletten Turnierablauf.
 | **Anzeige** | 1.54″ e-Paper (SSD1681, 200×200) | WS2812B-Strip, 158 LEDs (unverändert) |
 | **Funk** | ESP-NOW (integriert, Kanal 1) | ESP-NOW (integriert, Kanal 1) |
 | **Versorgung** | LiPo + MCP73837-Lader, USB-C | 5 V USB oder 12 V (Jumper); LED-Strip immer extern |
-| **Bedienung** | 2 Taster: BTN1 = Power/OK, BTN2 = Weiter | Debug-Taster, 3 Potis (Lautstärke, Helligkeit, Lüfter) |
+| **Bedienung** | 2 Taster: CONFIG (schaltet ein, Weiter/Ändern), OK (Bestätigen, 2 s = Alarm, 3 s = Aus) | Debug-Taster, 3 Potis (Lautstärke, Helligkeit, Lüfter) |
 | **Firmware** | `SenderV3/` | `EmpfaengerV3/` |
-| **Schaltplan** | `Schaltung_v3/BogenampelV3/BogenampelV3.kicad_sch` | `Schaltung_v3/BogenampelV3/Zusatzplatine-Empfänger.kicad_sch` |
+| **Schaltplan** | `Schaltung-Sender/BogenampelV3.kicad_sch` | `Schaltung-Empfaenger/Empfaenger.kicad_sch` |
 
 Neu in V3 gegenüber V2:
 
@@ -49,8 +50,9 @@ cd EmpfaengerV3 && pio run -t upload  # XIAO ESP32C3
 ## Version 2 (Legacy: Arduino Nano + NRF24)
 
 Basierend auf zwei Arduino Nanos mit nRF24L01+ Funkmodulen.
-Die Verzeichnisse `Sender/`, `Empfaenger/` und `Schaltung/` bleiben unverändert
-als Referenz erhalten.
+Die Verzeichnisse `Sender/` und `Empfaenger/` bleiben unverändert als Referenz
+erhalten. Der zugehörige KiCad-Ordner `Schaltung/` wurde entfernt; sein letzter
+Stand ist über die Git-Historie zugänglich.
 
 ## Projektbeschreibung
 

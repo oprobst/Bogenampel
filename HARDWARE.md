@@ -6,7 +6,7 @@
 
 ## Hardware V3 (aktuell)
 
-Autoritative Quelle ist der KiCad-Schaltplan in `Schaltung_v3/BogenampelV3/`
+Autoritative Quelle ist der KiCad-Schaltplan in `Schaltung-Sender/` bzw. `Schaltung-Empfaenger/`
 (Constitution V: „Schaltplan zuerst, dann Code"); die daraus extrahierte,
 verbindliche Pin-Tabelle für beide Firmwares steht in
 [`specs/004-v3-esp32-port/contracts/hardware-pins.md`](specs/004-v3-esp32-port/contracts/hardware-pins.md).
@@ -121,7 +121,10 @@ Der Sender ist die Bedieneinheit der Bogenampel und basiert auf einem Arduino Na
 ## Pin-Belegung Arduino Nano
 
 > **WICHTIG:** Die folgenden Pin-Zuweisungen basieren auf typischen SPI-Konfigurationen.
-> Bitte überprüfen Sie diese anhand des KiCad-Schaltplans `Schaltung/Bogenampel.kicad_sch` und korrigieren Sie bei Bedarf!
+> Der zugehörige KiCad-Schaltplan `Schaltung/Bogenampel.kicad_sch` wurde am 2026-08-01
+> aus dem Arbeitsverzeichnis entfernt und ist nur noch über die Git-Historie zugänglich
+> (`git show <commit>:Schaltung/Bogenampel.kicad_sch`). Da V2 eingefroren ist (FR-025),
+> werden diese Angaben nicht mehr nachgeführt.
 
 ### SPI-Bus (Gemeinsam für Display und NRF24L01)
 
@@ -332,7 +335,7 @@ Der TXS0108EPW konvertiert bidirektional zwischen 5V (Arduino) und 3.3V (Display
 
 ## Schaltplan-Referenz
 
-**KiCad-Dateien:**
+**KiCad-Dateien** (nur noch in der Git-Historie, siehe oben):
 - `Schaltung/Bogenampel.kicad_sch` - Hauptschaltplan
 - `Schaltung/Bogenampel.kicad_pcb` - PCB-Layout
 

@@ -1,6 +1,6 @@
 # Contract: Pin-Belegung V3 (verbindlich für Config.h beider Firmwares)
 
-**Feature**: 004-v3-esp32-port | **Quelle**: KiCad-Netzlisten `Schaltung_v3/BogenampelV3/`
+**Feature**: 004-v3-esp32-port | **Quelle**: KiCad-Netzlisten `Schaltung-Sender/` bzw. `Schaltung-Empfaenger/`
 (`BogenampelV3.kicad_sch` Rev 3.0, `Zusatzplatine-Empfänger.kicad_sch`), extrahiert per
 `kicad-cli sch export netlist`. Bei Abweichungen gilt der Schaltplan; Änderungen zuerst dort
 (Constitution V).
