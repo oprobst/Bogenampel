@@ -41,11 +41,11 @@ _autosave-*
 # und sollen daher versionierbar bleiben.
 
 # =============================================================================
-# PlatformIO (V3-Firmware)
+# PlatformIO
 # =============================================================================
+# Ohne fuehrenden Slash greift die Regel in JEDEM Verzeichnis — deckt also
+# .pio/ im Root wie in den Firmware-Ordnern ab (aktuell ~340 MB).
 .pio/
-Sender/.pio/
-Empfaenger/.pio/
 
 # =============================================================================
 # Lokale Konfiguration / Werkzeuge
