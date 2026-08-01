@@ -1,7 +1,7 @@
 # Contract: Pin-Belegung V3 (verbindlich für Config.h beider Firmwares)
 
 **Feature**: 004-v3-esp32-port | **Quelle**: KiCad-Netzlisten `Schaltung-Sender/` bzw. `Schaltung-Empfaenger/`
-(`BogenampelV3.kicad_sch` Rev 3.0, `Zusatzplatine-Empfänger.kicad_sch`), extrahiert per
+(`BogenampelV3.kicad_sch` Rev 3.0, `Empfaenger.kicad_sch` — vormals `Zusatzplatine-Empfänger.kicad_sch`), extrahiert per
 `kicad-cli sch export netlist`. Bei Abweichungen gilt der Schaltplan; Änderungen zuerst dort
 (Constitution V).
 
@@ -15,10 +15,11 @@
 | BTN2 (Weiter, SW1) | 9 | IN | gegen GND, **kein externer Pullup** → `INPUT_PULLUP`, aktiv LOW |
 | ADC_BAT | 10 | IN (ADC1_CH9) | Teiler R4/R8 = 150k/100k an +BATT → V_BAT = V_ADC × 2,5; Sensor stromlos wenn aus (Q1/Q2) |
 | USB_CON | 8 | IN | VBUS-Teiler (R16/R18), aktiv HIGH bei USB |
-| C_ST1 (Lader STAT1) | 11 | IN | MCP73837 Open-Drain → `INPUT_PULLUP` |
-| C_ST2 (Lader STAT2) | 12 | IN | MCP73837 Open-Drain → `INPUT_PULLUP` |
-| C_PG (Lader Power Good) | 17 | IN | MCP73837 Open-Drain → `INPUT_PULLUP` |
-| C_PRG (Ladestrom) | 18 | IN (hochohmig) | über R20 an PROG2; Default-Ladestrom; Schnellladen = späterer Opt-in |
+| C_ST1 (Lader STAT1) | 11 | IN | MCP73837 Open-Drain → `INPUT_PULLUP`; Decode nur zusammen mit ST2/PG sinnvoll (Table 5-1) |
+| C_ST2 (Lader STAT2) | 12 | IN | MCP73837 Open-Drain → `INPUT_PULLUP`; **Hi-Z/Hi-Z/L ist mehrdeutig** — Standby, Temperature Fault und Timer Fault sind nicht unterscheidbar (Befund 2) |
+| C_PG (Lader Power Good) | 17 | IN | MCP73837 Open-Drain → `INPUT_PULLUP`; L = gültige Eingangsspannung liegt an (sagt **nichts** darüber, ob geladen wird) |
+| THERM (J3, kein GPIO) | — | — | IC3 Pin 9 an J3 Pin 2, J3 Pin 1 = GND. **Muss bestückt sein**: NTC oder ersatzweise 10 kΩ — offen ⇒ Temperature Fault, es wird nicht geladen (Befund 2) |
+| C_PRG (Ladestrom) | 18 | IN (hochohmig) | direkt an PROG2, **R20 = 10 kΩ Pulldown** (nicht 100 k, siehe Befund unten) → PROG2 Low = 80–100 mA USB-Ladestrom; GPIO18 als OUTPUT HIGH überstimmt den Pulldown = 400–500 mA (Schnelllade-Opt-in, noch nicht implementiert) |
 | e-Paper CS | 21 | OUT | J1 Pin 12 (CS_D) |
 | e-Paper DC | 47 | OUT | J1 Pin 11 |
 | e-Paper RES | 48 | OUT | J1 Pin 10 |
@@ -40,6 +41,34 @@ Display: Waveshare 1.54″ e-Paper V2 (GDEH0154D67/SSD1681, 200×200) als rohes 
    Maximum 3,6 V beim Laden (zulässiges Fenster für R7 bei R2=47k: ca. 220k–280k). Der
    Power-On-Pfad (R3 → D1 → EN) ist von der Änderung unberührt. GPIO15 liegt auf ADC2 →
    analoges Lesen mit aktivem Funk keine Option.
+
+2. ✅ **THERM (IC3 Pin 9) MUSS beschaltet sein — sonst lädt der MCP73837 überhaupt nicht**
+   (Befund 2026-08-01, im Schaltplan als J3 „NTC" vorgesehen, Bestückung nachgeholt).
+   J3 ist ein PinHeader 1×02 (Pin 1 = GND, Pin 2 = THERM) für einen Akku-NTC. Bleibt er
+   **offen**, sieht der Lader eine Temperatur außerhalb des zulässigen Fensters und geht in
+   Temperature Fault: kein Ladestrom, aber PG weiterhin aktiv. Wird kein NTC verwendet, gehört
+   laut Datenblatt DS20002071C ein **10 kΩ von THERM nach VSS** — genau das ist jetzt auf J3
+   gesteckt (gemessen: 10 kΩ zwischen Pin 1 und 2).
+
+   Diagnostisch heimtückisch: Table 5-1 gibt für Temperature Fault, Timer Fault **und**
+   Standby dieselbe Signatur STAT1=Hi-Z / STAT2=Hi-Z / PG=L aus. Über die Statuspins allein
+   ist „lädt nicht wegen fehlendem NTC" nicht von „Akku voll" zu unterscheiden — die Firmware
+   fasst diese drei Zustände deshalb als `ChargeState::SUSPENDED` zusammen und zeigt
+   „laedt nicht!" statt wie früher fälschlich „voll" (siehe `PowerManager::readChargerStatus()`).
+
+3. ✅ **R20 = 10 kΩ, nicht 100 kΩ (funktionskritisch)** — geändert 2026-08-01.
+   R20 zieht PROG2 (IC3 Pin 7) auf GND und wählt damit den USB-Ladestrom. Der Pin hat laut
+   Datenblatt einen Leckstrom von typ. 7 µA / **max. 15 µA**. An 100 kΩ erzeugt das bis zu
+   **1,5 V** — und damit einen Pegel im Shutdown-Fenster V_SD (0,2·VDD … 0,8·VDD), in dem der
+   Lader abschaltet statt zu laden. Mit 10 kΩ bleiben max. 150 mV, sicher unter V_IL
+   (0,2·VDD = 660 mV). Gemessen nach dem Tausch: **59 mV**.
+
+   Beim nächsten Redesign nicht „aufrunden": Der Wert ist nicht als Pulldown-Stärke gewählt,
+   sondern als Spannungsabfall-Grenze gegen den Leckstrom.
+
+   PROG1 (IC3 Pin 6, R19 = 2 kΩ) setzt den Ladestrom für den **AC-Adapter-Eingang** (VAC,
+   Pin 1). VAC ist auf dieser Platine **nicht angeschlossen** — PROG1 ist damit funktionslos,
+   und ~0 V dort ist normal, kein Fehler.
 
 ## Empfänger — Seeed XIAO ESP32C3 (U2, Zusatzplatine/Lochraster)
 
