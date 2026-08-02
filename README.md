@@ -38,16 +38,28 @@ Die 158 LEDs verteilen sich auf 16 LEDs Gruppe A/B, 16 LEDs Gruppe C/D und
 Der Sender hat zwei Taster. Welcher Taster einschaltet, legt der Power-Latch in der
 Hardware fest — das ist die **CONFIG**-Taste.
 
-| Taste | kurz | 2 s halten | 3 s halten |
+| Taste | kurz | 3× schnell klicken | 3 s halten |
 |---|---|---|---|
 | **CONFIG** | Weiter / Wert ändern | — | Ausschalten |
-| **OK** | Bestätigen / Passe beenden | Alarm (im Schießbetrieb) | Ausschalten |
+| **OK** | Bestätigen / Passe beenden | Alarm | Ausschalten |
 
 Einschalten: CONFIG drücken. Ausschalten: eine der beiden Tasten 3 Sekunden halten.
 Die Konfiguration (Schießzeit, Schützenzahl) bleibt im NVS erhalten und steht beim
 nächsten Einschalten wieder zur Verfügung.
 
-**Automatische Abschaltung**: Wird im Konfigurationsmenü oder in „Pfeile holen" 20 Minuten
+**Alarm**: die **OK**-Taste dreimal schnell hintereinander drücken (höchstens 0,4 s
+zwischen den Klicks). Das geht im Schießbetrieb und beim Pfeileholen — also überall
+dort, wo Leute an der Schießlinie stehen können. Im Konfigurationsmenü und im
+Startbildschirm bleibt die Folge bewusst wirkungslos. CONFIG löst grundsätzlich
+keinen Alarm aus: Diese Taste blättert durch Menüs und zählt Werte hoch, dort ist
+zügiges Tippen normale Bedienung. Quittiert wird ein Alarm mit einem kurzen OK.
+
+Ausschalten und Alarm liegen absichtlich auf **verschiedenen** Bewegungen: Halten
+schaltet immer aus, egal in welchem Zustand das Gerät gerade ist. Früher hing die
+Bedeutung des Haltens am Betriebszustand — wer im Schießbetrieb ausschalten wollte,
+löste stattdessen einen Alarm aus.
+
+**Automatische Abschaltung**: Wird im Konfigurationsmenü oder in „Pfeile holen" 60 Minuten
 lang keine Taste gedrückt, schaltet sich der Sender selbst ab und zeigt dabei
 „Automatische Abschaltung". Im Schießbetrieb und bei stehendem Alarm greift das
 bewusst **nicht** — dort läuft eine Passe bzw. ein Sicherheitszustand. Gedacht ist es

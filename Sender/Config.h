@@ -56,8 +56,9 @@ namespace Pins {
     // Bedienrolle. Die Rollen sind in ButtonManager::readRawState() zugeordnet
     // und wurden an die Gehäusebeschriftung angepasst:
     //   BTN1 (GPIO15) → Rolle CONFIG (Weiter/Ändern), zugleich Einschalt-Taster
-    //   BTN2 (GPIO9)  → Rolle OK (Bestätigen, Alarm 2s, Power-Off 3s)
+    //   BTN2 (GPIO9)  → Rolle OK (Bestätigen)
     // Welcher Taster einschaltet, legt der Power-Latch in der Hardware fest.
+    // Alarm (3x Klick) und Power-Off (3s halten) liegen auf BEIDEN Tastern.
     //-------------------------------------------------------------------------
     constexpr uint8_t BTN1 = 15;   // SW2: AKTIV HIGH (externer Teiler
                                    // R2/R7 an +BATT, 100nF C1); KEINE internen Pulls!
@@ -274,9 +275,16 @@ namespace Timing {
         constexpr uint16_t PREPARATION_TIME_MS = 10000;  // 10 Sekunden Vorbereitungsphase
     #endif
 
-    // Tastergesten (Rolle OK)
-    constexpr uint16_t ALARM_THRESHOLD_MS = 2000;    // 2s halten im Schießbetrieb = Alarm
-    constexpr uint16_t POWER_OFF_HOLD_MS = 3000;     // 3s halten (außerhalb Schießbetrieb) = Aus
+    // Tastergesten (beide Rollen gleichwertig, Feature 006)
+    constexpr uint16_t POWER_OFF_HOLD_MS = 3000;     // 3s halten = Aus (jeder Zustand, FR-001)
+
+    // Alarm = Dreifachklick (FR-007/A-002). Bewusst KEIN Halten mehr: Halten ist
+    // seit Feature 006 ausschließlich die Ausschalt-Geste. Der Klickabstand ist
+    // die einzige Stellschraube zwischen "unter Stress sicher auslösbar" und
+    // "nicht mit normaler Menübedienung verwechselbar" — beim Nachjustieren
+    // zuerst hier drehen, nicht an der Klickzahl.
+    constexpr uint8_t MULTI_CLICK_COUNT = 3;         // 3 Klicks lösen den Alarm aus
+    constexpr uint16_t MULTI_CLICK_GAP_MS = 400;     // max. Abstand zwischen zwei Klicks
 
     // Alarm-App-Retries (V2-Werte; jede Wiederholung = neuer Frame mit neuer seq)
     constexpr uint16_t ALARM_RETRY_DELAY_MS = 200;   // 200ms zwischen Alarm-Retries
@@ -288,10 +296,14 @@ namespace Timing {
     // von jedem Tastendruck und von jedem Zustandswechsel.
     // Zweck ist weniger der Betriebsstrom als das im Koffer vergessene Gerät:
     // dagegen hilft keine µA-Optimierung, nur das Ausschalten.
+    // Eine Stunde statt der früheren 20 Minuten (FR-019): Turnierpausen für
+    // Wertung, Scheibenwechsel oder Mittag dauern regelmäßig länger, und ein
+    // Gerät, das mitten im Betrieb abschaltet, ist ärgerlicher als 40 Minuten
+    // Nachlauf (~36 mAh, research.md R-5).
     #if DEBUG_SHORT_TIMES
         constexpr uint32_t IDLE_POWER_OFF_MS = 60000UL;        // 1 Minute (DEBUG)
     #else
-        constexpr uint32_t IDLE_POWER_OFF_MS = 20UL * 60 * 1000;  // 20 Minuten
+        constexpr uint32_t IDLE_POWER_OFF_MS = 60UL * 60 * 1000;  // 60 Minuten
     #endif
 
 } // namespace Timing
@@ -402,6 +414,14 @@ namespace ConfigValidation {
 
     // ADC_BAT muss auf ADC1 liegen (GPIO1-10 beim ESP32-S3)
     static_assert(Pins::ADC_BAT <= 10, "ADC_BAT must be on ADC1 (radio blocks ADC2)");
+
+    // Gesten-Schwellen müssen sich klar staffeln, sonst verschlucken sie einander:
+    // entprellter Klick < Mehrfachklick-Fenster < Halten (data-model.md §1)
+    static_assert(Timing::DEBOUNCE_MS < Timing::MULTI_CLICK_GAP_MS,
+                  "Debounce must be shorter than the multi-click gap");
+    static_assert(Timing::MULTI_CLICK_GAP_MS < Timing::POWER_OFF_HOLD_MS,
+                  "Multi-click gap must be shorter than the power-off hold");
+    static_assert(Timing::MULTI_CLICK_COUNT >= 2, "Multi-click needs at least two clicks");
 
     // Partial-Fenster innerhalb des Panels
     static_assert(Display::COUNTDOWN_X + Display::COUNTDOWN_W <= Display::WIDTH,

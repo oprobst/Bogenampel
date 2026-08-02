@@ -7,8 +7,11 @@
  * - e-Paper-Rendering über die Menü-Klassen (EpaperDisplay statt ST7789)
  * - ESP-NOW (RadioManager statt globaler RF24-Funktionen)
  * - NVS (ConfigStore statt EEPROM)
- * - 2-Tasten-Gesten: OK kurz = bestätigen, OK ≥2s = Alarm (Schießbetrieb),
- *   beide Taster ≥3s = Power-Off (außerhalb Schießbetrieb, FR-015)
+ * - 2-Tasten-Gesten (Feature 006): kurzer Klick = bestätigen/weiter,
+ *   3× Klick ≤ 400 ms = Alarm (nur Schießbetrieb und Pfeile holen, FR-010),
+ *   beliebiger Taster ≥ 3 s = Power-Off in JEDEM Zustand (FR-002).
+ *   Ausschalten und Alarm liegen bewusst auf verschiedenen Bewegungen — vorher
+ *   entschied der Betriebszustand darüber, was ein Halten bedeutet.
  *
  * REGRESSION-GUARD (FR-004a): handleShootingPhaseEnd(false) bei Zeitablauf
  * sendet KEIN CMD_STOP — der Empfänger beendet die Passe autonom; das
@@ -168,9 +171,22 @@ private:
     void refreshStatusLine();
 
     /**
-     * @brief Power-Off-Geste prüfen (beide Taster ≥ 3 s) und ggf. abschalten (FR-015)
+     * @brief Power-Off-Geste prüfen (beliebiger Taster ≥ 3 s) und abschalten (FR-002)
+     *
+     * Wird zentral aus update() aufgerufen und gilt damit in JEDEM Zustand —
+     * auch im laufenden Schießbetrieb und im Alarm. Das ist unkritisch, weil
+     * der Empfänger eine begonnene Passe autonom zu Ende führt (FR-004a).
      */
     void checkPowerOffGesture();
+
+    /**
+     * @brief Zustände, in denen die Alarm-Geste ausgewertet wird (FR-010)
+     *
+     * Nur dort, wo Personen an der Schießlinie stehen können. Im
+     * Konfigurationsmenü bliebe zügiges Hochzählen von Werten sonst nicht von
+     * einem Dreifachklick unterscheidbar.
+     */
+    static bool isAlarmCapable(State s);
 
     /**
      * @brief Abschaltung nach Inaktivität prüfen (Timing::IDLE_POWER_OFF_MS)

@@ -54,6 +54,7 @@ OtaScreen otaScreen(epaper);
 static bool bootOtaMode = false;
 
 static bool readOtaModeButtons();
+static void pollButtonsWhileBusy(const void* param);
 static void setupNormal();
 static void setupOta();
 static void loopNormal();
@@ -123,6 +124,12 @@ void setup() {
     // e-Paper: LOAD-Rail an, dann init (FR-018)
     epaper.begin();
 
+    // Tastenabfrage während des Refreshs am Leben halten. Ohne das steht sie
+    // bei jedem Fenster-Update 300-400 ms still — im Schießbetrieb also rund
+    // ein Drittel der Zeit — und der Dreifachklick der Alarm-Geste (max. 400 ms
+    // Klickabstand) verliert dort einzelne Klicks (research.md R-1).
+    epaper.setBusyCallback(&pollButtonsWhileBusy);
+
     // ----- Boot-Modus-Entscheidung: genau einmal, hier -----
     bootOtaMode = readOtaModeButtons();
 
@@ -155,6 +162,18 @@ static bool readOtaModeButtons() {
         delay(5);
     }
     return true;
+}
+
+/**
+ * @brief Busy-Callback für GxEPD2 — hält die Tastenabfrage im Refresh am Laufen
+ *
+ * GxEPD2 ruft diese Funktion in _waitWhileBusy() fortlaufend auf, also genau
+ * während der 300 ms bis 2,6 s, in denen die Hauptschleife sonst steht. Sie
+ * darf ausschließlich Tasten pollen: Zeichnen oder ein weiterer Refresh wäre an
+ * dieser Stelle reentrant (contracts/button-gestures.md D-3).
+ */
+static void pollButtonsWhileBusy(const void* /*param*/) {
+    buttons.update();
 }
 
 /**

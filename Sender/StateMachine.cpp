@@ -51,6 +51,10 @@ void StateMachine::begin() {
 }
 
 void StateMachine::update() {
+    // Ausschalten gilt in jedem Zustand und hat Vorrang vor allem anderen
+    // (FR-002, Contract P-1). Kehrt im Erfolgsfall nicht zurück.
+    checkPowerOffGesture();
+
     switch (currentState) {
         case State::STATE_SPLASH:         handleSplash(); break;
         case State::STATE_CONFIG_MENU:    handleConfigMenu(); break;
@@ -60,8 +64,22 @@ void StateMachine::update() {
     }
 }
 
+bool StateMachine::isAlarmCapable(State s) {
+    return s == State::STATE_SCHIESS_BETRIEB || s == State::STATE_PFEILE_HOLEN;
+}
+
 void StateMachine::setState(State newState) {
     if (newState == currentState) return;
+
+    // Laufende Alarm-Folge verwerfen — außer der Wechsel bleibt innerhalb der
+    // alarmfähigen Zustände. Denn genau das passiert im Normalfall: der erste
+    // Klick der Folge beendet die Passe (Schießbetrieb → Pfeile holen), die
+    // beiden restlichen Klicks müssen trotzdem noch zählen (FR-012). Umgekehrt
+    // darf ein im Menü aufgebauter Zählerstand nicht in den Schießbetrieb
+    // hineinlecken (FR-011).
+    if (!(isAlarmCapable(currentState) && isAlarmCapable(newState))) {
+        buttons.resetMultiClick();
+    }
 
     currentState = newState;
     stateStartTime = millis();
@@ -98,7 +116,11 @@ void StateMachine::refreshStatusLine() {
 }
 
 void StateMachine::checkPowerOffGesture() {
-    // ≥ 3 s halten = Power-Off — NICHT im Schießbetrieb (dort = Alarm, FR-015).
+    // ≥ 3 s halten = Power-Off, in JEDEM Zustand (FR-002). Früher war der
+    // Schießbetrieb ausgenommen, weil dort das Halten den Alarm auslöste — der
+    // liegt seit Feature 006 auf dem Dreifachklick. Ein Abschalten mitten in
+    // der Passe ist unkritisch: der Empfänger führt sie autonom zu Ende
+    // (FR-004a) — funktional dasselbe wie ein Sender außer Reichweite.
     // Beide Taster schalten aus: Eingeschaltet wird hardwareseitig immer über
     // CONFIG (Power-Latch), also muss dieselbe Taste auch ausschalten können.
     // Beim Einschalt-Druck greift der Boot-Lockout, die Geste kann also nicht
@@ -165,9 +187,6 @@ void StateMachine::handleSplash() {
         return;
     }
 
-    // Power-Off-Geste (OK ≥ 3 s)
-    checkPowerOffGesture();
-
     // Fall 1: Discovery läuft noch (RadioManager broadcastet HELLO, 1 Hz)
     if (!radio.isPeerDiscovered()) {
         if (!searchStatusShown) {
@@ -217,7 +236,6 @@ void StateMachine::enterConfigMenu() {
 }
 
 void StateMachine::handleConfigMenu() {
-    checkPowerOffGesture();
     checkIdleTimeout();
 
     configMenu.update();
@@ -289,7 +307,13 @@ void StateMachine::enterPfeileHolen() {
 }
 
 void StateMachine::handlePfeileHolen() {
-    checkPowerOffGesture();
+    // ALARM-Geste (OK 3×) auch hier: beim Pfeileholen stehen Leute an der
+    // Schießlinie (FR-010). Vor allem anderen (Contract P-3).
+    if (buttons.wasMultiClicked(Button::OK)) {
+        setState(State::STATE_ALARM);
+        return;
+    }
+
     checkIdleTimeout();
 
     // Verbindungstest alle 5 Sekunden (PING + Statuszeile, V2-Verhalten)
@@ -379,8 +403,9 @@ void StateMachine::enterSchiessBetrieb() {
 }
 
 void StateMachine::handleSchiessBetrieb() {
-    // ALARM-Geste: OK ≥ 2 s gehalten (FR-015 — Power-Off hier nicht verfügbar)
-    if (buttons.wasHeldFor(Button::OK, Timing::ALARM_THRESHOLD_MS)) {
+    // ALARM-Geste: OK 3× klicken, je ≤ 400 ms Abstand (FR-007/FR-009).
+    // Vor der Klick-Auswertung, damit der Alarm gewinnt (Contract P-3).
+    if (buttons.wasMultiClicked(Button::OK)) {
         setState(State::STATE_ALARM);
         return;
     }
@@ -539,11 +564,19 @@ void StateMachine::enterAlarm() {
 
     alarmScreen.draw(result == TX_SUCCESS);
     epd.refreshScreen();
+
+    // Senden (bis 600 ms Retries) und Refresh (~500 ms) blockieren zusammen
+    // rund eine Sekunde, in der der Busy-Callback weiter Tasten pollt. Was in
+    // dieser Zeit noch getippt wurde, gehört zum Auslösen der Geste — nicht
+    // zum Quittieren. Ohne das Verwerfen quittiert der nächste Schleifenlauf
+    // den Alarm sofort wieder und das Gerät fällt nach "Pfeile holen" zurück.
+    buttons.discardPendingClicks();
 }
 
 void StateMachine::handleAlarm() {
-    // Power-Off-Geste bleibt verfügbar (Gesten-Tabelle data-model.md §3)
-    checkPowerOffGesture();
+    // Die Alarm-Folge wird hier bewusst NICHT ausgewertet: ein stehender Alarm
+    // darf sich nicht selbst neu auslösen (FR-015). Ausschalten läuft zentral
+    // in update(). Bleibt der Quittier-Klick.
 
     // OK kurz: Alarm quittieren → CMD_STOP → Pfeile holen
     if (buttons.wasClicked(Button::OK)) {
