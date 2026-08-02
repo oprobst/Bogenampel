@@ -22,6 +22,7 @@ StateMachine::StateMachine(EpaperDisplay& epdRef, ButtonManager& btnMgr, RadioMa
     , pfeileHolenMenu(epdRef, btnMgr)
     , schiessBetriebMenu(epdRef, btnMgr)
     , alarmScreen(epdRef)
+    , shutdownScreen(epdRef)
     , currentState(State::STATE_SPLASH)
     , stateStartTime(0)
     , shootingTime(TournamentDefaults::DEFAULT_TIME)
@@ -34,6 +35,7 @@ StateMachine::StateMachine(EpaperDisplay& epdRef, ButtonManager& btnMgr, RadioMa
     , lastPingOk(false)
     , currentGroup(Groups::Type::GROUP_AB)     // Start mit A/B
     , currentPosition(Groups::Position::POS_1) // Start mit Position 1
+    , ghostClearPending(false)
     , inPreparationPhase(false)
     , preparationSecondsRemaining(0)
     , shootingSecondsRemaining(0)
@@ -151,12 +153,8 @@ void StateMachine::doPowerOff(const char* reason) {
 
     // Config ist bereits gespeichert (Save-on-Confirm, R-6) — kein Save nötig
 
-    // Abschalt-Screen
-    Adafruit_GFX& g = epd.gfx();
-    g.fillScreen(GxEPD_WHITE);
-    g.setTextColor(GxEPD_BLACK);
-    epd.printCentered("Auf Wiedersehen!", 90, 2);
-    epd.printCentered(reason, 120, 1);
+    // Abschalt-Screen — bleibt nach dem Abschalten stehen (e-Paper ist bistabil)
+    shutdownScreen.draw(reason, power.batteryPercent());
     epd.fullRefresh();
 
     // Panel in Tiefschlaf, Rail aus, dann Latch loslassen (FR-018, R-13)
@@ -299,6 +297,10 @@ void StateMachine::enterPfeileHolen() {
     pfeileHolenMenu.draw();
     epd.refreshScreen();  // Zustandswechsel ohne Blitzen (Ghosting-Regel R-2)
 
+    // Entschattung einplanen: der eine Voll-Refresh dieses Aufenthalts steht
+    // noch aus (ausgelöst in handlePfeileHolen nach GHOST_CLEAR_DELAY_MS)
+    ghostClearPending = true;
+
     // Gruppen-Signal sofort senden (Empfänger zeigt die richtige Gruppe)
     sendGroupCommand();
 
@@ -315,6 +317,19 @@ void StateMachine::handlePfeileHolen() {
     }
 
     checkIdleTimeout();
+
+    // Entschattung: einmal pro Aufenthalt voll durchblitzen, sobald das Gerät
+    // GHOST_CLEAR_DELAY_MS (30 s) hier steht. Bis dahin liegt die
+    // Bedieneinheit aus der Hand und die Schützen sind an den Scheiben — das
+    // ist der einzige Moment im Ablauf, in dem das Blitzen niemanden stört.
+    // Ohne angesammelte Partials wird es übersprungen.
+    if (ghostClearPending && timeInState(Timing::GHOST_CLEAR_DELAY_MS)) {
+        ghostClearPending = false;
+        if (epd.hasGhosting()) {
+            DEBUG_PRINTLN("Pfeile holen: Entschattung (Voll-Refresh)");
+            epd.fullRefresh();
+        }
+    }
 
     // Verbindungstest alle 5 Sekunden (PING + Statuszeile, V2-Verhalten)
     if (lastConnectionCheck == 0 || millis() - lastConnectionCheck >= 5000) {

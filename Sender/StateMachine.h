@@ -31,6 +31,7 @@
 #include "PfeileHolenMenu.h"
 #include "SchiessBetriebMenu.h"
 #include "AlarmScreen.h"
+#include "ShutdownScreen.h"
 
 /**
  * @brief System-Zustände (Tournament State Machine)
@@ -80,6 +81,7 @@ private:
     PfeileHolenMenu pfeileHolenMenu;
     SchiessBetriebMenu schiessBetriebMenu;
     AlarmScreen alarmScreen;
+    ShutdownScreen shutdownScreen;
 
     State currentState;
     uint32_t stateStartTime;  // Zeitstempel beim Zustandswechsel
@@ -189,6 +191,14 @@ private:
     static bool isAlarmCapable(State s);
 
     /**
+     * @brief Entschattung steht in diesem Besuch von "Pfeile holen" noch aus
+     *
+     * Wird beim Eintritt gesetzt und nach dem einen Voll-Refresh gelöscht —
+     * es blitzt also höchstens einmal pro Aufenthalt, nicht im Sekundentakt.
+     */
+    bool ghostClearPending;
+
+    /**
      * @brief Abschaltung nach Inaktivität prüfen (Timing::IDLE_POWER_OFF_MS)
      *
      * Nur aus den Wartestates aufrufen: im Schießbetrieb läuft eine Passe ohne
@@ -201,5 +211,5 @@ private:
      * @brief Geordnetes Ausschalten: Screen → hibernate → LOAD aus → LATCH LOW
      * @param reason optionale zweite Zeile auf dem Abschied-Screen
      */
-    void doPowerOff(const char* reason = "Geraet schaltet ab...");
+    void doPowerOff(const char* reason = nullptr);
 };

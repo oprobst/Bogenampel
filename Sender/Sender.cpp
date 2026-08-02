@@ -31,6 +31,7 @@
 #include "RadioManager.h"
 #include "OTAManager.h"
 #include "OtaScreen.h"
+#include "ShutdownScreen.h"
 #include "PowerManager.h"
 #include "ConfigStore.h"
 #include "StateMachine.h"
@@ -46,6 +47,7 @@ PowerManager power;
 ConfigStore configStore;
 StateMachine stateMachine(epaper, buttons, radio, power, configStore);
 OtaScreen otaScreen(epaper);
+ShutdownScreen shutdownScreen(epaper);
 
 //=============================================================================
 // Boot-Modus — einmal beim Start entschieden, danach fix
@@ -259,8 +261,10 @@ static void loopOta() {
     if (buttons.wasHeldFor(Button::OK, Timing::POWER_OFF_HOLD_MS)
         || buttons.wasHeldFor(Button::CONFIG, Timing::POWER_OFF_HOLD_MS)) {
         DEBUG_PRINTLN("Wartungsmodus: Power-Off");
-        epaper.clearBuffer();
-        epaper.printCentered("Auf Wiedersehen!", 90, 2);
+        // Im Wartungsmodus läuft kein zyklisches power.update() — der Akkuwert
+        // stammt sonst noch aus setup(). Vor dem Zeichnen einmal frisch messen.
+        power.update();
+        shutdownScreen.draw(nullptr, power.batteryPercent());
         epaper.fullRefresh();
         epaper.hibernate();
         epaper.railOff();

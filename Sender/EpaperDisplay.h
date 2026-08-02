@@ -8,10 +8,11 @@
  *
  * Refresh-Strategie (R-2):
  * - refreshScreen() für Screen-/Zustandswechsel: Partial-Waveform über das
- *   volle Fenster (~0,5 s, blitzt NICHT); alle PARTIAL_REFRESH_LIMIT Refreshes
- *   automatisch einmal voll, um angesammeltes Ghosting zu löschen
+ *   volle Fenster (~0,5 s, blitzt NICHT und zwar ausnahmslos)
  * - Partial-Refresh (~300-400 ms) für 1-Hz-Countdown und Statuszeile
- * - fullRefresh() (~2,6 s, blitzt) nur noch erzwungen: Splash, Abschalt-Screen
+ * - fullRefresh() (~2,6 s, blitzt) nur an definierten Stellen: Splash,
+ *   Abschalt-Screen, Wartungsmodus — und zeitgesteuert zur Entschattung,
+ *   30 s nach dem Eintritt in "Pfeile holen" (Timing::GHOST_CLEAR_DELAY_MS)
  * - LOAD-Rail (GPIO7) MUSS vor init() an sein (FR-018); vor Power-Off
  *   hibernate() und Rail aus (sonst Geisterbilder)
  */
@@ -92,6 +93,15 @@ public:
     void setBusyCallback(void (*cb)(const void*), const void* param = nullptr) {
         display.epd2.setBusyCallback(cb, param);
     }
+
+    /**
+     * @brief Hat sich seit dem letzten Voll-Refresh Ghosting angesammelt?
+     *
+     * Entscheidungsgrundlage für die zeitgesteuerte Entschattung in
+     * "Pfeile holen": Ohne angesammelte Partials gibt es nichts zu löschen und
+     * das Blitzen wäre reine Belästigung.
+     */
+    bool hasGhosting() const { return partialCount > 0; }
 
     /**
      * @brief Panel in Tiefschlaf versetzen (vor Power-Off, gegen Geisterbilder)

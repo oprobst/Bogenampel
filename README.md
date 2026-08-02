@@ -182,9 +182,15 @@ DHCP-Reservierung ist empfehlenswert, mDNS-Namen lösen über Subnetzgrenzen nic
 zuverlässig auf).
 
 ```bash
-pio run -t upload -e sender-ota
+pio run -t upload -e sender-ota            # Sender, Debug-Build (serieller Monitor bleibt)
+pio run -t upload -e sender-release-ota    # Sender, Feld-Build (ohne Debug-Ausgaben/CDC)
 pio run -t upload -e empfaenger-ota
 ```
+
+`sender-release-ota` ist der Auslieferungsweg: gleicher Wartungsmodus, aber das
+Image aus `sender-release`. Danach meldet sich kein serieller Port mehr — der
+Rückweg auf den Debug-Build geht weiterhin per OTA über `sender-ota`, solange der
+Wartungsmodus erreichbar bleibt.
 
 Voraussetzung ist eine `wifi_credentials.h` im Repo-Root — Vorlage:
 [`wifi_credentials.h.example`](wifi_credentials.h.example). Die Datei ist bewusst nicht

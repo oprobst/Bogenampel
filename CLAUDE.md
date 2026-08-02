@@ -96,6 +96,7 @@ pio run -e sender          # bauen (oder -e empfaenger)
 pio run -t upload -e sender # flashen (Sender: BTN1 dabei halten!)
 pio device monitor -e sender # 115200 Baud
 pio run -e sender-release  # Feld-Build ohne Debug-Ausgaben/CDC
+pio run -t upload -e sender-release-ota  # Feld-Build per OTA (Auslieferungsweg)
 ```
 **Sender-USB-Flash**: `upload_speed` MUSS 115200 bleiben (natives USB-Serial/JTAG — ein
 Baudratenwechsel re-enumeriert den Port und killt den Upload). `pio run -t upload` startet

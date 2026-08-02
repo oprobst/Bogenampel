@@ -117,10 +117,9 @@ namespace Display {
     constexpr uint16_t COUNTDOWN_W = 120;
     constexpr uint16_t COUNTDOWN_H = 64;
 
-    // Ghosting-Budget: So viele Partial-Refreshes (Fenster + Screenwechsel)
-    // dürfen aufeinander folgen, bevor der nächste Screenwechsel einmal voll
-    // durchblitzt und die Restschatten löscht (R-2).
-    constexpr uint8_t PARTIAL_REFRESH_LIMIT = 20;
+    // Entschattung: Kein automatisches Durchblitzen mehr beim Zustandswechsel.
+    // Der Voll-Refresh liegt jetzt auf einem definierten, harmlosen Zeitpunkt —
+    // siehe Timing::GHOST_CLEAR_DELAY_MS.
 
 } // namespace Display
 
@@ -285,6 +284,20 @@ namespace Timing {
     // zuerst hier drehen, nicht an der Klickzahl.
     constexpr uint8_t MULTI_CLICK_COUNT = 3;         // 3 Klicks lösen den Alarm aus
     constexpr uint16_t MULTI_CLICK_GAP_MS = 400;     // max. Abstand zwischen zwei Klicks
+
+    // Entschattung des e-Papers: So lange nach dem Eintritt in "Pfeile holen"
+    // wird einmal voll durchgeblitzt und das angesammelte Ghosting gelöscht.
+    //
+    // Der Zeitpunkt ist bewusst gewählt: Bis dahin hat der Bediener das Gerät
+    // aus der Hand gelegt und die Schützen sind an den Scheiben — das Blitzen
+    // stört dort niemanden. Vorher lief der Voll-Refresh an einem
+    // Ghosting-Budget (20 Partials), das der 1-Hz-Countdown schon nach 20 s
+    // aufbrauchte; dadurch blitzte faktisch JEDER Zustandswechsel.
+    #if DEBUG_SHORT_TIMES
+        constexpr uint32_t GHOST_CLEAR_DELAY_MS = 5000;    // 5 Sekunden (DEBUG)
+    #else
+        constexpr uint32_t GHOST_CLEAR_DELAY_MS = 30000;   // 30 Sekunden
+    #endif
 
     // Alarm-App-Retries (V2-Werte; jede Wiederholung = neuer Frame mit neuer seq)
     constexpr uint16_t ALARM_RETRY_DELAY_MS = 200;   // 200ms zwischen Alarm-Retries

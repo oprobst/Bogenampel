@@ -42,9 +42,14 @@ void EpaperDisplay::clearBuffer() {
 }
 
 void EpaperDisplay::refreshScreen() {
-    // Ghosting-Budget aufgebraucht (oder Panel frisch initialisiert)?
-    // Dann jetzt einmal voll durchblitzen statt beim nächsten Mal.
-    if (forceFullNext || partialCount >= Display::PARTIAL_REFRESH_LIMIT) {
+    // Nur wenn das Panel zwingend ein Vollbild braucht (frisch initialisiert
+    // oder aus dem Tiefschlaf) — sonst blitzt ein Zustandswechsel NIE.
+    //
+    // Früher stand hier zusätzlich ein Ghosting-Budget (20 Partials). Das war
+    // in der Praxis unbrauchbar: Der 1-Hz-Countdown brauchte es binnen 20 s
+    // auf, also blitzte jeder Wechsel nach einer Passe. Die Entschattung
+    // passiert jetzt zeitgesteuert in "Pfeile holen" (GHOST_CLEAR_DELAY_MS).
+    if (forceFullNext) {
         fullRefresh();
         return;
     }
@@ -53,7 +58,9 @@ void EpaperDisplay::refreshScreen() {
     // Pixel um, ohne den schwarz/weiß-Invertierungszyklus des Voll-Refresh.
     display.setFullWindow();
     display.display(true);
-    partialCount++;
+    if (partialCount < 255) {
+        partialCount++;
+    }
 }
 
 void EpaperDisplay::fullRefresh() {
@@ -66,10 +73,10 @@ void EpaperDisplay::fullRefresh() {
 void EpaperDisplay::partialUpdate(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
     display.displayWindow(x, y, w, h);  // Partial-Refresh aus dem Puffer
 
-    // Zählt aufs Ghosting-Budget: der 1-Hz-Countdown und die Statuszeile
-    // hinterlassen genauso Restschatten wie ein Screenwechsel. Ausgewertet
-    // wird der Zähler nur in refreshScreen() — ein Voll-Refresh darf niemals
-    // mitten in einen laufenden Countdown platzen.
+    // Restschatten-Buchhaltung: Der Zähler sagt nur noch, OB sich seit dem
+    // letzten Voll-Refresh Ghosting angesammelt hat (hasGhosting()). Er löst
+    // selbst nichts mehr aus — ein Voll-Refresh darf niemals mitten in einen
+    // laufenden Countdown platzen.
     if (partialCount < 255) {
         partialCount++;
     }
