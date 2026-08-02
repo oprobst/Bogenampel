@@ -68,7 +68,12 @@ Power-Zustand des Senders und die Empfänger-Lokalregler. Quellen: `Sender/Confi
 `AB/POS_1 → CD/POS_2 → CD/POS_1 → AB/POS_2 → AB/POS_1 …`
 Bei 1-2 Schützen: keine Gruppen (CMD_GROUP_NONE).
 
-**Taster-Gesten (V3-Mapping)**:
+**Taster-Gesten (V3-Mapping)** — ⚠️ **überholt seit 2026-08-02**: Diese Tabelle
+gibt den Stand vor Feature 006 wieder. Autoritativ ist jetzt
+`specs/006-shutdown-alarm-gesten/data-model.md` §3. Geändert haben sich beide
+Gesten-Zeilen: „BTN1 ≥ 2 s = Alarm" ist ersatzlos entfallen (Alarm = 3× Klick,
+beide Taster, nur in PFEILE_HOLEN und SCHIESS_BETRIEB), und Power-Off durch
+Halten gilt jetzt auch im SCHIESS_BETRIEB.
 
 | Geste | SPLASH | CONFIG_MENU | PFEILE_HOLEN | SCHIESS_BETRIEB | ALARM |
 |-------|--------|-------------|--------------|-----------------|-------|

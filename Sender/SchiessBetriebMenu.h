@@ -7,7 +7,8 @@
  * - Vorbereitungsphase (10 s, Countdown in Sekunden)
  * - Schießphase (120/240 s, Countdown mm:ss)
  * - Gruppenanzeige bei 3-4 Schützen
- * - OK kurz = "Passe beenden", OK ≥ 2 s = Alarm (StateMachine)
+ * - OK kurz = "Passe beenden"; 3x Klick = Alarm und Halten = Aus wertet die
+ *   StateMachine aus (Feature 006)
  */
 
 #pragma once

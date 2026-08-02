@@ -75,6 +75,25 @@ public:
     void clearBuffer();
 
     /**
+     * @brief Callback registrieren, den GxEPD2 während des BUSY-Wartens aufruft
+     * @param cb Funktion, die während jedes Refreshs laufend aufgerufen wird
+     * @param param wird unverändert an cb durchgereicht (darf nullptr sein)
+     *
+     * Jeder Refresh blockiert die Hauptschleife 300 ms (Fenster) bis 2,6 s
+     * (voll). Im Schießbetrieb läuft der Countdown im Sekundentakt — ohne
+     * diesen Callback stünde die Tastenabfrage rund ein Drittel der Zeit still
+     * und der Dreifachklick der Alarm-Geste (max. 400 ms Klickabstand) ginge
+     * dort verloren. Der Sender hängt hier ButtonManager::update() ein
+     * (research.md R-1, contracts/button-gestures.md D-1..D-3).
+     *
+     * Der Callback darf NICHT zeichnen und keinen Refresh anstoßen (GxEPD2 ist
+     * an dieser Stelle nicht reentrant).
+     */
+    void setBusyCallback(void (*cb)(const void*), const void* param = nullptr) {
+        display.epd2.setBusyCallback(cb, param);
+    }
+
+    /**
      * @brief Panel in Tiefschlaf versetzen (vor Power-Off, gegen Geisterbilder)
      */
     void hibernate();

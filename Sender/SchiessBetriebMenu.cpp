@@ -27,7 +27,8 @@ void SchiessBetriebMenu::begin() {
 }
 
 void SchiessBetriebMenu::update() {
-    // OK kurz = "Passe beenden" (OK ≥ 2s = Alarm, wertet die StateMachine aus)
+    // OK kurz = "Passe beenden". Der erste Klick einer Alarm-Folge landet hier
+    // ebenfalls — der Alarm überschreibt den Zustand danach (FR-013).
     if (buttons.wasClicked(Button::OK)) {
         endRequested = true;
     }

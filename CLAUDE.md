@@ -13,7 +13,8 @@ Bogenampel ist eine funkgesteuerte Timer-Anzeige für Bogenschießplätze.
 - **Features**: Timer-Steuerung, Gruppen-Anzeige, Alarm-System, NVS-Konfiguration, autonomes Passenende (FR-004),
   OTA-Wartungsmodus (beide Taster beim Einschalten; im Normalbetrieb läuft kein WiFi)
 - **Stromsparen am Sender** (2026-08-02, gemessen 0,39 W → 0,20 W): CPU 80 MHz,
-  ESP-NOW-Empfangsfenster duty-cycled, Auto-Abschaltung nach 20 min Inaktivität.
+  ESP-NOW-Empfangsfenster duty-cycled, Auto-Abschaltung nach Inaktivität
+  (seit 006: 60 min statt 20).
   **Nicht am 1-Hz-Countdown-Refresh drehen** — das e-Paper macht unter 2 % aus.
 
 **Legacy V2 (vollständig entfernt am 2026-08-01):**
@@ -31,6 +32,9 @@ Bogenampel ist eine funkgesteuerte Timer-Anzeige für Bogenschießplätze.
 - ESP32 NVS via `Preferences` (replaces AVR EEPROM), namespace `bogenampel` (004-v3-esp32-port)
 - C++17, Arduino core for ESP32 (arduino-esp32 3.3.7) + WiFi, ArduinoOTA, ESPmDNS (Arduino-ESP32 built-ins), FastLED (already used); ESP-NOW via `esp_now`/`esp_wifi` (normal path only) (005-ota-maintenance-mode)
 - N/A — no new persistence. WiFi credentials remain compile-time (`wifi_credentials.h`, gitignored); no NVS changes. (005-ota-maintenance-mode)
+- C++17, arduino-esp32 3.3.7 + GxEPD2-Busy-Callback (`setBusyCallback()` — hält die
+  Tastenabfrage während des 300-400 ms blockierenden e-Paper-Refreshs am Laufen);
+  keine neue Persistenz, kein Protokoll-Eingriff (006-shutdown-alarm-gesten)
 
 - **C++** (V3: arduino-esp32/PlatformIO; V2-Legacy: Arduino Nano, C++11)
 - **Libraries**:
@@ -160,6 +164,21 @@ Verbindlich: `specs/004-v3-esp32-port/contracts/hardware-pins.md` (aus KiCad-Net
 - Empfänger: NRF24 CE=D9/CSN=D8; LED-Strip D3; Buzzer D4; Debug D7/D2; Status-LEDs A2-A4
 
 ## Recent Changes
+- 006-shutdown-alarm-gesten (2026-08-02, **Code fertig, HIL-Abnahme offen**):
+  Ausschalten und Alarm entkoppelt — Halten ≥ 3 s (beliebige Taste) = Aus in *allen*
+  Zuständen (zentral in `StateMachine::update()`), **OK** 3× ≤ 400 ms = Alarm
+  (nur Schießbetrieb + Pfeile holen; CONFIG löst bewusst KEINEN Alarm aus),
+  Idle-Abschaltung 20 → 60 min. Die alte 2-s-Alarm-Geste ist entfallen.
+  **Merkposten**: Die Folge schließt auf der *Loslass*-Flanke ab — auf der
+  Drückflanke stünde der Alarm fest, bevor sich zeigt, ob der dritte Druck ein Klick
+  oder der Beginn eines Haltens ist. Ebenso muss `discardPendingClicks()` beim
+  Auslösen und am Ende von `enterAlarm()` laufen — sonst quittiert ein während
+  des Bildaufbaus liegengebliebener Klick den Alarm sofort wieder (im Feldtest
+  beobachtet: Alarmbildschirm blitzt auf, Gerät fällt nach „Pfeile holen"
+  zurück). Und `ButtonManager::update()` hängt jetzt
+  zusätzlich im GxEPD2-Busy-Callback (`Sender.cpp`), weil die Tastenabfrage sonst
+  bei jedem Refresh 300-400 ms steht und schnelle Klicks verschluckt.
+  Abnahme: `specs/006-shutdown-alarm-gesten/quickstart.md` (T-01 … T-64).
 - 2026-08-02: **Stromverbrauch Sender halbiert** (0,39 W → 0,20 W, gemessen):
   `setCpuFrequencyMhz(80)` im Normalbetrieb (OTA-Modus bleibt bei 240),
   ESP-NOW Connectionless Power Save (`esp_now_set_wake_window()` — nach der Discovery
