@@ -75,10 +75,17 @@ void SchiessBetriebMenu::draw() {
     const char* phaseText = inPreparationPhase ? "Vorbereitung" : "Alles ins Gold";
     epd.printCentered(phaseText, 54, 2);
 
-    // Aktuelle Gruppe (nur bei 3-4 Schützen): invertierter Balken
+    // Aktuelle Gruppe (nur bei 4 Schützen): invertierter Balken.
+    //
+    // Vertikal eingeklemmt zwischen Countdown-Fenster (endet bei 140) und
+    // Hilfetext (beginnt bei HEIGHT-24 = 176). Der Balken ist 32 px hoch und
+    // saß bei 144..176 — also direkt auf der Hilfezeile. Bei 140..172 bleibt
+    // unten 4 px Luft, oben schließt er bündig ans Countdown-Fenster an.
     if (shooterCount == 4) {
         const char* groupText = (currentGroup == Groups::Type::GROUP_AB) ? "A/B" : "C/D";
-        const int16_t gy = 148;
+        const int16_t gy = 144;
+        static_assert(Display::COUNTDOWN_Y + Display::COUNTDOWN_H <= 140,
+                      "Group badge would overlap the countdown window");
         g.fillRect(60, gy - 4, 80, 32, GxEPD_BLACK);
         g.setTextColor(GxEPD_WHITE);
         epd.printCentered(groupText, gy, 3);
