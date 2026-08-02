@@ -18,6 +18,9 @@
 # Footprint-/Symbol-Cache — wird lokal neu erzeugt, mehrere MB gross
 **/fp-info-cache
 
+# Marker von KiCad-Plugins (leere Datei, reiner Sitzungszustand)
+**/.kicad-push
+
 # Alt-, Autosave- und Rettungsstaende, die KiCad selbst anlegt
 *-bak
 *.bak
