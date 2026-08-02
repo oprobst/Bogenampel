@@ -211,6 +211,7 @@
       ],
       "track_widths": [
         0.0,
+        0.3,
         0.635
       ],
       "tuning_pattern_settings": {
@@ -521,7 +522,7 @@
         "pcb_color": "rgba(0, 0, 0, 0.000)",
         "priority": 2147483647,
         "schematic_color": "rgba(0, 0, 0, 0.000)",
-        "track_width": 0.2,
+        "track_width": 0.3,
         "tuning_profile": "",
         "via_diameter": 0.6,
         "via_drill": 0.3,
@@ -699,7 +700,7 @@
         "uuid": "2f5e2bd3-24fa-4ddb-a911-7a84d4c0ceae"
       }
     ],
-    "used_designators": "",
+    "used_designators": "#PWR52-53,C11",
     "variants": []
   },
   "sheets": [
