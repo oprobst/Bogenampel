@@ -5,7 +5,7 @@
  * PORT aus V2 (Sender/SchiessBetriebMenu.h), erweitert um den 1-Hz-Countdown
  * im Partial-Fenster (SC-007 — kein Vollbild-Blitzen):
  * - Vorbereitungsphase (10 s, Countdown in Sekunden)
- * - Schießphase (120/240 s, Countdown mm:ss)
+ * - Schießphase (120/240 s, Countdown als Sekundensumme "240s")
  * - Gruppenanzeige bei 3-4 Schützen
  * - OK kurz = "Passe beenden"; 3x Klick = Alarm und Halten = Aus wertet die
  *   StateMachine aus (Feature 006)

@@ -134,7 +134,7 @@ void ConfigMenu::draw() {
     // Hilfetext unten
     g.setTextSize(1);
     g.setCursor(10, EpaperDisplay::HEIGHT - 24);
-    g.print("Pfeil: aendern   OK: weiter");
+    g.print("Stift: aendern   OK: weiter");
     g.setCursor(10, EpaperDisplay::HEIGHT - 12);
     g.print("Taste 3s halten: Aus");
 

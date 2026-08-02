@@ -111,7 +111,7 @@ namespace Display {
     constexpr uint16_t STATUS_W = 200;
     constexpr uint16_t STATUS_H = 24;
 
-    // Countdown-Fenster (zentriert): mm:ss bzw. Sekunden, 1 Hz partial
+    // Countdown-Fenster (zentriert): Sekundensumme "240s", 1 Hz partial
     constexpr uint16_t COUNTDOWN_X = 40;
     constexpr uint16_t COUNTDOWN_Y = 76;
     constexpr uint16_t COUNTDOWN_W = 120;

@@ -186,6 +186,14 @@ static void setupNormal() {
     if (!radio.begin()) {
         DEBUG_PRINTLN("FEHLER: ESP-NOW init fehlgeschlagen!");
         // Weiterbooten — die StateMachine zeigt "keine Verbindung" (US5)
+    } else {
+        // Ersten HELLO-Broadcast SOFORT absetzen, noch vor dem Splash.
+        // begin() sendet selbst nichts, und der Splash-Voll-Refresh blockiert
+        // gut zweieinhalb Sekunden — ohne diesen Aufruf ginge die Discovery
+        // erst danach los, im ersten loop()-Durchlauf. Das HELLO_ACK kommt
+        // derweil im WiFi-Task an und wird als helloAckPending gemerkt, der
+        // Empfänger kann also schon gefunden sein, wenn der Splash steht.
+        radio.update();
     }
 
     // 1-Hz-Zeitbasis starten

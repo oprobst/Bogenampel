@@ -90,7 +90,7 @@ void SchiessBetriebMenu::draw() {
     g.setCursor(10, EpaperDisplay::HEIGHT - 24);
     g.print("OK: Passe beenden");
     g.setCursor(10, EpaperDisplay::HEIGHT - 12);
-    g.print("OK 2s halten: ALARM");
+    g.print("OK 3x klicken: ALARM");
 
     // Countdown-Fenster initial füllen (Refresh übernimmt die StateMachine)
     if (lastDrawnSec != 0xFFFFFFFF) {
@@ -108,16 +108,14 @@ void SchiessBetriebMenu::drawCountdownValue(uint32_t remainingSec) {
                Display::COUNTDOWN_W, Display::COUNTDOWN_H, GxEPD_WHITE);
     g.setTextColor(GxEPD_BLACK);
 
-    // Vorbereitung: Sekunden ("10"); Schießphase: mm:ss ("2:00")
+    // Restzeit als reine Sekundensumme ("240s"), nicht als mm:ss. Auf der
+    // Schießlinie wird in Sekunden gedacht und angesagt — eine Umrechnung im
+    // Kopf ("2:00" = wie viel noch?) kostet nur Zeit. Beide Phasen gleich
+    // formatiert; welche läuft, sagt der Phasentext darüber.
     char buf[8];
-    if (inPreparationPhase) {
-        snprintf(buf, sizeof(buf), "%lu", (unsigned long)remainingSec);
-    } else {
-        snprintf(buf, sizeof(buf), "%lu:%02lu",
-                 (unsigned long)(remainingSec / 60), (unsigned long)(remainingSec % 60));
-    }
+    snprintf(buf, sizeof(buf), "%lus", (unsigned long)remainingSec);
 
-    // Größe 4 (Zeichen 24x32): "4:00" = 96 px — passt ins 120-px-Fenster
+    // Größe 4 (Zeichen 24x32): "240s" = 96 px — passt ins 120-px-Fenster
     int16_t x1, y1;
     uint16_t w, h;
     g.setTextSize(4);

@@ -5,6 +5,38 @@
 
 #include "PfeileHolenMenu.h"
 
+namespace {
+    // Vertikales Layout. Die Überschrift behält Textgröße 2 und rückt statt
+    // dessen dicht unter die Statuszeile (deren Trennlinie liegt auf y=23) —
+    // der gewonnene Platz geht an die Buttons, damit unten die Abfolge-Anzeige
+    // UND die Hilfezeile Platz haben. Vorher überlagerten sich Gruppen-Info
+    // (184-191) und Hilfetext (188-195), der untere Text war unlesbar.
+    constexpr int16_t HEADING_Y = 30;   // Textgröße 2 → belegt 30..45
+    constexpr int16_t HLINE_Y = 50;
+
+    constexpr int16_t BUTTON_FIRST_Y = 56;
+    constexpr int16_t BUTTON_STEP = 33;   // 1 px enger als zuvor (34)
+    constexpr int16_t BUTTON_H = 28;
+    constexpr int16_t BUTTON_MARGIN = 14;
+
+    constexpr int16_t SEQUENCE_Y = 160;
+
+    // Abfolge-Anzeige bei Textgröße 2: 6x8-Font, also 12 px je Zeichen.
+    // Ohne die Schrägstriche in den Gruppennamen ("AB" statt "A/B") wird die
+    // Zeile so schmal, dass zwischen den beiden Passen wieder ein Balken Platz
+    // hat: "AB CD | CD AB" = 13 Zeichen = 156 px.
+    constexpr int16_t SEQ_CHAR_W = 12;
+    constexpr int16_t SEQ_TOKEN_W = 2 * SEQ_CHAR_W;   // "AB"
+    constexpr int16_t SEQ_SPACE_W = SEQ_CHAR_W;       // Halbpassen einer Passe
+    constexpr int16_t SEQ_PIPE_W = 3 * SEQ_CHAR_W;    // " | " zwischen den Passen
+    constexpr int16_t SEQ_TOTAL_W = 4 * SEQ_TOKEN_W + 2 * SEQ_SPACE_W + SEQ_PIPE_W;
+
+    static_assert(SEQ_TOTAL_W <= EpaperDisplay::WIDTH,
+                  "Sequence line does not fit the panel width");
+    static_assert(BUTTON_FIRST_Y + 2 * BUTTON_STEP + BUTTON_H < SEQUENCE_Y,
+                  "Third option button would overlap the sequence line");
+}
+
 PfeileHolenMenu::PfeileHolenMenu(EpaperDisplay& epdRef, ButtonManager& btnMgr)
     : epd(epdRef)
     , buttons(btnMgr)
@@ -73,18 +105,16 @@ void PfeileHolenMenu::draw() {
     g.setTextColor(GxEPD_BLACK);
 
     // Überschrift
-    epd.printCentered("Pfeile holen", 30, 2);
-    g.drawFastHLine(10, 50, EpaperDisplay::WIDTH - 20, GxEPD_BLACK);
+    epd.printCentered("Pfeile holen", HEADING_Y, 2);
+    g.drawFastHLine(10, HLINE_Y, EpaperDisplay::WIDTH - 20, GxEPD_BLACK);
 
     // Options-Buttons
-    const int16_t firstY = 58;
-    const int16_t step = 34;
-    drawOptionButton("Naechste Passe", firstY, cursorPosition == 0);
+    drawOptionButton("Naechste Passe", BUTTON_FIRST_Y, cursorPosition == 0);
     if (shooterCount == 4) {
-        drawOptionButton("Abfolge", firstY + step, cursorPosition == 1);
-        drawOptionButton("Neustart", firstY + 2 * step, cursorPosition == 2);
+        drawOptionButton("Abfolge", BUTTON_FIRST_Y + BUTTON_STEP, cursorPosition == 1);
+        drawOptionButton("Neustart", BUTTON_FIRST_Y + 2 * BUTTON_STEP, cursorPosition == 2);
     } else {
-        drawOptionButton("Neustart", firstY + step, cursorPosition == 1);
+        drawOptionButton("Neustart", BUTTON_FIRST_Y + BUTTON_STEP, cursorPosition == 1);
     }
 
     // Gruppen-Info (nur 3-4 Schützen)
@@ -93,23 +123,21 @@ void PfeileHolenMenu::draw() {
     // Hilfetext unten
     g.setTextSize(1);
     g.setCursor(10, EpaperDisplay::HEIGHT - 12);
-    g.print("Pfeil: waehlen   OK: ausfuehren");
+    g.print("Stift: waehlen   OK: ausfuehren");
 
     needsUpdate = false;
 }
 
 void PfeileHolenMenu::drawOptionButton(const char* label, int16_t y, bool selected) {
     Adafruit_GFX& g = epd.gfx();
-    const int16_t margin = 14;
-    const int16_t btnW = EpaperDisplay::WIDTH - 2 * margin;
-    const int16_t btnH = 28;
+    const int16_t btnW = EpaperDisplay::WIDTH - 2 * BUTTON_MARGIN;
 
     if (selected) {
         // Ausgewählt: invertiert (schwarzer Button, weiße Schrift)
-        g.fillRect(margin, y, btnW, btnH, GxEPD_BLACK);
+        g.fillRect(BUTTON_MARGIN, y, btnW, BUTTON_H, GxEPD_BLACK);
         g.setTextColor(GxEPD_WHITE);
     } else {
-        g.drawRect(margin, y, btnW, btnH, GxEPD_BLACK);
+        g.drawRect(BUTTON_MARGIN, y, btnW, BUTTON_H, GxEPD_BLACK);
         g.setTextColor(GxEPD_BLACK);
     }
     epd.printCentered(label, y + 7, 2);
@@ -117,29 +145,54 @@ void PfeileHolenMenu::drawOptionButton(const char* label, int16_t y, bool select
 }
 
 void PfeileHolenMenu::drawShooterGroupInfo() {
-    // Nur bei 3-4 Schützen anzeigen
+    // Nur bei 4 Schützen gibt es Gruppen
     if (shooterCount != 4) return;
 
     Adafruit_GFX& g = epd.gfx();
-    const int16_t infoY = 164;
 
-    // "Naechste: A/B" — die Gruppe, die als nächstes schießt
+    // Die vier Halbpassen in genau der Reihenfolge, die advanceToNextGroup()
+    // durchläuft: AB(1.) -> CD(2.) -> CD(1.) -> AB(2.). Dargestellt als
+    //   AB CD | CD AB
+    // Die beiden Halbpassen einer Passe stehen nebeneinander, der Balken trennt
+    // die Passen. Schwarz hinterlegt ist die Gruppe, die als nächstes schießt —
+    // der Bediener sieht damit auf einen Blick, wo im Durchgang er steht, statt
+    // es aus "ganze/halbe Passe" zu erschließen.
+    static const char* const SLOT[4] = { "AB", "CD", "CD", "AB" };
+    static const char* const SEP[3] = { nullptr, "|", nullptr };  // nullptr = nur Lücke
+    static const int16_t SEP_W[3] = { SEQ_SPACE_W, SEQ_PIPE_W, SEQ_SPACE_W };
+
+    uint8_t activeSlot;
+    if (currentGroup == Groups::Type::GROUP_AB) {
+        activeSlot = (currentPosition == Groups::Position::POS_1) ? 0 : 3;
+    } else {
+        activeSlot = (currentPosition == Groups::Position::POS_2) ? 1 : 2;
+    }
+
+    int16_t x = (EpaperDisplay::WIDTH - SEQ_TOTAL_W) / 2;
     g.setTextSize(2);
-    g.setCursor(14, infoY);
-    g.print("Naechste: ");
-    const char* groupText = (currentGroup == Groups::Type::GROUP_AB) ? "A/B" : "C/D";
-    // Gruppe invertiert hervorheben
-    int16_t gx = g.getCursorX();
-    g.fillRect(gx - 2, infoY - 2, 40, 18, GxEPD_BLACK);
-    g.setTextColor(GxEPD_WHITE);
-    g.setCursor(gx, infoY);
-    g.print(groupText);
-    g.setTextColor(GxEPD_BLACK);
 
-    // Positions-Hinweis (1. = ganze Passe, 2. = halbe Passe)
-    g.setTextSize(1);
-    g.setCursor(14, infoY + 20);
-    g.print(currentPosition == Groups::Position::POS_1
-            ? "ganze Passe (beide Gruppen)"
-            : "halbe Passe (nur diese Gruppe)");
+    for (uint8_t i = 0; i < 4; i++) {
+        if (i == activeSlot) {
+            g.fillRect(x - 1, SEQUENCE_Y - 2, SEQ_TOKEN_W + 2, 20, GxEPD_BLACK);
+            g.setTextColor(GxEPD_WHITE);
+        } else {
+            g.setTextColor(GxEPD_BLACK);
+        }
+        g.setCursor(x, SEQUENCE_Y);
+        g.print(SLOT[i]);
+        x += SEQ_TOKEN_W;
+
+        if (i < 3) {
+            if (SEP[i] != nullptr) {
+                // Trennzeichen in seiner Spalte zentrieren, damit links und
+                // rechts davon gleich viel Luft steht
+                g.setTextColor(GxEPD_BLACK);
+                g.setCursor(x + (SEP_W[i] - SEQ_CHAR_W) / 2, SEQUENCE_Y);
+                g.print(SEP[i]);
+            }
+            x += SEP_W[i];
+        }
+    }
+
+    g.setTextColor(GxEPD_BLACK);
 }

@@ -23,8 +23,10 @@ void SplashScreen::draw() {
     // Versions-Text
     epd.printCentered(System::VERSION, 92, 1);
 
-    // Initialer Status
-    updateConnectionStatus("Suche Empfaenger...");
+    // Initialer Status — nur in den Puffer. Ein Partial-Refresh an dieser
+    // Stelle würde von GxEPD2 zu einem Voll-Refresh aufgewertet (Panel frisch
+    // initialisiert) und der Splash blitzte zweimal.
+    drawConnectionStatus("Suche Empfaenger...");
 
     // Funk-Info (unten, klein)
     g.setTextSize(1);
@@ -37,14 +39,17 @@ void SplashScreen::draw() {
     g.print("OK: ueberspringen");
 }
 
-void SplashScreen::updateConnectionStatus(const char* status) {
+void SplashScreen::drawConnectionStatus(const char* status) {
     Adafruit_GFX& g = epd.gfx();
 
     // Status-Bereich löschen und Text zentriert zeichnen
     g.fillRect(0, RESULT_Y, EpaperDisplay::WIDTH, RESULT_H, GxEPD_WHITE);
     g.setTextColor(GxEPD_BLACK);
     epd.printCentered(status, RESULT_Y + 8, 1);
+}
 
+void SplashScreen::updateConnectionStatus(const char* status) {
+    drawConnectionStatus(status);
     epd.partialUpdate(0, RESULT_Y, EpaperDisplay::WIDTH, RESULT_H);
 }
 
