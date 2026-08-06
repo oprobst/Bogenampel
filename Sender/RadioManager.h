@@ -47,12 +47,31 @@ public:
     /**
      * @brief Sendet ein Kommando an den Empfänger (V2-kompatible API)
      * @param cmd RadioCommand (11 Kommandos)
+     * @param allowRelink Darf dieser Aufruf bei anhaltendem Fehlschlag den Peer
+     *        verwerfen und die Discovery neu starten? Default true.
      * @return TX_SUCCESS (Link-ACK), TX_TIMEOUT (alle Retries NACK) oder TX_ERROR
      *
      * Transport-Retries (max. 3 Versuche, 50 ms Abstand) verwenden dieselbe
      * Sequenznummer — der Empfänger dedupliziert per seq (FR-008).
+     *
+     * allowRelink=false braucht die Alarm-Sequenz: dort rufen mehrere
+     * App-Retries hintereinander sendCommand(), und jeder Fehlschlag zählt
+     * consecutiveFailures hoch. Löst mittendrin dropPeer() aus, steht
+     * peerDiscovered auf false und ALLE weiteren Versuche kehren sofort mit
+     * TX_TIMEOUT zurück, ohne noch einen einzigen Frame zu senden — der Alarm
+     * verlöre so den Großteil seiner Sendeversuche. Der Relink wird stattdessen
+     * nach der Sequenz nachgeholt (siehe relinkIfExhausted()).
      */
-    TransmissionResult sendCommand(RadioCommand cmd);
+    TransmissionResult sendCommand(RadioCommand cmd, bool allowRelink = true);
+
+    /**
+     * @brief Holt einen wegen allowRelink=false aufgeschobenen Relink nach
+     *
+     * Nach einer Sendesequenz mit unterdrücktem Relink aufzurufen: steht der
+     * Fehlerzähler auf oder über Radio::RELINK_AFTER_FAILURES, wird der Peer
+     * jetzt verworfen und die Discovery neu gestartet.
+     */
+    void relinkIfExhausted();
 
     /**
      * @brief Verbindungsqualitätstest für den Splash (FR-009)

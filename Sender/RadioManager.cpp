@@ -273,7 +273,13 @@ TransmissionResult RadioManager::transmitOnce(const RadioPacketV3& packet, const
     return sendAcked ? TX_SUCCESS : TX_TIMEOUT;
 }
 
-TransmissionResult RadioManager::sendCommand(RadioCommand cmd) {
+void RadioManager::relinkIfExhausted() {
+    if (consecutiveFailures >= Radio::RELINK_AFTER_FAILURES) {
+        dropPeer();
+    }
+}
+
+TransmissionResult RadioManager::sendCommand(RadioCommand cmd, bool allowRelink) {
     if (!initialized) return TX_ERROR;
     if (!peerDiscovered) return TX_TIMEOUT;
 
@@ -304,7 +310,10 @@ TransmissionResult RadioManager::sendCommand(RadioCommand cmd) {
         consecutiveFailures = 0;
     } else if (consecutiveFailures < 0xFF) {
         consecutiveFailures++;
-        if (consecutiveFailures >= Radio::RELINK_AFTER_FAILURES) {
+        // Bei allowRelink=false bleibt der Peer stehen, damit die laufende
+        // Sequenz ihre restlichen Versuche noch wirklich senden kann. Der
+        // Aufrufer holt den Relink danach per relinkIfExhausted() nach.
+        if (allowRelink && consecutiveFailures >= Radio::RELINK_AFTER_FAILURES) {
             dropPeer();
         }
     }

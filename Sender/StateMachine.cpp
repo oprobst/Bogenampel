@@ -23,6 +23,7 @@ StateMachine::StateMachine(EpaperDisplay& epdRef, ButtonManager& btnMgr, RadioMa
     , schiessBetriebMenu(epdRef, btnMgr)
     , alarmScreen(epdRef)
     , shutdownScreen(epdRef)
+    , noticeScreen(epdRef)
     , currentState(State::STATE_SPLASH)
     , stateStartTime(0)
     , shootingTime(TournamentDefaults::DEFAULT_TIME)
@@ -477,7 +478,7 @@ void StateMachine::handleSchiessBetrieb() {
         if (inPreparationPhase) {
             // Während Vorbereitungsphase: Abbruch
             advanceToNextGroup();
-            radio.sendCommand(CMD_STOP);
+            sendManualStop();
             setState(State::STATE_PFEILE_HOLEN);
         } else {
             // Während Schießphase: Manueller Abbruch → CMD_STOP senden
@@ -498,7 +499,7 @@ void StateMachine::handleShootingPhaseEnd(bool manualStop) {
     if (shooterCount <= 2) {
         // 1-2 Schützen: Nur eine Gruppe
         if (manualStop) {
-            radio.sendCommand(CMD_STOP);
+            sendManualStop();
         }
 
         // Wechsle zur nächsten Gruppe (für nächste Passe)
@@ -536,7 +537,7 @@ void StateMachine::handleShootingPhaseEnd(bool manualStop) {
         } else {
             // Zweite Gruppe fertig (POS_2) → Ende der Passe
             if (manualStop) {
-                radio.sendCommand(CMD_STOP);
+                sendManualStop();
             }
 
             advanceToNextGroup();
@@ -561,14 +562,52 @@ TransmissionResult StateMachine::sendAlarmWithRetry() {
             delay(Timing::ALARM_RETRY_DELAY_MS);
         }
 
-        result = radio.sendCommand(CMD_ALARM);
+        // allowRelink=false: Sonst könnte der dritte fehlgeschlagene Link-Retry
+        // mitten in dieser Schleife dropPeer() auslösen — danach kehrt
+        // sendCommand() sofort mit TX_TIMEOUT zurück, ohne noch einen Frame zu
+        // senden, und der Alarm verlöre 2 seiner 3 App-Versuche (also 6 der 9
+        // Funkversuche). Genau der Fall tritt ein, wenn der Fehlerzähler durch
+        // vorherige Kommandos schon bei 2 stand.
+        result = radio.sendCommand(CMD_ALARM, false);
 
         if (result == TX_SUCCESS) {
             return TX_SUCCESS;
         }
     }
 
+    // Alle Versuche erfolglos → jetzt darf der Peer fallen und die Discovery
+    // neu anlaufen (aufgeschoben, nicht aufgehoben).
+    radio.relinkIfExhausted();
+
     return result;
+}
+
+void StateMachine::sendManualStop() {
+    if (radio.sendCommand(CMD_STOP) != TX_SUCCESS) {
+        DEBUG_PRINTLN("STOP nicht bestaetigt — Warnhinweis");
+        showStopFailedNotice();
+    }
+}
+
+void StateMachine::showStopFailedNotice() {
+    noticeScreen.drawStopFailed();
+    epd.refreshScreen();
+
+    // Der Bildaufbau blockiert ~500 ms; was in dieser Zeit an Klicks anfiel,
+    // gehört noch zur Abbruch-Bedienung und darf die Meldung nicht sofort
+    // wegquittieren (gleiche Begründung wie in enterAlarm()).
+    buttons.discardPendingClicks();
+
+    const uint32_t until = millis() + Timing::NOTICE_TIMEOUT_MS;
+    while ((int32_t)(millis() - until) < 0) {
+        buttons.update();
+        if (buttons.wasClicked(Button::OK) || buttons.wasClicked(Button::CONFIG)) {
+            break;
+        }
+        delay(10);
+    }
+
+    buttons.discardPendingClicks();
 }
 
 void StateMachine::enterAlarm() {

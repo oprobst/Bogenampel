@@ -303,6 +303,11 @@ namespace Timing {
     constexpr uint16_t ALARM_RETRY_DELAY_MS = 200;   // 200ms zwischen Alarm-Retries
     constexpr uint8_t ALARM_MAX_RETRIES = 3;         // 3 Versuche für Alarm-Kommando
 
+    // Warnhinweis "Abbruch nicht bestätigt": steht bis zum Tastendruck, längstens
+    // so lange. Der Timeout ist nur die Notbremse, damit das Gerät nicht ewig
+    // in der Meldung hängt, wenn niemand mehr hinsieht.
+    constexpr uint32_t NOTICE_TIMEOUT_MS = 30000;
+
     // Automatische Abschaltung nach Inaktivität. Greift NUR in den Wartestates
     // (Config-Menü, Pfeile holen) — im Schießbetrieb läuft eine Passe, im Alarm
     // darf sich das Gerät nicht selbst stilllegen. Zurückgesetzt wird die Uhr

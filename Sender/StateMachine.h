@@ -32,6 +32,7 @@
 #include "SchiessBetriebMenu.h"
 #include "AlarmScreen.h"
 #include "ShutdownScreen.h"
+#include "NoticeScreen.h"
 
 /**
  * @brief System-Zustände (Tournament State Machine)
@@ -82,6 +83,7 @@ private:
     SchiessBetriebMenu schiessBetriebMenu;
     AlarmScreen alarmScreen;
     ShutdownScreen shutdownScreen;
+    NoticeScreen noticeScreen;
 
     State currentState;
     uint32_t stateStartTime;  // Zeitstempel beim Zustandswechsel
@@ -166,6 +168,28 @@ private:
      * @return TX_SUCCESS sobald ein Versuch bestätigt wurde
      */
     TransmissionResult sendAlarmWithRetry();
+
+    /**
+     * @brief Sendet CMD_STOP für einen MANUELLEN Abbruch und meldet Fehlschläge
+     *
+     * Nur für den vom Bediener ausgelösten Abbruch. Der reguläre Zeitablauf
+     * sendet weiterhin gar kein CMD_STOP (FR-004a-Guard) — der Empfänger
+     * beendet die Passe autonom.
+     *
+     * Bleibt die Bestätigung aus, blockiert showStopFailedNotice() bis zur
+     * Kenntnisnahme: Der Sender wechselt sonst wortlos nach "Pfeile holen",
+     * während die Ampel draußen weiterzählt.
+     */
+    void sendManualStop();
+
+    /**
+     * @brief Vollbild-Warnung "Abbruch nicht bestätigt", bis der Bediener quittiert
+     *
+     * Blockiert bis zu Timing::NOTICE_TIMEOUT_MS oder bis zu einem Tastendruck.
+     * Das ist unkritisch: In diesem Zustand läuft am Sender kein Countdown mehr,
+     * und der Empfänger arbeitet ohnehin autonom.
+     */
+    void showStopFailedNotice();
 
     /**
      * @brief Statuszeile neu zeichnen (Akku/USB/Lader/Funk) + Partial-Refresh

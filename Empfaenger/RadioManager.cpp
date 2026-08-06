@@ -124,8 +124,12 @@ void RadioManager::onRecvStatic(const uint8_t* mac, const uint8_t* data, int len
             instance->lastSeqValid = true;
             instance->frameCounter = instance->frameCounter + 1;
 
-            // Kommando in die Queue (voll → ältestes Kommando geht verloren;
-            // bei 8 Plätzen und manueller Bedienung praktisch unmöglich)
+            // Kommando in die Queue. Ist sie voll, wird das NEUE Kommando
+            // verworfen — der Sender sieht davon nichts, weil das 802.11-ACK
+            // schon im MAC erzeugt wurde, bevor dieser Callback lief. Bei 8
+            // Plätzen und einem Loop, der die Queue alle ~5 ms leert, ist das
+            // praktisch unerreichbar; bewusst kein Verdrängen des ältesten
+            // Eintrags, das würde nur Reihenfolge-Fragen aufwerfen.
             uint8_t nextHead = (instance->queueHead + 1) % QUEUE_SIZE;
             if (nextHead != instance->queueTail) {
                 instance->queue[instance->queueHead] = packet->command;

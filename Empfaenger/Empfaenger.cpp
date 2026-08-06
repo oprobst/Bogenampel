@@ -54,6 +54,9 @@ void updateStatusLed();
 void checkButton();
 void updatePreparation();
 void updateTimer();
+void showCurrentGroup(CRGB color);
+void showStoppedState();
+void serviceDelay(uint32_t ms);
 
 // Boot-Modus (FR-001): einmal beim Start entschieden, danach fix (FR-007).
 //   true  = OTA-Wartungsmodus (Taster D7 beim Boot gehalten): WiFi + ArduinoOTA,
@@ -78,8 +81,15 @@ uint32_t lastDebounceTime = 0;     // Zeitpunkt der letzten Button-Änderung
 // schneller Folge verschieben beim WS2811 sonst den ersten Pixel / mischen Farben.
 bool ledsDirty = false;
 
-// Timer-Variablen (esp_timer-basiert, Muster wie V2-Timer1-ISR)
-volatile bool secondTickOccurred = false;  // Flag: Sekunden-Tick (vom Timer-Callback)
+// Timer-Variablen (esp_timer-basiert, Muster wie V2-Timer1-ISR).
+// Zähler statt bool-Flag: Der esp_timer-Task hat höhere Priorität als der
+// Arduino-Loop und tickt zuverlässig weiter, auch wenn loopNormal() mal über
+// eine Sekunde blockiert. Ein bool könnte in dem Fall nur EINEN Tick halten —
+// der Countdown liefe gegenüber der echten Zeit nach. Writer (Timer-Task)
+// erhöht nur, Leser (Loop) führt seinen eigenen Stand mit: kein Read-Modify-
+// Write über Taskgrenzen, also auch kein Race.
+volatile uint32_t secondTickCount = 0;  // vom Timer-Callback erhöht
+uint32_t handledTickCount = 0;          // vom Loop nachgezogen
 esp_timer_handle_t secondTimer = nullptr;
 bool timerRunning = false;         // Läuft der Timer?
 uint32_t timerRemainingSeconds = 0;  // Verbleibende Sekunden
@@ -124,7 +134,7 @@ uint32_t ledBlinkUntil = 0;        // LED bleibt bis dahin aus (Empfangs-Blink)
  * @brief Periodischer 1-s-Callback — setzt nur das Flag (wie V2-Timer1-ISR)
  */
 void onSecondTick(void* /*arg*/) {
-    secondTickOccurred = true;
+    secondTickCount = secondTickCount + 1;
 }
 
 //=============================================================================
@@ -287,6 +297,15 @@ void setupNormal() {
     }
     esp_task_wdt_add(NULL);  // loopTask überwachen
 
+    // Sicherer Grundzustand: rot "000" statt dunkler Tafel. Relevant nach einem
+    // unerwarteten Neustart (Brown-out, Watchdog) mitten in einer Passe: der
+    // Sender merkt davon nichts (Peer bleibt registriert, ACKs kommen weiter)
+    // und schickt von sich aus nichts Neues — die Anzeige bliebe sonst dunkel,
+    // bis das nächste Kommando eintrifft. Dunkel ist mehrdeutig, Rot nicht.
+    showStoppedState();
+    showLedsSoftStart();
+    display.clearDirty();
+
     // Bereit: Status-LED an
     digitalWrite(Pins::STATUS_LED, STATUS_LED_ON);
 
@@ -445,9 +464,11 @@ void loopNormal() {
         handleCommand(cmd);
     }
 
-    // Prüfe ob eine Sekunde vergangen ist (Timer-Flag)
-    if (secondTickOccurred) {
-        secondTickOccurred = false;  // Flag zurücksetzen
+    // Aufgelaufene Sekunden abarbeiten (i. d. R. genau eine). Waren es mehr,
+    // weil der Loop kurz blockiert hat, werden sie nachgeholt statt verworfen —
+    // der Countdown bleibt an der echten Zeit.
+    while (handledTickCount != secondTickCount) {
+        handledTickCount++;
 
         // Prüfe Vorbereitungsphase
         updatePreparation();
@@ -498,6 +519,15 @@ void loopNormal() {
  * @brief Status-LED: dauerhaft an (bereit), blinkt kurz aus bei Frame-Empfang
  */
 void updateStatusLed() {
+    // Während des Alarms gehört die Status-LED dem Alarm-Blinktakt (updateAlarm
+    // schaltet sie synchron zum Strip). Sonst würde der Empfangs-Blink hier
+    // gegen das Alarmmuster arbeiten und die LED unregelmäßig flackern lassen.
+    if (alarmActive) {
+        lastFrameCount = radio.framesReceived();  // Nachlauf ohne Blink quittieren
+        ledBlinkUntil = 0;
+        return;
+    }
+
     uint32_t frames = radio.framesReceived();
     if (frames != lastFrameCount) {
         lastFrameCount = frames;
@@ -521,6 +551,11 @@ void updateStatusLed() {
  * erneuter Druck während des Laufs stoppt wie CMD_STOP.
  */
 void checkButton() {
+    // Während eines laufenden Alarms hat der Alarm Vorrang: ein Testlauf würde
+    // im Hintergrund starten, vom Blinken überblendet werden und die Anzeige
+    // gegen den internen Zustand laufen lassen.
+    if (alarmActive) return;
+
     // Aktuellen Button-Zustand lesen (LOW = gedrückt, wegen Pull-Up)
     uint8_t reading = digitalRead(Pins::BTN_DEBUG);
 
@@ -692,9 +727,14 @@ void updateAlarm() {
             // Alle 8 Blinks fertig?
             if (alarmBlinkCount >= 8) {
                 alarmActive = false;
-                // Nach dem Alarm: gestoppt (rot "000"), Status-LED wieder an
+                // Nach dem Alarm: gestoppt (rot "000"), Status-LED wieder an.
+                // WICHTIG: showStoppedState() statt nur displayTimer() — das
+                // FastLED.clear() im Blinktakt hat auch die Gruppenbalken
+                // gelöscht, und es läuft kein Timer mehr, der sie im nächsten
+                // Sekundentick nachzieht. Ohne das bliebe nach einem Not-Alarm
+                // unsichtbar, welche Gruppe an der Reihe war.
                 digitalWrite(Pins::STATUS_LED, STATUS_LED_ON);
-                display.displayTimer(0, CRGB::Red, true);
+                showStoppedState();
             }
         } else {
             // LED Strip einschalten (alle ROT: 7-Segment + Gruppen)
@@ -704,6 +744,58 @@ void updateAlarm() {
 
             alarmLedState = true;
         }
+    }
+}
+
+//=============================================================================
+// Anzeige-Bausteine (zentral — vorher 7× im File dupliziert)
+//=============================================================================
+
+/**
+ * @brief Setzt die Gruppenbalken passend zum aktuellen Zustand.
+ *
+ * Berücksichtigt groupsEnabled (1-2-Schützen-Modus = beide Balken aus) und
+ * currentGroup. setGroup() schaltet die jeweils andere Gruppe selbst ab.
+ *
+ * @param color Farbe der aktiven Gruppe (i. d. R. die Farbe der Ziffern)
+ */
+void showCurrentGroup(CRGB color) {
+    if (!groupsEnabled) {
+        // Keine Gruppe (1-2 Schützen Modus) - beide aus
+        display.setGroup(0, CRGB::Black);
+        display.setGroup(1, CRGB::Black);
+    } else if (currentGroup == Groups::Type::GROUP_AB) {
+        display.setGroup(0, color);
+    } else {
+        display.setGroup(1, color);
+    }
+}
+
+/**
+ * @brief Sicherer Ruhezustand der Anzeige: rot "000" + aktuelle Gruppe in Rot.
+ *
+ * Das ist die eindeutige Aussage "nicht schießen". Bewusst auch der Zustand
+ * nach dem Boot und nach einem Alarm: eine DUNKLE Tafel wäre mehrdeutig
+ * (Ampel aus? Strom weg?), Rot ist es nicht.
+ */
+void showStoppedState() {
+    display.displayTimer(0, CRGB::Red, true);
+    showCurrentGroup(CRGB::Red);
+}
+
+/**
+ * @brief Blockierende Wartezeit, die die zeitkritischen Dienste weiterlaufen lässt.
+ *
+ * Für die wenigen bewusst blockierenden Effekte (CMD_INIT-Blinken). Ohne das
+ * bliebe ein gerade klingender Buzzer-Ton für die volle Dauer stehen, weil
+ * BuzzerManager::update() seine Ton/Pause-Umschaltung nur im Loop macht.
+ */
+void serviceDelay(uint32_t ms) {
+    const uint32_t until = millis() + ms;
+    while ((int32_t)(millis() - until) < 0) {
+        buzzer.update();
+        esp_task_wdt_reset();
+        delay(2);
     }
 }
 
@@ -725,19 +817,8 @@ void updateTimer() {
         // Timer abgelaufen
         timerRunning = false;
 
-        // Zeige "000" in ROT auf 7-Segment-Anzeige
-        display.displayTimer(0, CRGB::Red, true);
-
-        // Behalte aktuelle Gruppe sichtbar in ROT (falls vorhanden)
-        if (!groupsEnabled) {
-            // Keine Gruppe (1-2 Schützen Modus) - beide aus
-            display.setGroup(0, CRGB::Black);
-            display.setGroup(1, CRGB::Black);
-        } else if (currentGroup == Groups::Type::GROUP_AB) {
-            display.setGroup(0, CRGB::Red);
-        } else {
-            display.setGroup(1, CRGB::Red);
-        }
+        // Zeige "000" in ROT, Gruppe bleibt in ROT sichtbar
+        showStoppedState();
 
         DEBUG_PRINTLN("Timer END");
 
@@ -765,14 +846,8 @@ void updateTimer() {
                 preparationRemainingSeconds = 10;
             #endif
 
-            // Gruppe aktualisieren (die andere Gruppe ausschalten)
-            if (currentGroup == Groups::Type::GROUP_AB) {
-                display.setGroup(0, CRGB::Red);
-                display.setGroup(1, CRGB::Black);
-            } else {
-                display.setGroup(0, CRGB::Black);
-                display.setGroup(1, CRGB::Red);
-            }
+            // Gruppe aktualisieren (die andere Gruppe schaltet setGroup selbst ab)
+            showCurrentGroup(CRGB::Red);
             display.displayTimer(preparationRemainingSeconds, CRGB::Red);
 
             // 2x Piepen (Vorbereitungsphase startet)
@@ -812,15 +887,7 @@ void updateTimer() {
         display.displayTimer(displaySec, displayColor);
 
         // Behalte aktuelle Gruppe sichtbar in gleicher Farbe wie die Ziffern
-        if (!groupsEnabled) {
-            // Keine Gruppe (1-2 Schützen Modus) - beide aus
-            display.setGroup(0, CRGB::Black);
-            display.setGroup(1, CRGB::Black);
-        } else if (currentGroup == Groups::Type::GROUP_AB) {
-            display.setGroup(0, displayColor);
-        } else {
-            display.setGroup(1, displayColor);
-        }
+        showCurrentGroup(displayColor);
     }
 
     // Dekrementiere verbleibende Zeit
@@ -851,14 +918,7 @@ void updatePreparation() {
         display.displayTimer(startTimeSec, CRGB::Green);
 
         // Behalte aktuelle Gruppe sichtbar in GRÜN (nur bei aktivierten Gruppen)
-        if (!groupsEnabled) {
-            display.setGroup(0, CRGB::Black);
-            display.setGroup(1, CRGB::Black);
-        } else if (currentGroup == Groups::Type::GROUP_AB) {
-            display.setGroup(0, CRGB::Green);
-        } else {
-            display.setGroup(1, CRGB::Green);
-        }
+        showCurrentGroup(CRGB::Green);
 
         // Akustisches Signal: 1x Piepen (Ampel wird grün)
         buzzer.beep(1);
@@ -867,14 +927,7 @@ void updatePreparation() {
         display.displayTimer(preparationRemainingSeconds, CRGB::Red);
 
         // Behalte aktuelle Gruppe sichtbar in ROT (nur bei aktivierten Gruppen)
-        if (!groupsEnabled) {
-            display.setGroup(0, CRGB::Black);
-            display.setGroup(1, CRGB::Black);
-        } else if (currentGroup == Groups::Type::GROUP_AB) {
-            display.setGroup(0, CRGB::Red);
-        } else {
-            display.setGroup(1, CRGB::Red);
-        }
+        showCurrentGroup(CRGB::Red);
     }
 
     // Dekrementiere verbleibende Zeit
@@ -973,22 +1026,32 @@ void handleCommand(RadioCommand cmd) {
         case CMD_INIT:
             DEBUG_PRINTLN("INIT");
 
-            // Alle Segmente 3x blau blinken lassen
+            // Alle Segmente 3x blau blinken lassen (Turnier-Start quittieren).
+            // Bewusst blockierend (~1,2 s), aber über serviceDelay(): sonst
+            // bliebe ein gerade klingender Buzzer-Ton stehen und der Task-WDT
+            // liefe ungefüttert. showLedsSoftStart() statt FastLED.show(),
+            // damit auch hier die Inrush-Rampe greift — 66 Pixel schlagartig
+            // auf Vollblau ist genau der Lastsprung, gegen den sie gebaut ist.
             for (int i = 0; i < 3; i++) {
                 fill_solid(leds, LEDStrip::TOTAL_LEDS, CRGB::Blue);
-                FastLED.show();
-                delay(200);
+                showLedsSoftStart();
+                serviceDelay(200);
 
                 FastLED.clear();
-                FastLED.show();
-                delay(200);
+                showLedsSoftStart();
+                serviceDelay(200);
             }
 
-            // Zeige "000" und Gruppe A/B
-            display.displayTimer(0, CRGB::Red, true);
-            display.setGroup(0, CRGB::Red);                // Gruppe A/B in rot
+            // Turnier-Start: Gruppen-Zustand vollständig zurücksetzen.
+            // groupsEnabled MUSS mit — nach einem vorherigen CMD_GROUP_NONE
+            // stünde es sonst auf false, die Gruppenanzeige unten wäre gesetzt
+            // und der erste Sekundentick würde sie sofort wieder löschen.
             currentGroup = Groups::Type::GROUP_AB;         // Setze aktuelle Gruppe auf A/B
             currentPosition = Groups::Position::POS_1;     // Position 1 (ganze Passe)
+            groupsEnabled = true;
+
+            // Zeige "000" und Gruppe A/B
+            showStoppedState();
             break;
 
         case CMD_START_120:
@@ -1052,22 +1115,17 @@ void handleCommand(RadioCommand cmd) {
             preparationRemainingSeconds = 0;
             preparationDurationMs = 0;
 
-            // Zeige "000" in ROT
-            display.displayTimer(0, CRGB::Red, true);
+            // Zeige "000" in ROT, Gruppe bleibt sichtbar
+            showStoppedState();
 
-            // Behalte aktuelle Gruppe sichtbar in ROT (falls vorhanden)
-            if (!groupsEnabled) {
-                display.setGroup(0, CRGB::Black);
-                display.setGroup(1, CRGB::Black);
-            } else if (currentGroup == Groups::Type::GROUP_AB) {
-                display.setGroup(0, CRGB::Red);
-            } else {
-                display.setGroup(1, CRGB::Red);
+            // Akustisches Signal: 3x Piepen (Schießphase beendet).
+            // Bei laufendem Alarm NICHT — beep() setzt die Sequenz bedingungslos
+            // neu, das würde die 8 Alarmtöne auf 3 kürzen, während die Optik
+            // weiter 8× blinkt. Der Sender schickt beim Quittieren des Alarms
+            // genau dieses CMD_STOP, der Fall tritt also regulär auf.
+            if (!alarmActive) {
+                buzzer.beep(3);
             }
-
-            // Akustisches Signal: 3x Piepen (Schießphase beendet)
-            // (Alarm wird NICHT vorzeitig beendet - läuft bis zum Ende)
-            buzzer.beep(3);
             break;
 
         case CMD_GROUP_AB:
