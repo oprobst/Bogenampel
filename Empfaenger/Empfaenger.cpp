@@ -903,6 +903,15 @@ void updateTimer() {
 void updatePreparation() {
     if (!inPreparationPhase) return;
 
+    // ZUERST dekrementieren, dann auswerten — dieselbe Reihenfolge wie in
+    // StateMachine::handleSchiessBetrieb() am Sender. Vorher stand die
+    // Auswertung davor: der Startwert (z. B. "10") wurde dadurch zwei Ticks
+    // lang gezeigt, die Vorbereitungsphase brauchte 11 statt 10 Ticks und der
+    // Sender lief dem Empfänger dauerhaft eine Sekunde voraus.
+    if (preparationRemainingSeconds > 0) {
+        preparationRemainingSeconds--;
+    }
+
     if (preparationRemainingSeconds == 0) {
         // Beende Vorbereitungsphase
         inPreparationPhase = false;
@@ -928,11 +937,6 @@ void updatePreparation() {
 
         // Behalte aktuelle Gruppe sichtbar in ROT (nur bei aktivierten Gruppen)
         showCurrentGroup(CRGB::Red);
-    }
-
-    // Dekrementiere verbleibende Zeit
-    if (preparationRemainingSeconds > 0) {
-        preparationRemainingSeconds--;
     }
 }
 
@@ -1068,6 +1072,16 @@ void handleCommand(RadioCommand cmd) {
 
             // Timer stoppen (falls noch von vorheriger Gruppe aktiv)
             timerRunning = false;
+
+            // Sekunden-Zeitbasis auf den Kommandozeitpunkt ausrichten. Der
+            // Sender macht direkt nach dem Senden dasselbe (resetSenderTimer()).
+            // Ohne das liegt der erste Tick irgendwo im frei laufenden 1-s-
+            // Raster — im Mittel eine halbe Sekunde Versatz, rein zufällig.
+            if (secondTimer != nullptr) {
+                esp_timer_stop(secondTimer);
+                esp_timer_start_periodic(secondTimer, 1000000ULL);
+                handledTickCount = secondTickCount;  // angebrochenen Tick verwerfen
+            }
 
             // Starte Vorbereitungsphase (10s oder 5s im DEBUG)
             inPreparationPhase = true;
