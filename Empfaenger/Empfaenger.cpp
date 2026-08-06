@@ -140,6 +140,15 @@ void setup() {
     pinMode(Pins::POTI_GND, OUTPUT);
     digitalWrite(Pins::POTI_GND, LOW);
 
+    // FRÜH: LED-Datenleitung definiert auf LOW. Seit der PD-12V-Platine sitzt
+    // U5 (74AHCT1G125) zwischen GPIO10 und dem Strip; sein Eingang hat keinen
+    // Pulldown. Bis FastLED.addLeds() den Pin übernimmt (nach Buzzer-Init) läge
+    // er sonst hochohmig → der Buffer-Ausgang kippt/schwingt und schiebt
+    // undefinierte 5-V-Pegel auf die Datenleitung (Geisterpixel beim Start).
+    // FastLED konfiguriert den Pin danach selbst neu.
+    pinMode(Pins::LED_STRIP, OUTPUT);
+    digitalWrite(Pins::LED_STRIP, LOW);
+
     // FRÜH: Lüfter-PWM übernehmen (R5-Pull-up hielt die PWM-Leitung LOW →
     // Lüfter lief bis jetzt auf Minimaldrehzahl, Befund 6). Auch im
     // OTA-Wartungsmodus nötig (Hardware-Safety, Constitution III).
@@ -208,8 +217,9 @@ void setupNormal() {
     // bestimmt: feste Helligkeit + einheitliche Pixel zeigten gesendet Rot→Grün,
     // Grün→Blau ⇒ Standard-RGB. Frühere Messungen waren durch gekippte Bits verfälscht.
     // 800 kHz (Standard-WS2811): 400 kHz getestet → nur sporadisches Aufblitzen,
-    // also ist dies ein 800-kHz-Typ. Das Restproblem (Gelb/Weiß kippen) ist der
-    // Signalpegel — Abhilfe: Pegelwandler 3,3→5 V am Daten-Pin (Hardware).
+    // also ist dies ein 800-kHz-Typ. Das frühere Restproblem (Gelb/Weiß kippen)
+    // war der Signalpegel; seit der PD-12V-Platine hebt U5 (74AHCT1G125) den
+    // Daten-Pin auf 5 V an — der 330-Ω-Serienwiderstand sitzt jetzt hinter U5 (R14).
     FastLED.addLeds<WS2811, Pins::LED_STRIP, RGB>(leds, LEDStrip::TOTAL_LEDS);
     // Temporales Dithering AUS: show() wird im Normalbetrieb nur bei Änderungen
     // aufgerufen (selten). Mit Dithering + brightness<255 bleiben die LEDs dann

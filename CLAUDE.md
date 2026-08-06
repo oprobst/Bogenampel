@@ -8,7 +8,8 @@ Bogenampel ist eine funkgesteuerte Timer-Anzeige für Bogenschießplätze.
 
 **Aktuelle Generation V3 (`Sender/`, `Empfaenger/`, `Schaltung-Sender/`, `Schaltung-Empfaenger/`):**
 - **Sender (Bedieneinheit)**: ESP32-S3-WROOM-1U + 1.54″ e-Paper (SSD1681) + LiPo/MCP73837 + Power-Latch
-- **Empfänger (Anzeigeeinheit)**: XIAO ESP32C3 + WS2812B LED Strip (158 LEDs) + Lüfter + 3 Potis
+- **Empfänger (Anzeigeeinheit)**: XIAO ESP32C3 + WS2811 LED Strip (12 V, 66 Pixel) + Lüfter + 3 Potis,
+  seit Rev. 2026-08-03 auf der PD-12V-Platine (CH224K-Trigger, Pegelwandler 74AHCT1G125)
 - **Kommunikation**: ESP-NOW (Kanal 1, 6-Byte-Frames, Discovery zur Laufzeit), 11 Kommandos unverändert
 - **Features**: Timer-Steuerung, Gruppen-Anzeige, Alarm-System, NVS-Konfiguration, autonomes Passenende (FR-004),
   OTA-Wartungsmodus (beide Taster beim Einschalten; im Normalbetrieb läuft kein WiFi)
@@ -157,7 +158,8 @@ Verbindlich: `specs/004-v3-esp32-port/contracts/hardware-pins.md` (aus KiCad-Net
 - Potis (alle ADC1!): Lautstärke=D0/GPIO2 (Fußpunkt an D4!), Helligkeit=D1/GPIO3, Lüfter=D2/GPIO4
 - POTI_GND=D4/GPIO6 (in setup() früh OUTPUT LOW — Strapping-Fix GPIO2)
 - Piezo=D3/GPIO5 (LEDC), Lüfter-PWM=D6/GPIO21 (LEDC 25 kHz)
-- Debug-Taster=D7/GPIO20, Status-LED=D9/GPIO9 (**aktiv LOW** — Strapping-Fix), WS2812B=D10/GPIO10
+- Debug-Taster=D7/GPIO20, Status-LED=D9/GPIO9 (**aktiv LOW** — Strapping-Fix),
+  WS2811-Data=D10/GPIO10 (über Pegelwandler U5 74AHCT1G125 → 5 V; früh OUTPUT LOW setzen!)
 - Frei: D5/GPIO7, D8/GPIO8
 
 ### V2 (Legacy)
@@ -165,6 +167,13 @@ Verbindlich: `specs/004-v3-esp32-port/contracts/hardware-pins.md` (aus KiCad-Net
 - Empfänger: NRF24 CE=D9/CSN=D8; LED-Strip D3; Buzzer D4; Debug D7/D2; Status-LEDs A2-A4
 
 ## Recent Changes
+- 2026-08-05: **Empfänger-Firmware auf die PD-12V-Platine angepasst** (Schaltplan-Rev.
+  `cdde8dc`). Pin-Funktionen unverändert, aber: `BRIGHTNESS_MAX` 64 → **255** (der
+  USB-Übergangsdeckel ist hinfällig — der Strip hängt jetzt direkt am 12-V-PD-Netz, der
+  XIAO an einem eigenen TSR0.5-2433) und GPIO10 wird in `setup()` **früh auf OUTPUT LOW**
+  gelegt, weil der neue Pegelwandler U5 (74AHCT1G125) keinen Eingangs-Pulldown hat.
+  Netzteil: 12 V / ≥ 2 A. Referenzbezeichner haben sich verschoben (Potis jetzt J3/J4/J2,
+  Piezo J8, Lüfter J6). **HIL-Abnahme auf der neuen Platine offen.**
 - 006-shutdown-alarm-gesten (2026-08-02, **Code fertig, HIL-Abnahme offen**):
   Ausschalten und Alarm entkoppelt — Halten ≥ 3 s (beliebige Taste) = Aus in *allen*
   Zuständen (zentral in `StateMachine::update()`), **OK** 3× ≤ 400 ms = Alarm

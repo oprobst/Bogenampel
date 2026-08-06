@@ -104,24 +104,35 @@ Display: Waveshare 1.54″ e-Paper V2 (GDEH0154D67/SSD1681, 200×200) als rohes 
      bei Bedarf auf GND zieht. Default 500 mA, Firmware kann drosseln, der GPIO sieht nie
      mehr als 3,3 V. Kostet ein Bauteil im nächsten Layout.
 
-## Empfänger — Seeed XIAO ESP32C3 (U2, Zusatzplatine/Lochraster)
+## Empfänger — Seeed XIAO ESP32C3 (U3, PD-12V-Platine Rev. 2026-08-03)
+
+> **Stand 2026-08-05**: Referenzbezeichner und Versorgung stammen aus der gefertigten
+> PD-12V-Platine (`Empfaenger.kicad_pcb`/`.kicad_sch`, Commit `cdde8dc`) und lösen die
+> Angaben des Lochraster-/USB-5V-Aufbaus ab. **Die Pin-Funktionen sind unverändert** —
+> geändert haben sich nur Bauteilnummern, Versorgungstopologie und der neue Pegelwandler.
 
 | Funktion | XIAO-Pin | GPIO | Richtung | Beschaltung / Hinweise |
 |----------|----------|------|----------|------------------------|
-| Poti Lautstärke (J2) | D0 | 2 | IN (ADC1) | Schleifer über R1 1k; Fußpunkt an D4 (POTI_GND) — Strapping-Fix Befund 2, im Schaltplan umgesetzt |
-| **Poti Helligkeit (J3)** | **D1** | **3** | IN (ADC1) | **Umverdrahtung von D5!** (GPIO7 hat keinen ADC; GPIO5/D3 wäre ADC2 = mit Funk unbrauchbar); über R2 1k |
-| Piezo (J6, 12-V-Transducer) | **D3** | **5** | OUT (LEDC) | über R3 2k2 → BC337 (Q1), R4 10k Basis-Pulldown (stumm beim Boot); **umverdrahtet von D2 (2026-06-10)** — GPIO5 ist ADC2, wird aber rein digital genutzt |
-| **Poti Lüfter-Drehzahl (J8, neu)** | **D2** | **4** | IN (ADC1) | neu 2026-06-10: Schleifer über R7 1k, stellt die Lüfter-PWM (D6) ein; ADC1_CH4, kein Strapping-Pin |
-| Lüfter PWM (J9) | D6 | 21 | OUT (LEDC) | direkt am Gate des 2N7002 (Q2); R5 10k = **Pull-up an 3V3** → Lüfter läuft hardware-default voll, bis die Firmware übernimmt; Versorgung 12 V/5 V via JP1 |
+| Poti Lautstärke (J3) | D0 | 2 | IN (ADC1) | Schleifer über R3 1k; Fußpunkt an D4 (POTI_GND) — Strapping-Fix Befund 2 |
+| **Poti Helligkeit (J4)** | **D1** | **3** | IN (ADC1) | **Umverdrahtung von D5!** (GPIO7 hat keinen ADC; GPIO5/D3 wäre ADC2 = mit Funk unbrauchbar); über R4 1k |
+| Piezo (J8, 12-V-Transducer) | **D3** | **5** | OUT (LEDC) | über R10 2k2 → BC337 (Q3), R12 10k Basis-Pulldown (stumm beim Boot); R15 2k2 vom Collector nach +12 V als Entlade-Pfad (vorher 470 Ω — falls zu leise, verkleinern). GPIO5 ist ADC2, wird aber rein digital genutzt |
+| **Poti Lüfter-Drehzahl (J2)** | **D2** | **4** | IN (ADC1) | Schleifer über R5 1k, stellt die Lüfter-PWM (D6) ein; ADC1_CH4, kein Strapping-Pin |
+| Lüfter PWM (J6 Pin 4) | D6 | 21 | OUT (LEDC) | direkt am Gate des 2N7002 (Q2, **invertiert**: Gate HIGH = PWM-Leitung LOW = langsam); R11 10k = Gate-Pull-up an 3V3 → Leitung beim Boot LOW (Minimaldrehzahl), R13 10k = Pull-up der PWM-Leitung an 3V3. J6 Pin 3 (Tacho) unbeschaltet |
 | Taster (J5) | D7 | 20 | IN | gegen GND → `INPUT_PULLUP`, aktiv LOW (Debug-/Testtaster) |
-| Status-LED (D1-LED) | D9 | 9 | OUT | **aktiv LOW**: 3V3 → LED → R6 220 Ω → Pin (sinkt Strom) — Strapping-Fix Befund 3, umgesetzt 2026-06-10 |
-| WS2812B Data (J7) | D10 | 10 | OUT | 158 LEDs; Strip-Versorgung 12 V laut Stecker — Pegel/Typ beim Aufbau prüfen (12-V-Strips sind WS2815-kompatibel zum Protokoll) |
-| POTI_GND | D4 | 6 | OUT | geschalteter Fußpunkt des Lautstärke-Potis J2 Pin 3 (Befund 2); in `setup()` OUTPUT LOW |
+| Status-LED (D3) | D9 | 9 | OUT | **aktiv LOW**: 3V3 → LED → R9 220 Ω → Pin (sinkt Strom) — Strapping-Fix Befund 3 |
+| WS2811 Data (J7) | D10 | 10 | OUT | 66 Pixel, 12-V-Strip. **Neu**: über U5 (74AHCT1G125, 3,3 → 5 V, /OE fest an GND) → R14 330 Ω → J7 Pin 2. U5-Eingang ohne Pulldown → GPIO10 in `setup()` früh OUTPUT LOW |
+| POTI_GND | D4 | 6 | OUT | geschalteter Fußpunkt des Lautstärke-Potis J3 Pin 3 (Befund 2); in `setup()` OUTPUT LOW |
 | frei | D5, D8 | 7, 8 | — | Reserve (D5 nach Helligkeits-Poti-Umzug frei; D8 nach Tacho-Verzicht frei) |
 
-Versorgung: 5 V USB (J1) oder 12 V Boost (J4) → TSR 0.5-2433 → 3V3. Kein Akku am XIAO
-(Batt-Pads unbeschaltet). LED-Strip-Versorgung immer extern (5 V/12 V via Jumper) — nie über
-den USB-Port des XIAO.
+Versorgung (PD-12V-Platine): USB-C (J1) → CH224K (U2) verhandelt **12 V** → Verpolungsschutz
+Q1 (IRLML9301) + TVS D2 (SMBJ13A) → +12V-Netz. Daraus:
+- **TSR0.5-2433 (U4)** → 3V3, speist den XIAO über den **3V3-Pin** (VUSB und Batt-Pads unbeschaltet)
+- **L7805 (U1)** → 5 V, versorgt ausschließlich den Pegelwandler U5
+- **+12 V direkt** an LED-Strip (J7), Piezo (J8) und Lüfter (J6)
+
+Damit entfällt der frühere 5V→12V-Step-up samt Jumpern JP1/JP2. Der Strip belastet die
+Logikversorgung nicht mehr → `LEDStrip::BRIGHTNESS_MAX` steht auf dem Design-Wert 255
+(PD-Netzteil mit 12 V / ≥ 2 A vorsehen: ~1,3 A einfarbig bei 66 Pixeln, ~4 A bei Weiß).
 
 ### Hardware-Befunde Empfänger (Boot-Strapping ESP32-C3)
 
@@ -141,12 +152,12 @@ Strapping-Befunde sind im Schaltplan gelöst.**
 4. ✅ **GPIO8/D8 (Lüfter-Tacho) — gegenstandslos**: Tacho wird nicht angeschlossen
    (Entscheidung 2026-06-10; Low-Side-PWM zerhackt das Open-Collector-Signal ohnehin, nur per
    Pulse-Stretching nutzbar). J9 Pin 3 bleibt offen, D8 ist frei.
-5. ✅ **J1 „5V USB" — korrigiert (2026-06-10)**: war ein Schaltplanfehler (Pin 2 lag auf dem
-   +5V-Netz, kein GND-Pin). Jetzt: J1 Pin 1 = GND, Pin 2 = +5V; das +5V-Netz speist den
-   3V3-Regler (U1), den Boost-Eingang (J4 Pin 1) und JP1/JP2 (verifiziert per Netzliste).
-6. ℹ **Lüfter-Default**: R5 ist Gate-Pull-up an 3V3 → Lüfter läuft beim Boot/Flashen voll,
-   bis die Firmware D6 übernimmt. Funktional unkritisch; falls unerwünscht, R5 als Pull-down
-   nach GND ausführen.
+5. ✅ **J1 — auf der PD-Platine 6-polig (USB-C-Buchse)**: VBUS / CC1 / CC2 / D− / D+ / GND
+   an den CH224K (U2). Der alte 2-polige „5V USB"-Eingang und die Jumper JP1/JP2 sind
+   entfallen; die 5-V-Schiene existiert nur noch als L7805-Ausgang für den Pegelwandler U5.
+6. ℹ **Lüfter-Default**: R11 ist Gate-Pull-up an 3V3 → Q2 leitet, die PWM-Leitung liegt beim
+   Boot/Flashen LOW, der Lüfter läuft also auf **Minimaldrehzahl**, bis die Firmware D6
+   übernimmt (`fan.begin()` steht deshalb früh in `setup()`). Funktional unkritisch.
 
 ### Hinweis Alt-Belegung V2 (zur Abgrenzung)
 

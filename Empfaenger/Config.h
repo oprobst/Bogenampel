@@ -5,11 +5,20 @@
  * Enthält alle Hardware-Pin-Definitionen, Timing-Konstanten und
  * Konfigurationsparameter für den Empfänger.
  *
- * Hardware: Seeed XIAO ESP32C3 (U2, Zusatzplatine/Lochraster)
- * - WS2811 LED Strip (12V, IC-gesteuert, RGB; 7-Segment + Gruppen) — Versorgung extern
+ * Hardware: Seeed XIAO ESP32C3 (U3) auf der PD-12V-Platine (Rev. 2026-08-03)
+ * - WS2811 LED Strip (12V, IC-gesteuert, RGB; 7-Segment + Gruppen), direkt am 12V-Netz
  * - ESP-NOW Funk (integriert, kein externes Modul)
  * - Piezo-Transducer 12V über BC337, Lüfter über 2N7002 (Low-Side-PWM)
  * - 3 Potis (Lautstärke, Helligkeit, Lüfter-Drehzahl), Debug-Taster, Status-LED
+ *
+ * Versorgung (PD-12V-Platine, löst den USB-5V-Aufbau mit Step-up ab):
+ * - USB-C → CH224K (U2) verhandelt 12 V → Verpolungsschutz Q1 (IRLML9301) + TVS D2
+ *   → +12V-Netz: LED-Strip (J7), Piezo (J8), Lüfter (J6)
+ * - TSR0.5-2433 (U4): 12 V → 3V3, speist den XIAO über den 3V3-Pin (VUSB unbeschaltet)
+ * - L7805 (U1): 12 V → 5 V, versorgt ausschließlich den Pegelwandler U5
+ * - U5 74AHCT1G125: Pegelwandler 3,3 → 5 V in der LED-Datenleitung (/OE fest an GND,
+ *   nicht invertierend), Ausgang über R14 330 Ω an J7 Pin 2 — ersetzt den früheren
+ *   direkten 3,3-V-Anschluss, der Farbkipper (Gelb/Weiß) verursacht hat
  *
  * Verbindliche Pin-Quelle: specs/004-v3-esp32-port/contracts/hardware-pins.md
  * (extrahiert aus Schaltung-Empfaenger/Empfaenger.kicad_sch)
@@ -46,42 +55,50 @@ namespace Pins {
     //-------------------------------------------------------------------------
     // Analoge Eingänge: Potis (alle ADC1 — ADC2 ist mit aktivem Funk unbrauchbar!)
     //-------------------------------------------------------------------------
-    constexpr uint8_t VOLUME_POTI     = 2;  // D0/GPIO2 (ADC1_CH2): Lautstärke (J2),
-                                            // Schleifer über R1 1k; Fußpunkt an POTI_GND!
-    constexpr uint8_t BRIGHTNESS_POTI = 3;  // D1/GPIO3 (ADC1_CH3): Helligkeit (J3),
-                                            // über R2 1k (umverdrahtet von D5 — GPIO7 hat keinen ADC)
-    constexpr uint8_t FAN_POTI        = 4;  // D2/GPIO4 (ADC1_CH4): Lüfter-Drehzahl (J8),
-                                            // Schleifer über R7 1k
+    constexpr uint8_t VOLUME_POTI     = 2;  // D0/GPIO2 (ADC1_CH2): Lautstärke (J3),
+                                            // Schleifer über R3 1k; Fußpunkt an POTI_GND!
+    constexpr uint8_t BRIGHTNESS_POTI = 3;  // D1/GPIO3 (ADC1_CH3): Helligkeit (J4),
+                                            // über R4 1k (umverdrahtet von D5 — GPIO7 hat keinen ADC)
+    constexpr uint8_t FAN_POTI        = 4;  // D2/GPIO4 (ADC1_CH4): Lüfter-Drehzahl (J2),
+                                            // Schleifer über R5 1k
 
     //-------------------------------------------------------------------------
     // Geschalteter Poti-Fußpunkt (Strapping-Fix GPIO2, Befund 2)
     //-------------------------------------------------------------------------
-    constexpr uint8_t POTI_GND = 6;  // D4/GPIO6: Fußpunkt des Lautstärke-Potis (J2 Pin 3);
+    constexpr uint8_t POTI_GND = 6;  // D4/GPIO6: Fußpunkt des Lautstärke-Potis (J3 Pin 3);
                                      // beim Reset hochohmig → GPIO2 liegt HIGH (Boot ok);
                                      // in setup() FRÜH auf OUTPUT + LOW setzen!
 
     //-------------------------------------------------------------------------
     // Ausgänge: Signalgeber und Lüfter
     //-------------------------------------------------------------------------
-    constexpr uint8_t BUZZER  = 5;   // D3/GPIO5 (LEDC): Piezo 12V-Transducer (J6) über
-                                     // R3 2k2 → BC337 (Q1), R4 10k Basis-Pulldown;
-                                     // R8 470Ω parallel zum Piezo (Entlade-Pfad am Collector —
-                                     // ohne den schwingt der Piezo nicht, nur Brummen; 470Ω
-                                     // für max. Lautstärke, ~25 mA → 0,5-W-Typ)
+    constexpr uint8_t BUZZER  = 5;   // D3/GPIO5 (LEDC): Piezo 12V-Transducer (J8) über
+                                     // R10 2k2 → BC337 (Q3), R12 10k Basis-Pulldown;
+                                     // R15 2k2 vom Collector nach +12V (Entlade-Pfad —
+                                     // ohne den schwingt der Piezo nicht, nur Brummen).
+                                     // ACHTUNG: auf der PD-Platine 2k2 statt der früheren
+                                     // 470 Ω (5,4 statt 25 mA) — dafür jetzt 12 V statt 5 V
+                                     // am Piezo. Falls zu leise: R15 verkleinern (0,5-W-Typ).
                                      // (GPIO5 ist ADC2, wird aber rein digital genutzt)
-    constexpr uint8_t FAN_PWM = 21;  // D6/GPIO21 (LEDC): Gate des 2N7002 (Q2, J9);
+    constexpr uint8_t FAN_PWM = 21;  // D6/GPIO21 (LEDC): Gate des 2N7002 (Q2, J6 Pin 4);
                                      // Q2 invertiert (Open-Drain auf der PWM-Leitung):
-                                     // Gate HIGH = Leitung LOW = langsam! R5 10k =
-                                     // Pull-up an 3V3 → PWM-Leitung beim Boot LOW,
+                                     // Gate HIGH = Leitung LOW = langsam! R11 10k =
+                                     // Pull-up an 3V3 am Gate → PWM-Leitung beim Boot LOW,
                                      // Lüfter auf Minimaldrehzahl, bis die Firmware
-                                     // übernimmt (früh Duty setzen!)
+                                     // übernimmt (früh Duty setzen!). R13 10k zieht die
+                                     // PWM-Leitung bei sperrendem Q2 sauber auf 3V3.
 
     //-------------------------------------------------------------------------
     // Ausgänge: LEDs
     //-------------------------------------------------------------------------
-    constexpr uint8_t LED_STRIP  = 10;  // D10/GPIO10: WS2811 Data (J7), 158 Pixel
-    constexpr uint8_t STATUS_LED = 9;   // D9/GPIO9: Status-LED — AKTIV LOW!
-                                        // (3V3 → LED → R6 220Ω → Pin sinkt Strom;
+    constexpr uint8_t LED_STRIP  = 10;  // D10/GPIO10: WS2811 Data → U5 (74AHCT1G125,
+                                        // 3,3→5 V) → R14 330Ω → J7 Pin 2.
+                                        // U5 hat KEINEN Eingangs-Pulldown: den Pin in
+                                        // setup() SOFORT auf OUTPUT LOW legen, sonst
+                                        // floatet der Buffer-Eingang bis FastLED.addLeds()
+                                        // und schiebt Müll auf die Datenleitung.
+    constexpr uint8_t STATUS_LED = 9;   // D9/GPIO9: Status-LED D3 — AKTIV LOW!
+                                        // (3V3 → LED → R9 220Ω → Pin sinkt Strom;
                                         // Strapping-Fix Befund 3, Firmware invertiert)
 
     //-------------------------------------------------------------------------
@@ -232,6 +249,21 @@ namespace LEDStrip {
     // - 3 Digits × 7 Segmente × 2 Pixel = 42 Pixel (Array Index 24-65)
     // Total: 66 Pixel
 
+    // Montage-Orientierung (2026-08-06, fertig verdrahtete Tafel): Der Strip-Anfang
+    // (Data-In) sitzt in Leserichtung am FALSCHEN Ende — ohne Korrektur steht die
+    // komplette Anzeige exakt um 180° auf dem Kopf. Die Verlegung ist in beiden
+    // Bereichen punktsymmetrisch, die Drehung ist deshalb eine reine Indexumkehr
+    // je Bereich:
+    //   - Ziffernblock  (Index 24-65): 100er ↔ 1er tauschen UND je Ziffer die
+    //     Segmente spiegeln (A↔D, B↔E, C↔F; G liegt auf der Drehachse) — das
+    //     erledigt die umgekehrte Segment-Iteration in DisplayManager::displayDigit()
+    // Die GRUPPENBALKEN sind davon ausdrücklich NICHT betroffen (am Aufbau geprüft
+    // 2026-08-06): sie liegen nebeneinander an derselben Seite, nicht einander
+    // gegenüber — die Drehung tauscht sie also nicht, ein Software-Tausch würde die
+    // Zuordnung erst kaputt machen.
+    // Auf false setzen, wenn die Tafel je andersherum aufgebaut/verdrahtet wird.
+    constexpr bool ROTATE_180 = true;
+
     constexpr uint8_t GROUP_CD_LEDS = 12;      // LED 1-12  (Index 0-11)
     constexpr uint8_t GROUP_AB_LEDS = 12;      // LED 13-24 (Index 12-23)
     constexpr uint8_t GROUP_CD_START = 0;                            // C/D zuerst im Strip
@@ -240,28 +272,35 @@ namespace LEDStrip {
     constexpr uint8_t LEDS_PER_SEGMENT = 2;    // 2 Pixel pro 7-Segment-Balken (12V-Streifen)
     constexpr uint8_t SEGMENTS_PER_DIGIT = 7;  // 7 Segmente pro Ziffer (B, A, F, G, C, D, E)
     constexpr uint8_t NUM_DIGITS = 3;          // 3 Ziffern (1er, 10er, 100er)
-    constexpr uint8_t DIGIT_START = GROUP_AB_START + GROUP_AB_LEDS;  // Ziffern beginnen nach beiden Gruppen
+    constexpr uint8_t DIGIT_START = GROUP_CD_LEDS + GROUP_AB_LEDS;  // Ziffern beginnen nach beiden Gruppen
 
     constexpr uint8_t LEDS_PER_DIGIT = LEDS_PER_SEGMENT * SEGMENTS_PER_DIGIT;  // 14 Pixel pro Ziffer
     constexpr uint8_t TOTAL_LEDS = GROUP_AB_LEDS + GROUP_CD_LEDS + (NUM_DIGITS * LEDS_PER_DIGIT);
 
-    // Start-Indizes für die einzelnen Ziffern (relativ zu DIGIT_START)
-    constexpr uint8_t DIGIT_1_START = DIGIT_START;                              // 1er-Stelle (links)
+    // Start-Indizes für die einzelnen Ziffern (relativ zu DIGIT_START).
+    // Die Namen bezeichnen die STELLENWERTIGKEIT, die Reihenfolge im Strip dreht
+    // sich mit ROTATE_180 um (die mittlere 10er-Stelle bleibt in beiden Fällen
+    // in der Mitte).
+    constexpr uint8_t DIGIT_1_START = ROTATE_180 ? DIGIT_START + (2 * LEDS_PER_DIGIT)
+                                                 : DIGIT_START;
     constexpr uint8_t DIGIT_10_START = DIGIT_START + LEDS_PER_DIGIT;            // 10er-Stelle (mitte)
-    constexpr uint8_t DIGIT_100_START = DIGIT_START + (2 * LEDS_PER_DIGIT);     // 100er-Stelle (rechts)
+    constexpr uint8_t DIGIT_100_START = ROTATE_180 ? DIGIT_START
+                                                   : DIGIT_START + (2 * LEDS_PER_DIGIT);
 
     // Helligkeitsbereich für Poti-Steuerung (FR-022)
     constexpr uint8_t BRIGHTNESS_MIN = 38;      // 15% Helligkeit (weiter herunterdimmbar)
 
-    // ÜBERGANGS-DECKEL (USB-Versorgung, 12V-WS2811 über 5V→12V-Step-up):
-    // Der Design-Wert ist 255 (100%). Solange der Streifen aber über USB versorgt
-    // wird, überlastet volle Helligkeit die 5V-Schiene (der Step-up vervielfacht
-    // den Strom) → ESP-Hang/Reset. Messung: 15% (brightness 38) lief stabil, 100%
-    // (255) brach ein. Deshalb ist die Obergrenze hier hart gedeckelt.
-    //   → Mit dem geplanten PD-12V-PCB (12V direkt, kein Step-up) wieder auf 255.
-    //   → Wert ist der obere Poti-Anschlag; bei Instabilität weiter senken (Richtung
-    //     BRIGHTNESS_MIN), bei besserer Versorgung anheben.
-    constexpr uint8_t BRIGHTNESS_MAX = 64;      // ~25% — USB-Übergangsdeckel (Design: 255)
+    // Design-Wert 255 (100 %), gültig ab der PD-12V-Platine (Rev. 2026-08-03):
+    // Der Strip hängt dort direkt am 12V-PD-Netz, der XIAO an einem eigenen
+    // 3V3-Regler (TSR0.5-2433) — der Strip kann die Logikversorgung also nicht mehr
+    // in die Knie zwingen. Der frühere Deckel 64 stammt vom USB-5V-Aufbau mit
+    // 5V→12V-Step-up (dort brach die 5V-Schiene bei voller Helligkeit ein →
+    // ESP-Hang/Reset; stabil war nur ~15 %).
+    // Strombedarf bei 255: 66 Pixel × ~20 mA je Farbkanal ≈ 1,3 A einfarbig
+    // (Timer/Alarm) bzw. ~4 A bei Weiß → PD-Netzteil mit 12 V / ≥ 2 A verwenden.
+    //   → Wert ist der obere Poti-Anschlag; bei Instabilität senken (Richtung
+    //     BRIGHTNESS_MIN). ACHTUNG: Am alten USB-Aufbau NICHT mit 255 betreiben!
+    constexpr uint8_t BRIGHTNESS_MAX = 255;     // 100 % (PD-12V-Platine)
 
 } // namespace LEDStrip
 

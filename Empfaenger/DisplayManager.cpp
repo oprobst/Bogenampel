@@ -109,8 +109,15 @@ void DisplayManager::displayDigit(uint8_t digitStartIndex, uint8_t digit, CRGB c
         bool segmentOn = (pattern >> (LEDStrip::SEGMENTS_PER_DIGIT - 1 - seg)) & 0x01;
         CRGB segmentColor = segmentOn ? color : CRGB::Black;
 
+        // Bei um 180° montierter Tafel (LEDStrip::ROTATE_180) die Segmente innerhalb
+        // der Ziffer spiegeln. Die Strip-Reihenfolge B,A,F,G,C,D,E ist punktsymmetrisch
+        // (B↔E, A↔D, F↔C, G auf der Achse) — die Umkehr des Segment-Index leistet
+        // die Drehung deshalb exakt, ohne eigene Mapping-Tabelle.
+        uint8_t stripSeg = LEDStrip::ROTATE_180 ? (LEDStrip::SEGMENTS_PER_DIGIT - 1 - seg)
+                                                : seg;
+
         // Setze alle Pixel dieses Segments (LEDS_PER_SEGMENT)
-        uint8_t segmentStart = digitStartIndex + (seg * LEDStrip::LEDS_PER_SEGMENT);
+        uint8_t segmentStart = digitStartIndex + (stripSeg * LEDStrip::LEDS_PER_SEGMENT);
         fill_solid(leds + segmentStart, LEDStrip::LEDS_PER_SEGMENT, segmentColor);
     }
 }

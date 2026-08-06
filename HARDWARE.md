@@ -34,30 +34,35 @@ verbindliche Pin-Tabelle für beide Firmwares steht in
 | USB_CON (aktiv HIGH) | 8 | | SPI MOSI | 13 |
 | Lader ST1 / ST2 / PG / PRG | 11 / 12 / 17 / 18 | | USB D-/D+ | 19/20 |
 
-### Empfänger V3 (Zusatzplatine/Lochraster)
+### Empfänger V3 (PD-12V-Platine, Rev. 2026-08-03)
 
-- **Seeed XIAO ESP32C3** (4 MB Flash), Versorgung 5 V USB (J1) oder 12 V Boost (J4)
-  → TSR 0.5-2433 → 3V3; **LED-Strip immer extern** (5 V/12 V via Jumper JP1/JP2)
-- **WS2812B-Strip** 158 LEDs (Layout unverändert aus V2: 2×16 Gruppen + 3×42 Ziffern)
-- **Piezo**: 12-V-Transducer über BC337 (R3 2k2, R4 10k Basis-Pulldown), LEDC-PWM
-  (2,7 kHz, Lautstärke = Duty 0-50 %)
-- **Lüfter**: 2N7002 Low-Side, LEDC-PWM 25 kHz, Drehzahl per Poti; Tacho bewusst
-  unbeschaltet (R5 = Gate-Pull-up → Lüfter läuft beim Boot kurz voll)
-- **ESP32-C3-Strapping-Fixes** (alle im Schaltplan umgesetzt, 2026-06-10):
+- **Seeed XIAO ESP32C3** (4 MB Flash), Versorgung über den **3V3-Pin** (VUSB/Batt unbeschaltet)
+- **Stromversorgung**: USB-C (J1) → **CH224K** (U2) verhandelt 12 V → Verpolungsschutz
+  Q1 (IRLML9301) + TVS D2 (SMBJ13A) → +12V-Netz; daraus **TSR0.5-2433** (U4) → 3V3 für den
+  XIAO und **L7805** (U1) → 5 V nur für den Pegelwandler U5. Kein Step-up, keine Jumper mehr.
+- **WS2811-Strip** 66 Pixel, direkt am 12V-Netz (2×12 Gruppen + 3×14 Ziffern-Pixel)
+- **Pegelwandler U5 74AHCT1G125** (3,3 → 5 V, /OE fest an GND) in der Datenleitung,
+  Ausgang über R14 330 Ω an J7 — behebt die früheren Farbkipper bei 3,3-V-Pegel
+- **Piezo**: 12-V-Transducer über BC337 (Q3; R10 2k2 Basisvorwiderstand, R12 10k
+  Basis-Pulldown, R15 2k2 nach +12 V als Entlade-Pfad), LEDC-PWM (3,25 kHz = Resonanz,
+  Lautstärke = Duty 0-50 %)
+- **Lüfter**: 2N7002 Low-Side (Q2, **invertiert**), LEDC-PWM 25 kHz, Drehzahl per Poti;
+  Tacho bewusst unbeschaltet (R11 = Gate-Pull-up → Lüfter läuft beim Boot auf Minimaldrehzahl)
+- **ESP32-C3-Strapping-Fixes** (alle im Schaltplan umgesetzt):
   GPIO2 (Lautstärke-Poti) → Fußpunkt an D4/GPIO6 statt GND („POTI_GND");
-  GPIO9 (Status-LED) → aktiv LOW (3V3 → LED → R6 → Pin); GPIO8 frei (kein Tacho)
+  GPIO9 (Status-LED) → aktiv LOW (3V3 → LED → R9 → Pin); GPIO8 frei (kein Tacho)
 
 | Funktion | XIAO-Pin | GPIO |
 |---|---|---|
-| Poti Lautstärke (J2, Fußpunkt an D4!) | D0 | 2 |
-| Poti Helligkeit (J3) | D1 | 3 |
-| Poti Lüfter-Drehzahl (J8) | D2 | 4 |
-| Piezo (J6, über BC337) | D3 | 5 |
+| Poti Lautstärke (J3, Fußpunkt an D4!) | D0 | 2 |
+| Poti Helligkeit (J4) | D1 | 3 |
+| Poti Lüfter-Drehzahl (J2) | D2 | 4 |
+| Piezo (J8, über BC337) | D3 | 5 |
 | POTI_GND (geschalteter Fußpunkt) | D4 | 6 |
-| Lüfter-PWM (J9, 2N7002) | D6 | 21 |
+| Lüfter-PWM (J6 Pin 4, 2N7002) | D6 | 21 |
 | Debug-Taster (J5, aktiv LOW) | D7 | 20 |
 | Status-LED (**aktiv LOW**) | D9 | 9 |
-| WS2812B Data (J7) | D10 | 10 |
+| WS2811 Data (J7, über U5) | D10 | 10 |
 | frei / Reserve | D5, D8 | 7, 8 |
 
 ---
