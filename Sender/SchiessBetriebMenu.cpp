@@ -70,9 +70,9 @@ void SchiessBetriebMenu::draw() {
     // Überschrift
     epd.printCentered("Schiessbetrieb", 30, 2);
 
-    // Phasentext (V2: "Vorbereitung" orange / "Alles ins Gold" grün —
+    // Phasentext (V2: "Vorbereitung" orange / "Alle ins Gold" grün —
     // auf s/w-e-Paper nur Text)
-    const char* phaseText = inPreparationPhase ? "Vorbereitung" : "Alles ins Gold";
+    const char* phaseText = inPreparationPhase ? "Vorbereitung" : "Alle ins Gold";
     epd.printCentered(phaseText, 54, 2);
 
     // Aktuelle Gruppe (nur bei 4 Schützen): invertierter Balken.
