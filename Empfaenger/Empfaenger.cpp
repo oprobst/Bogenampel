@@ -844,11 +844,7 @@ void updateTimer() {
 
             // Vorbereitungsphase für zweite Gruppe starten
             inPreparationPhase = true;
-            #if DEBUG_SHORT_TIMES
-                preparationRemainingSeconds = 5;
-            #else
-                preparationRemainingSeconds = 10;
-            #endif
+            preparationRemainingSeconds = Timing::PREPARATION_TIME_MS / 1000;
 
             // Gruppe aktualisieren (die andere Gruppe schaltet setGroup selbst ab)
             showCurrentGroup(CRGB::Red);
@@ -865,13 +861,8 @@ void updateTimer() {
         CRGB displayColor;
         static bool orangePhaseActive = false;
 
-        #if DEBUG_SHORT_TIMES
-            // DEBUG: Orange Ampel in den letzten 5 Sekunden
-            uint32_t orangeThreshold = 5;
-        #else
-            // Normal: Orange Ampel in den letzten 30 Sekunden
-            uint32_t orangeThreshold = 30;
-        #endif
+        // Orange Ampel in den letzten Sekunden (30 s normal, 2 s im DEBUG)
+        constexpr uint32_t orangeThreshold = Timing::ORANGE_THRESHOLD_SEC;
 
         if (timerRemainingSeconds <= orangeThreshold) {
             // Orange Phase
@@ -1089,20 +1080,15 @@ void handleCommand(RadioCommand cmd) {
 
             // Starte Vorbereitungsphase (10s oder 5s im DEBUG)
             inPreparationPhase = true;
-            #if DEBUG_SHORT_TIMES
-                preparationDurationMs = 5000UL;
-                preparationRemainingSeconds = 5;
-            #else
-                preparationDurationMs = 10000UL;
-                preparationRemainingSeconds = 10;
-            #endif
+            preparationDurationMs = Timing::PREPARATION_TIME_MS;
+            preparationRemainingSeconds = Timing::PREPARATION_TIME_MS / 1000;
 
-            // Timer-Dauer setzen (wird nach Vorbereitungsphase gestartet)
-            #if DEBUG_SHORT_TIMES
-                timerDurationMs = 15000UL;  // 15 Sekunden für beide Modi
-            #else
-                timerDurationMs = (cmd == CMD_START_120) ? 120000UL : 240000UL;
-            #endif
+            // Timer-Dauer setzen (wird nach Vorbereitungsphase gestartet).
+            // Timing::shootingSeconds verkürzt sie mit DEBUG_SHORT_TIMES — die
+            // Tabelle ist identisch mit der im Sender, sonst endet die autonom
+            // gezählte Passe (FR-004) auf einer anderen Sekunde als die Ampel.
+            timerDurationMs =
+                Timing::shootingSeconds((cmd == CMD_START_120) ? 120 : 240) * 1000UL;
 
             // Zeige initiale Vorbereitungszeit in ROT (z.B. "10")
             display.displayTimer(preparationRemainingSeconds, CRGB::Red);

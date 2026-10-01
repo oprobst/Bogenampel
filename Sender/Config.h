@@ -33,8 +33,14 @@
 #define DEBUG_ENABLED 1  // 1 = Debug-Ausgaben an (USB-CDC), 0 = aus
 #endif
 
-// Verkürzte Zeiten für Tests (nur wenn DEBUG_ENABLED = 1)
+// Verkürzte Zeiten für Testläufe. Default 0 — eingeschaltet wird das NICHT hier,
+// sondern über -DDEBUG_SHORT_TIMES=1 aus der platformio.ini (env:sender-debug /
+// sender-debug-ota). So kann ein Testbuild mit 6-Sekunden-Passe nicht
+// versehentlich im Feld landen, und Sender und Empfänger werden immer bewusst
+// als Paar umgestellt (die Zeittabelle muss auf beiden Geräten gleich sein).
+#ifndef DEBUG_SHORT_TIMES
 #define DEBUG_SHORT_TIMES 0  // 1 = Verkürzte Zeiten, 0 = Normale Zeiten
+#endif
 
 //=============================================================================
 // HARDWARE PIN-DEFINITIONEN
@@ -273,6 +279,37 @@ namespace Timing {
     #else
         constexpr uint16_t PREPARATION_TIME_MS = 10000;  // 10 Sekunden Vorbereitungsphase
     #endif
+
+    //-------------------------------------------------------------------------
+    // Verkürzte Schießzeit für Testläufe (DEBUG_SHORT_TIMES)
+    //-------------------------------------------------------------------------
+    // 120 s → 6 s, 240 s → 12 s (zusammen mit der 5-s-Vorbereitung läuft eine
+    // komplette Passe damit in unter einer Minute durch statt in Minuten).
+    //
+    // ACHTUNG: Diese Abbildung MUSS in Sender/Config.h und Empfaenger/Config.h
+    // identisch bleiben. Der Empfänger zählt die Passe AUTONOM (FR-004) und
+    // bekommt per Funk nur CMD_START_120/CMD_START_240 — nie die Dauer selbst.
+    // Weichen die beiden Tabellen ab, laufen Ampel und Anzeige auseinander und
+    // das Passenende fällt auf zwei verschiedene Sekunden.
+    constexpr uint16_t SHOOT_DEBUG_120_SEC = 6;
+    constexpr uint16_t SHOOT_DEBUG_240_SEC = 12;
+
+    /**
+     * @brief Nominale Schießzeit (120/240 s) → tatsächliche Countdown-Dauer
+     * @param nominalSeconds konfigurierte Schießzeit (120 oder 240)
+     * @return im Normalbetrieb der Wert selbst, mit DEBUG_SHORT_TIMES die
+     *         verkürzte Testdauer
+     *
+     * Die Konfiguration und die Menü-Anzeige ("120s"/"240s") bleiben auf dem
+     * nominalen Wert — verkürzt wird ausschließlich der ablaufende Countdown.
+     */
+    constexpr uint16_t shootingSeconds(uint16_t nominalSeconds) {
+    #if DEBUG_SHORT_TIMES
+        return (nominalSeconds >= 240) ? SHOOT_DEBUG_240_SEC : SHOOT_DEBUG_120_SEC;
+    #else
+        return nominalSeconds;
+    #endif
+    }
 
     // Tastergesten (beide Rollen gleichwertig, Feature 006)
     constexpr uint16_t POWER_OFF_HOLD_MS = 3000;     // 3s halten = Aus (jeder Zustand, FR-001)

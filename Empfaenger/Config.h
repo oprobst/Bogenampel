@@ -43,8 +43,14 @@
 // Debugging aktivieren/deaktivieren
 #define DEBUG_ENABLED 0  // 1 = Debug-Ausgaben an, 0 = aus
 
-// Verkürzte Zeiten für Tests (nur wenn DEBUG_ENABLED = 1)
+// Verkürzte Zeiten für Testläufe. Default 0 — eingeschaltet wird das NICHT hier,
+// sondern über -DDEBUG_SHORT_TIMES=1 aus der platformio.ini (env:empfaenger-debug
+// / empfaenger-debug-ota). So kann ein Testbuild mit 6-Sekunden-Passe nicht
+// versehentlich im Feld landen, und Sender und Empfänger werden immer bewusst
+// als Paar umgestellt (die Zeittabelle muss auf beiden Geräten gleich sein).
+#ifndef DEBUG_SHORT_TIMES
 #define DEBUG_SHORT_TIMES 0  // 1 = Verkürzte Zeiten, 0 = Normale Zeiten
+#endif
 
 //=============================================================================
 // HARDWARE PIN-DEFINITIONEN (XIAO-Nummerierung → GPIO)
@@ -200,6 +206,51 @@ namespace Timing {
     // Vorschau (Ton bzw. "888"-Anzeige), die noch bis zu dieser Zeit nach der
     // letzten Bewegung nachklingt.
     constexpr uint16_t PREVIEW_HOLD_MS = 1000;  // max. 1 s Nachlauf
+
+    // Schießbetrieb — Vorbereitungsphase (Wert wie Sender/Config.h)
+    #if DEBUG_SHORT_TIMES
+        constexpr uint16_t PREPARATION_TIME_MS = 5000;   // 5 Sekunden (DEBUG)
+    #else
+        constexpr uint16_t PREPARATION_TIME_MS = 10000;  // 10 Sekunden Vorbereitungsphase
+    #endif
+
+    //-------------------------------------------------------------------------
+    // Verkürzte Schießzeit für Testläufe (DEBUG_SHORT_TIMES)
+    //-------------------------------------------------------------------------
+    // 120 s → 6 s, 240 s → 12 s (zusammen mit der 5-s-Vorbereitung läuft eine
+    // komplette Passe damit in unter einer Minute durch statt in Minuten).
+    //
+    // ACHTUNG: Diese Abbildung MUSS in Sender/Config.h und Empfaenger/Config.h
+    // identisch bleiben. Der Empfänger zählt die Passe AUTONOM (FR-004) und
+    // bekommt per Funk nur CMD_START_120/CMD_START_240 — nie die Dauer selbst.
+    // Weichen die beiden Tabellen ab, laufen Ampel und Anzeige auseinander und
+    // das Passenende fällt auf zwei verschiedene Sekunden.
+    constexpr uint16_t SHOOT_DEBUG_120_SEC = 6;
+    constexpr uint16_t SHOOT_DEBUG_240_SEC = 12;
+
+    /**
+     * @brief Nominale Schießzeit (120/240 s) → tatsächliche Countdown-Dauer
+     * @param nominalSeconds Schießzeit aus dem START-Kommando (120 oder 240)
+     * @return im Normalbetrieb der Wert selbst, mit DEBUG_SHORT_TIMES die
+     *         verkürzte Testdauer
+     */
+    constexpr uint16_t shootingSeconds(uint16_t nominalSeconds) {
+    #if DEBUG_SHORT_TIMES
+        return (nominalSeconds >= 240) ? SHOOT_DEBUG_240_SEC : SHOOT_DEBUG_120_SEC;
+    #else
+        return nominalSeconds;
+    #endif
+    }
+
+    // Orange-Phase am Ende der Schießzeit. Im Debug-Modus NICHT 5 s: bei einer
+    // 6-s-Passe wäre damit fast der ganze Countdown orange und die Phase als
+    // Signal wertlos. 2 s halten den Anteil (33 % / 17 %) nah am Normalbetrieb
+    // (30 s von 120 s = 25 %).
+    #if DEBUG_SHORT_TIMES
+        constexpr uint32_t ORANGE_THRESHOLD_SEC = 2;   // DEBUG
+    #else
+        constexpr uint32_t ORANGE_THRESHOLD_SEC = 30;  // letzte 30 Sekunden
+    #endif
 
 } // namespace Timing
 

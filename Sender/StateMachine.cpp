@@ -389,14 +389,9 @@ void StateMachine::enterSchiessBetrieb() {
     inPreparationPhase = true;
     preparationSecondsRemaining = Timing::PREPARATION_TIME_MS / 1000;
 
-    // Schießzeit setzen (normal oder verkürzt für DEBUG)
-    #if DEBUG_SHORT_TIMES
-        shootingDurationMs = 15000UL;
-        shootingSecondsRemaining = 15;
-    #else
-        shootingDurationMs = shootingTime * 1000UL;
-        shootingSecondsRemaining = shootingTime;
-    #endif
+    // Schießzeit setzen (mit DEBUG_SHORT_TIMES verkürzt — Timing::shootingSeconds)
+    shootingSecondsRemaining = Timing::shootingSeconds(shootingTime);
+    shootingDurationMs = shootingSecondsRemaining * 1000UL;
 
     // Sende START-Kommando sofort (Empfänger startet eigene 10s Vorbereitung)
     RadioCommand cmd = (shootingTime == 120) ? CMD_START_120 : CMD_START_240;
