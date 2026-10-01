@@ -2,12 +2,13 @@
  * @file FanManager.h
  * @brief Lüfter-Steuerung (LEDC-PWM, Drehzahl vom Poti — FR-023, R-10)
  *
- * NEU in V3: Der Gehäuselüfter hängt über einen 2N7002 (Q2, Low-Side) an D6;
+ * NEU in V3: Der Gehäuselüfter hängt über einen BSS138 (Q2, Low-Side) an D6;
  * die Drehzahl folgt dem Lüfter-Poti an D2 (GPIO4, ADC1_CH4).
  * - PWM-Frequenz ≥ 25 kHz (außerhalb des Hörbereichs, Lüfter pfeift nicht)
  * - Kein Tacho: bewusst nicht angeschlossen (Low-Side-PWM zerhackt das
  *   Open-Collector-Signal; D8/GPIO8 ist Strapping-Pin)
- * - R5 ist Gate-Pull-up an 3V3 → Lüfter läuft hardware-default voll, bis die
+ * - R11 ist Gate-Pull-up an 3V3 → Q2 leitet beim Boot, zieht die PWM-Leitung
+ *   LOW und der Lüfter läuft hardware-default auf MINIMALdrehzahl, bis die
  *   Firmware übernimmt: begin() FRÜH in setup() aufrufen!
  */
 
@@ -19,7 +20,7 @@ class FanManager {
 public:
     /**
      * @brief Konstruktor
-     * @param pwmPin GPIO für die Lüfter-PWM (Gate des 2N7002)
+     * @param pwmPin GPIO für die Lüfter-PWM (Gate des BSS138)
      * @param potiPin ADC1-GPIO des Drehzahl-Potis
      */
     FanManager(uint8_t pwmPin, uint8_t potiPin);

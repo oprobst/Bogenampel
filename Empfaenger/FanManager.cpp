@@ -32,7 +32,7 @@ void FanManager::begin() {
     ledcAttachPin(pwmPin, LEDC_CHANNEL_FAN);
 #endif
 
-    // Sofort definierten Duty vom Poti setzen (Befund 6: Gate-Pull-up R5
+    // Sofort definierten Duty vom Poti setzen (Befund 6: Gate-Pull-up R11
     // hielt die PWM-Leitung bis hierhin LOW → Lüfter auf Minimaldrehzahl)
     applyPotiValue();
     lastUpdateMs = millis();

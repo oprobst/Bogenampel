@@ -8,11 +8,11 @@
  * Hardware: Seeed XIAO ESP32C3 (U3) auf der PD-12V-Platine (Rev. 2026-08-03)
  * - WS2811 LED Strip (12V, IC-gesteuert, RGB; 7-Segment + Gruppen), direkt am 12V-Netz
  * - ESP-NOW Funk (integriert, kein externes Modul)
- * - Piezo-Transducer 12V über BC337, Lüfter über 2N7002 (Low-Side-PWM)
+ * - Piezo-Transducer 12V über BC337 (Q3), Lüfter über BSS138 (Q2, Low-Side-PWM)
  * - 3 Potis (Lautstärke, Helligkeit, Lüfter-Drehzahl), Debug-Taster, Status-LED
  *
  * Versorgung (PD-12V-Platine, löst den USB-5V-Aufbau mit Step-up ab):
- * - USB-C → CH224K (U2) verhandelt 12 V → Verpolungsschutz Q1 (IRLML9301) + TVS D2
+ * - USB-C → CH224K (U2) verhandelt 12 V → Verpolungsschutz Q1 (AO3401A) + TVS D2
  *   → +12V-Netz: LED-Strip (J7), Piezo (J8), Lüfter (J6)
  * - TSR0.5-2433 (U4): 12 V → 3V3, speist den XIAO über den 3V3-Pin (VUSB unbeschaltet)
  * - L7805 (U1): 12 V → 5 V, versorgt ausschließlich den Pegelwandler U5
@@ -86,7 +86,7 @@ namespace Pins {
                                      // 470 Ω (5,4 statt 25 mA) — dafür jetzt 12 V statt 5 V
                                      // am Piezo. Falls zu leise: R15 verkleinern (0,5-W-Typ).
                                      // (GPIO5 ist ADC2, wird aber rein digital genutzt)
-    constexpr uint8_t FAN_PWM = 21;  // D6/GPIO21 (LEDC): Gate des 2N7002 (Q2, J6 Pin 4);
+    constexpr uint8_t FAN_PWM = 21;  // D6/GPIO21 (LEDC): Gate des BSS138 (Q2, J6 Pin 4);
                                      // Q2 invertiert (Open-Drain auf der PWM-Leitung):
                                      // Gate HIGH = Leitung LOW = langsam! R11 10k =
                                      // Pull-up an 3V3 am Gate → PWM-Leitung beim Boot LOW,
@@ -394,7 +394,7 @@ namespace LEDStrip {
 } // namespace LEDStrip
 
 //=============================================================================
-// LÜFTER (PWM über 2N7002, Drehzahl vom Poti — FR-023)
+// LÜFTER (PWM über BSS138, Drehzahl vom Poti — FR-023)
 //=============================================================================
 
 namespace Fan {

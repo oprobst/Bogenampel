@@ -240,15 +240,18 @@ Verbindlich: `specs/004-v3-esp32-port/contracts/hardware-pins.md` (aus KiCad-Net
      blockierend, und solange läuft `update()` nicht — der Sender-Countdown bliebe
      stehen, während der Empfänger weiterzählt.
 
-  **Offener Punkt aus dieser Session**: Im **Empfänger**-Schaltplan heißen die MOSFETs
-  seit `1263445` **Q1 = AO3401A** (vorher IRLML9301) und **Q2 = BSS138** (vorher
-  2N7002). `README.md` und `HARDWARE.md` sind nachgezogen; noch offen sind die
-  Kommentare in `Empfaenger/Config.h` (Kopfzeilen + `FAN_PWM` + Abschnitt „LÜFTER"),
-  `Empfaenger/FanManager.h` und
-  `specs/004-v3-esp32-port/contracts/hardware-pins.md`. Auch `Empfaenger.csv`
-  (BOM-Export) stammt noch von vor der Umbenennung.
+  **Offener Punkt aus dieser Session — MOSFET-Typen im Empfänger sind uneinheitlich**:
+  `1263445` hat **nur das Value-Feld im Schaltplan** geändert (Q1 → AO3401A,
+  Q2 → BSS138). Weiterhin auf den ALTEN Typen stehen:
+  die `MPN`-Eigenschaft im `.kicad_sch`, die Felder im `.kicad_pcb` und der BOM-Export
+  `Empfaenger.csv`. **Wer nach BOM oder MPN bestellt, bekommt IRLML9301/2N7002.**
+  Zuerst klären, was physisch bestückt ist; dann in KiCad die MPN nachziehen,
+  „Update PCB from Schematic" und BOM neu exportieren.
+  Doku und Firmware-Kommentare folgen dem Value-Feld; nicht nachgezogen
+  ist bewusst `specs/004-v3-esp32-port/research.md` (historischer Entscheidungs-Record).
   **Nicht verwechseln**: Der **Sender** hat ebenfalls ein Q1 — dort ist
-  `IRLML9301` weiterhin korrekt (Battery Voltage Sensor), ebenso Q2 = `IRLML6346`.
+  `IRLML9301` weiterhin korrekt (Battery Voltage Sensor), ebenso Q2 = `IRLML6346`;
+  auch ein 2N7002 im Sender-Schaltplan ist unverändert gültig.
 - 2026-08-05: **Empfänger-Firmware auf die PD-12V-Platine angepasst** (Schaltplan-Rev.
   `cdde8dc`). Pin-Funktionen unverändert, aber: `BRIGHTNESS_MAX` 64 → **255** (der
   USB-Übergangsdeckel ist hinfällig — der Strip hängt jetzt direkt am 12-V-PD-Netz, der

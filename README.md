@@ -365,10 +365,14 @@ vollständige Inbetriebnahme- und Abnahme-Checkliste.
   beim Start und beim Beenden läuft, sammelt sich Ghosting über das ganze Turnier an.
   Ob das im Betrieb stört, ist noch nicht beurteilt. Falls ja, wäre ein Voll-Refresh
   beim Verlassen des Schießbetriebs der nächste Kompromiss.
-- **Bauteilbezeichner in der Dokumentation**: Im Schaltplan heißen die MOSFETs des
-  Empfängers inzwischen **Q1 = AO3401A** und **Q2 = BSS138**. `HARDWARE.md`, die
-  Kommentare in `Empfaenger/Config.h` und `FanManager.h` sowie der Pin-Contract nennen
-  noch IRLML9301 bzw. 2N7002. Autoritativ ist das KiCad-Projekt.
+- **MOSFET-Typen im KiCad-Projekt uneinheitlich**: Im Empfänger-Schaltplan stehen die
+  MOSFETs als **Q1 = AO3401A** und **Q2 = BSS138** — aber nur im *Value*-Feld. Die
+  **MPN-Eigenschaft**, die Felder im **Layout** (`Empfaenger.kicad_pcb`) und der
+  **BOM-Export** (`Empfaenger.csv`) nennen weiterhin IRLML9301 bzw. 2N7002. Wer nach
+  der BOM oder der MPN bestellt, bekommt also die alten Typen. Zu klären ist zuerst,
+  welche Teile physisch bestückt sind; danach in KiCad die MPN nachziehen,
+  „Update PCB from Schematic" laufen lassen und die BOM neu exportieren.
+  Die Firmware-Kommentare und die Doku folgen dem Value-Feld (AO3401A/BSS138).
 - **Ladestrom**: Der Sender lädt mit 80–100 mA. Auf 500 mA umschalten geht **nicht per
   Firmware**, auch wenn die Leitung dafür vorbereitet aussieht: Der PROG2-Eingang des
   MCP73837 verlangt für „High" mindestens 0,8 × VDD = 4,0 V (VDD = VUSB = 5 V), ein

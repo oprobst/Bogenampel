@@ -117,15 +117,22 @@ Display: Waveshare 1.54″ e-Paper V2 (GDEH0154D67/SSD1681, 200×200) als rohes 
 | **Poti Helligkeit (J4)** | **D1** | **3** | IN (ADC1) | **Umverdrahtung von D5!** (GPIO7 hat keinen ADC; GPIO5/D3 wäre ADC2 = mit Funk unbrauchbar); über R4 1k |
 | Piezo (J8, 12-V-Transducer) | **D3** | **5** | OUT (LEDC) | über R10 2k2 → BC337 (Q3), R12 10k Basis-Pulldown (stumm beim Boot); R15 2k2 vom Collector nach +12 V als Entlade-Pfad (vorher 470 Ω — falls zu leise, verkleinern). GPIO5 ist ADC2, wird aber rein digital genutzt |
 | **Poti Lüfter-Drehzahl (J2)** | **D2** | **4** | IN (ADC1) | Schleifer über R5 1k, stellt die Lüfter-PWM (D6) ein; ADC1_CH4, kein Strapping-Pin |
-| Lüfter PWM (J6 Pin 4) | D6 | 21 | OUT (LEDC) | direkt am Gate des 2N7002 (Q2, **invertiert**: Gate HIGH = PWM-Leitung LOW = langsam); R11 10k = Gate-Pull-up an 3V3 → Leitung beim Boot LOW (Minimaldrehzahl), R13 10k = Pull-up der PWM-Leitung an 3V3. J6 Pin 3 (Tacho) unbeschaltet |
+| Lüfter PWM (J6 Pin 4) | D6 | 21 | OUT (LEDC) | direkt am Gate des **BSS138** (Q2, **invertiert**: Gate HIGH = PWM-Leitung LOW = langsam); R11 10k = Gate-Pull-up an 3V3 → Leitung beim Boot LOW (Minimaldrehzahl), R13 10k = Pull-up der PWM-Leitung an 3V3. J6 Pin 3 (Tacho) unbeschaltet |
 | Taster (J5) | D7 | 20 | IN | gegen GND → `INPUT_PULLUP`, aktiv LOW (Debug-/Testtaster) |
 | Status-LED (D3) | D9 | 9 | OUT | **aktiv LOW**: 3V3 → LED → R9 220 Ω → Pin (sinkt Strom) — Strapping-Fix Befund 3 |
 | WS2811 Data (J7) | D10 | 10 | OUT | 66 Pixel, 12-V-Strip. **Neu**: über U5 (74AHCT1G125, 3,3 → 5 V, /OE fest an GND) → R14 330 Ω → J7 Pin 2. U5-Eingang ohne Pulldown → GPIO10 in `setup()` früh OUTPUT LOW |
 | POTI_GND | D4 | 6 | OUT | geschalteter Fußpunkt des Lautstärke-Potis J3 Pin 3 (Befund 2); in `setup()` OUTPUT LOW |
 | frei | D5, D8 | 7, 8 | — | Reserve (D5 nach Helligkeits-Poti-Umzug frei; D8 nach Tacho-Verzicht frei) |
 
+**Drehrichtung der Potis**: Alle drei sind regulär zwischen GND und 3V3 verdrahtet —
+**Aufdrehen liefert den höheren ADC-Wert**. Die Firmware rechnet deshalb über
+`Poti::level()` mit der Reglerstellung statt mit dem Rohwert; die Richtung steht als
+einziges Flag in `Poti::ASCENDING` (`Empfaenger/Config.h`). Der Vorserien-Aufbau war
+hier verpolt, und die Firmware glich das an fünf Stellen einzeln aus — nach dem Wechsel
+auf diese Platine liefen dadurch alle Regler verkehrt herum (behoben 2026-10-01).
+
 Versorgung (PD-12V-Platine): USB-C (J1) → CH224K (U2) verhandelt **12 V** → Verpolungsschutz
-Q1 (IRLML9301) + TVS D2 (SMBJ13A) → +12V-Netz. Daraus:
+Q1 (**AO3401A**) + TVS D2 (SMBJ13A) → +12V-Netz. Daraus:
 - **TSR0.5-2433 (U4)** → 3V3, speist den XIAO über den **3V3-Pin** (VUSB und Batt-Pads unbeschaltet)
 - **L7805 (U1)** → 5 V, versorgt ausschließlich den Pegelwandler U5
 - **+12 V direkt** an LED-Strip (J7), Piezo (J8) und Lüfter (J6)
