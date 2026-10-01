@@ -80,8 +80,11 @@ Empfaenger/           # Anzeigeeinheit (XIAO ESP32C3)
 
 Schaltung-Sender/     # KiCad Sender    — autoritative Hardware-Quelle (Constitution V)
 Schaltung-Empfaenger/ # KiCad Empfänger — dito
-schaltplan-sender.png     # Schaltplan-Export, ohne KiCad lesbar
-schaltplan-empfaenger.png
+doc/                  # Fotos + Exporte (Schaltplan/Layout), ohne KiCad lesbar
+                      #   Sender_Schaltplan.png, Empfänger_Schaltplan.png,
+                      #   Sender_PCB.png, Empfänger_PCB.png
+                      #   (die alten schaltplan-*.png im Root sind am 2026-10-01
+                      #    entfallen — sie waren veraltete Dubletten)
 
 specs/                # Feature-Spezifikationen (004-v3-esp32-port = V3-Port)
 ```
@@ -237,13 +240,15 @@ Verbindlich: `specs/004-v3-esp32-port/contracts/hardware-pins.md` (aus KiCad-Net
      blockierend, und solange läuft `update()` nicht — der Sender-Countdown bliebe
      stehen, während der Empfänger weiterzählt.
 
-  **Offener Punkt aus dieser Session**: Im Schaltplan heißen die MOSFETs seit
-  `1263445` **Q1 = AO3401A** (vorher IRLML9301) und **Q2 = BSS138** (vorher
-  2N7002). `HARDWARE.md`, die Kommentare in `Empfaenger/Config.h`/`FanManager.h`
-  und `specs/004-v3-esp32-port/contracts/hardware-pins.md` nennen noch die alten
-  Typen. Autoritativ ist das KiCad-Projekt (Constitution V) — beim nächsten
-  Durchgang nachziehen. Auch `Empfaenger.csv` (BOM-Export) stammt noch von vor
-  der Umbenennung.
+  **Offener Punkt aus dieser Session**: Im **Empfänger**-Schaltplan heißen die MOSFETs
+  seit `1263445` **Q1 = AO3401A** (vorher IRLML9301) und **Q2 = BSS138** (vorher
+  2N7002). `README.md` und `HARDWARE.md` sind nachgezogen; noch offen sind die
+  Kommentare in `Empfaenger/Config.h` (Kopfzeilen + `FAN_PWM` + Abschnitt „LÜFTER"),
+  `Empfaenger/FanManager.h` und
+  `specs/004-v3-esp32-port/contracts/hardware-pins.md`. Auch `Empfaenger.csv`
+  (BOM-Export) stammt noch von vor der Umbenennung.
+  **Nicht verwechseln**: Der **Sender** hat ebenfalls ein Q1 — dort ist
+  `IRLML9301` weiterhin korrekt (Battery Voltage Sensor), ebenso Q2 = `IRLML6346`.
 - 2026-08-05: **Empfänger-Firmware auf die PD-12V-Platine angepasst** (Schaltplan-Rev.
   `cdde8dc`). Pin-Funktionen unverändert, aber: `BRIGHTNESS_MAX` 64 → **255** (der
   USB-Übergangsdeckel ist hinfällig — der Strip hängt jetzt direkt am 12-V-PD-Netz, der

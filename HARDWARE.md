@@ -18,18 +18,25 @@ verbindliche Pin-Tabelle für beide Firmwares steht in
   (24-pol FPC) mit diskretem Boost (Si1308EDL + MBR0530)
 - **Power**: TPS62742 mit Latch (GPIO16 hält das Gerät an, LOW = Selbstabschaltung),
   LOAD-Rail (GPIO7) schaltet die Display-Versorgung
-- **Akku**: LiPo mit MCP73837-Lader (STAT1/STAT2/PG an GPIO11/12/17),
-  Spannungsmessung über Teiler 150k/100k an GPIO10 (ADC1, ×2,5)
-- **Taster**: BTN1 = SW2/GPIO15, aktiv HIGH über Teiler R2=47k/R7=240k an +BATT
-  (Power-On + OK + Gesten); BTN2 = SW1/GPIO9 gegen GND (Weiter)
-- **Funk**: ESP-NOW (integrierte Antenne U.FL — WROOM-1U)
+- **Akku**: einzelne LiIon-/LiPo-Zelle (verbaut: 14500, 1500 mAh) mit MCP73837-Lader
+  (STAT1/STAT2/PG an GPIO11/12/17),
+  Spannungsmessung über Teiler R4=150k/R8=100k an GPIO10 (ADC1, ×2,5)
+- **Taster**: BTN1 = SW2/GPIO15, aktiv HIGH über Teiler R2=47k/R7=240k an +BATT;
+  BTN2 = SW1/GPIO9 gegen GND (interner Pull-up).
+  **Rollen** (seit 2026-08-01 an der Gehäusebeschriftung ausgerichtet):
+  GPIO15 = **CONFIG** (Weiter/Ändern; hält beim Einschalten den Power-Latch — das ist
+  Hardware und per Firmware nicht auf den anderen Taster verlegbar),
+  GPIO9 = **OK** (Bestätigen, Dreifachklick = Alarm). Die Zuordnung Rolle → Pin steht
+  ausschließlich in `ButtonManager::readRawState()`.
+- **Funk**: ESP-NOW; der **-1U** hat keine Leiterplattenantenne, sondern einen
+  **U.FL-Anschluss für eine externe Antenne** (verbaut: SMA-Pigtail)
 
 | Funktion | GPIO | | Funktion | GPIO |
 |---|---|---|---|---|
 | LATCH (Power halten) | 16 | | e-Paper CS | 21 |
 | LOAD (Display-Rail) | 7 | | e-Paper DC | 47 |
-| BTN1 (Power/OK, aktiv HIGH) | 15 | | e-Paper RES | 48 |
-| BTN2 (Weiter, aktiv LOW) | 9 | | e-Paper BUSY | 38 |
+| BTN1 = CONFIG (Power-On, aktiv HIGH) | 15 | | e-Paper RES | 48 |
+| BTN2 = OK (aktiv LOW) | 9 | | e-Paper BUSY | 38 |
 | ADC_BAT (ADC1, ×2,5) | 10 | | SPI CLK | 14 |
 | USB_CON (aktiv HIGH) | 8 | | SPI MOSI | 13 |
 | Lader ST1 / ST2 / PG / PRG | 11 / 12 / 17 / 18 | | USB D-/D+ | 19/20 |
@@ -38,16 +45,23 @@ verbindliche Pin-Tabelle für beide Firmwares steht in
 
 - **Seeed XIAO ESP32C3** (4 MB Flash), Versorgung über den **3V3-Pin** (VUSB/Batt unbeschaltet)
 - **Stromversorgung**: USB-C (J1) → **CH224K** (U2) verhandelt 12 V → Verpolungsschutz
-  Q1 (IRLML9301) + TVS D2 (SMBJ13A) → +12V-Netz; daraus **TSR0.5-2433** (U4) → 3V3 für den
-  XIAO und **L7805** (U1) → 5 V nur für den Pegelwandler U5. Kein Step-up, keine Jumper mehr.
+  Q1 (**AO3401A**, P-Kanal) + TVS D2 (SMBJ13A) → +12V-Netz; daraus **TSR0.5-2433** (U4) → 3V3
+  für den XIAO und **L7805** (U1) → 5 V nur für den Pegelwandler U5. Kein Step-up, keine
+  Jumper mehr. Netzteil: 12 V / ≥ 2 A.
 - **WS2811-Strip** 66 Pixel, direkt am 12V-Netz (2×12 Gruppen + 3×14 Ziffern-Pixel)
 - **Pegelwandler U5 74AHCT1G125** (3,3 → 5 V, /OE fest an GND) in der Datenleitung,
   Ausgang über R14 330 Ω an J7 — behebt die früheren Farbkipper bei 3,3-V-Pegel
 - **Piezo**: 12-V-Transducer über BC337 (Q3; R10 2k2 Basisvorwiderstand, R12 10k
   Basis-Pulldown, R15 2k2 nach +12 V als Entlade-Pfad), LEDC-PWM (3,25 kHz = Resonanz,
   Lautstärke = Duty 0-50 %)
-- **Lüfter**: 2N7002 Low-Side (Q2, **invertiert**), LEDC-PWM 25 kHz, Drehzahl per Poti;
+- **Lüfter**: **BSS138** Low-Side (Q2, **invertiert**: Gate HIGH = PWM-Leitung LOW =
+  langsam), LEDC-PWM 25 kHz, Drehzahl per Poti;
   Tacho bewusst unbeschaltet (R11 = Gate-Pull-up → Lüfter läuft beim Boot auf Minimaldrehzahl)
+- **Potis** (3 × 47 k, je über 1 k am Schleifer): regulär zwischen GND und 3V3 verdrahtet,
+  **Aufdrehen liefert den höheren ADC-Wert**. Die Firmware rechnet deshalb über
+  `Poti::level()` mit der Reglerstellung statt mit dem Rohwert; die Drehrichtung steht
+  als einziges Flag in `Poti::ASCENDING` (`Empfaenger/Config.h`) — nie einzeln in den
+  Kennlinien invertieren.
 - **ESP32-C3-Strapping-Fixes** (alle im Schaltplan umgesetzt):
   GPIO2 (Lautstärke-Poti) → Fußpunkt an D4/GPIO6 statt GND („POTI_GND");
   GPIO9 (Status-LED) → aktiv LOW (3V3 → LED → R9 → Pin); GPIO8 frei (kein Tacho)
@@ -59,7 +73,7 @@ verbindliche Pin-Tabelle für beide Firmwares steht in
 | Poti Lüfter-Drehzahl (J2) | D2 | 4 |
 | Piezo (J8, über BC337) | D3 | 5 |
 | POTI_GND (geschalteter Fußpunkt) | D4 | 6 |
-| Lüfter-PWM (J6 Pin 4, 2N7002) | D6 | 21 |
+| Lüfter-PWM (J6 Pin 4, über Q2 BSS138) | D6 | 21 |
 | Debug-Taster (J5, aktiv LOW) | D7 | 20 |
 | Status-LED (**aktiv LOW**) | D9 | 9 |
 | WS2811 Data (J7, über U5) | D10 | 10 |
@@ -398,7 +412,8 @@ Der TXS0108EPW konvertiert bidirektional zwischen 5V (Arduino) und 3.3V (Display
 
 ---
 
-**Nächste Schritte:**
+**Nächste Schritte** (historisch, bezieht sich auf V2 — V2 ist seit 2026-08-01
+eingefroren, diese Punkte werden nicht mehr verfolgt):
 1. Pin-Zuweisungen aus KiCad-Schaltplan übernehmen
 2. Hardware-Tests durchführen
 3. Config.h mit korrekten Pins aktualisieren

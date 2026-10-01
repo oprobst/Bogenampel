@@ -45,9 +45,10 @@ Anzeige bleibt nie in Grün stehen, nur weil die Verbindung weg ist.
 
 ## Die Bedieneinheit
 
-ESP32-S3-WROOM-1U mit externer Antenne, 1,54″-e-Paper (200 × 200, SSD1681), ein
-14500-LiIon-Zelle mit MCP73837-Lader und ein Soft-Power-Latch: Einschalten per
-Taster, Ausschalten übernimmt die Firmware selbst, sobald sie fertig aufgeräumt hat.
+ESP32-S3-WROOM-1U mit externer Antenne am U.FL-Anschluss, 1,54″-e-Paper
+(200 × 200, SSD1681), eine 14500-LiIon-Zelle mit MCP73837-Lader und ein
+Soft-Power-Latch um einen TPS62742: Einschalten per Taster, Ausschalten übernimmt
+die Firmware selbst, sobald sie fertig aufgeräumt hat.
 Das e-Paper behält sein Bild ohne Strom — der Abschaltbildschirm bleibt deshalb nach
 dem Ausschalten lesbar stehen.
 
@@ -157,7 +158,7 @@ gedacht, die ohne KiCad hineinsehen wollen.
 | **Funk** | ESP-NOW, Kanal 1 (im Chip integriert) | ESP-NOW, Kanal 1 |
 | **Versorgung** | LiIon 14500 + MCP73837-Lader, USB-C | USB-C PD 12 V über CH224K (≥ 2 A) |
 | **Bedienelemente** | 2 Taster (CONFIG, OK) | Debug-Taster, 3 Potis |
-| **Sonstiges** | Soft-Power-Latch | Piezo 12 V, geregelter Lüfter, Pegelwandler 74AHCT1G125 |
+| **Sonstiges** | Soft-Power-Latch (TPS62742) | Piezo 12 V, geregelter Lüfter, Pegelwandler 74AHCT1G125 |
 | **Firmware** | [`Sender/`](Sender/) | [`Empfaenger/`](Empfaenger/) |
 | **Schaltplan** | [`Schaltung-Sender/`](Schaltung-Sender/) | [`Schaltung-Empfaenger/`](Schaltung-Empfaenger/) |
 
