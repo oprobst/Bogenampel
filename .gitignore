@@ -21,6 +21,14 @@
 # Marker von KiCad-Plugins (leere Datei, reiner Sitzungszustand)
 **/.kicad-push
 
+# Projekt-Lokaleinstellungen: zuletzt geoeffnetes Blatt, Zoom, sichtbare Layer,
+# Fensterpositionen. Reiner Arbeitsplatz-Zustand, kein Schaltplaninhalt — die
+# Datei aendert sich bei JEDEM Oeffnen von KiCad und stand deshalb staendig
+# ungewollt im git status. Entfernt aus der Versionierung am 2026-10-01.
+# Achtung: *.kicad_pro (Projektdatei mit Netzklassen, BOM-Feldern, Design Rules)
+# ist davon NICHT betroffen und bleibt versioniert.
+*.kicad_prl
+
 # Alt-, Autosave- und Rettungsstaende, die KiCad selbst anlegt
 *-bak
 *.bak
