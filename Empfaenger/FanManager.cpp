@@ -45,15 +45,19 @@ void FanManager::update() {
 }
 
 void FanManager::applyPotiValue() {
-    // Poti verpolt → invertiert (Q2 Open-Drain: Gate HIGH zieht die PWM-Leitung
-    // LOW = Lüfter langsam). ADC-Minimum = volle Drehzahl; ab Fan::OFF_THRESHOLD
-    // aus. Gamma-Kennlinie (Fan::CURVE_GAMMA < 1) spreizt die gefühlte Drehzahl-
-    // änderung über den Drehweg — sonst beschleunigt der Lüfter fast nur im
-    // obersten PWM-Bereich.
-    uint16_t raw = Adc::readAveraged(potiPin);  // gemittelt (Rauschunterdrückung)
-    uint16_t clamped = (raw > Fan::OFF_THRESHOLD) ? Fan::OFF_THRESHOLD : raw;
-    // q = Anteil Richtung volle Drehzahl (1 = ADC-Min/voll, 0 = Aus-Anschlag)
-    float q = (float)(Fan::OFF_THRESHOLD - clamped) / (float)Fan::OFF_THRESHOLD;
+    // Aufdrehen = schneller: Poti::level liefert die Reglerstellung (groß = voll),
+    // unterhalb Fan::OFF_THRESHOLD ist der Lüfter aus. Gamma-Kennlinie
+    // (Fan::CURVE_GAMMA < 1) spreizt die gefühlte Drehzahländerung über den
+    // Drehweg — sonst beschleunigt der Lüfter fast nur im obersten PWM-Bereich.
+    // ACHTUNG: Die zweite Invertierung unten (255 − fanDuty) ist KEINE Poti-
+    // Korrektur, sondern Hardware: Q2 ist Open-Drain, Gate HIGH zieht die
+    // PWM-Leitung LOW = Lüfter langsam. Die muss bleiben.
+    uint16_t level = Poti::level(Adc::readAveraged(potiPin));  // gemittelt (Rauschunterdrückung)
+    // q = Anteil Richtung volle Drehzahl (0 = Aus-Anschlag, 1 = voll)
+    float q = (level <= Fan::OFF_THRESHOLD)
+                  ? 0.0f
+                  : (float)(level - Fan::OFF_THRESHOLD)
+                        / (float)(Poti::ADC_MAX - Fan::OFF_THRESHOLD);
     uint8_t fanDuty = (uint8_t)(powf(q, Fan::CURVE_GAMMA) * 255.0f + 0.5f);  // 255 = voll
     uint8_t newDuty = (uint8_t)(255 - fanDuty);  // Gate-Duty (invertiert: 0 = voll)
 

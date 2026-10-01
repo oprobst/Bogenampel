@@ -223,16 +223,54 @@ namespace Adc {
 } // namespace Adc
 
 //=============================================================================
-// LAUTSTÄRKE-POTI (D0) — verpolt verbaut, in Software invertiert
+// POTI-ORIENTIERUNG (eine Stelle für alle drei Regler)
+//=============================================================================
+
+namespace Poti {
+
+    // ESP32-C3-ADC ist 12-bit.
+    constexpr uint16_t ADC_MAX = 4095;
+
+    // Drehrichtung der Regler, HARDWARE-ABHÄNGIG — hier und NUR hier umstellen:
+    //   true  = Aufdrehen liefert den HÖHEREN ADC-Wert (PD-12V-Platine,
+    //           Rev. 2026-08-03: Schleifer zwischen GND und 3V3 regulär verdrahtet)
+    //   false = Poti verpolt verbaut (Vorserien-Aufbau bis 2026-08-05) — dort
+    //           lieferte Aufdrehen den KLEINEREN Wert und die Firmware invertierte
+    //           an fünf Stellen einzeln.
+    // Befund 2026-10-01 auf der fertigen Platine: alle drei Regler liefen falsch
+    // herum (aufdrehen = dunkler/leiser/langsamer), weil die Software noch
+    // invertierte. Verdrahtung bleibt, Invertierung ist hiermit abgeschaltet.
+    constexpr bool ASCENDING = true;
+
+    /**
+     * @brief Rohwert → Reglerstellung, unabhängig von der Verdrahtung
+     * @param raw gemittelter ADC-Rohwert (0…ADC_MAX)
+     * @return 0 = Regler am unteren Anschlag (aus/dunkel/langsam),
+     *         ADC_MAX = oberer Anschlag (laut/hell/schnell)
+     *
+     * Alle Kennlinien und Schwellen im Projekt rechnen mit DIESEM Wert, nie mit
+     * dem Rohwert — damit beschreibt ASCENDING die Hardware an genau einer Stelle.
+     */
+    inline uint16_t level(uint16_t raw) {
+        uint16_t clamped = (raw > ADC_MAX) ? ADC_MAX : raw;
+        return ASCENDING ? clamped : (uint16_t)(ADC_MAX - clamped);
+    }
+
+} // namespace Poti
+
+//=============================================================================
+// LAUTSTÄRKE-POTI (D0)
 //=============================================================================
 
 namespace Volume {
 
-    // ESP32-C3-ADC ist 12-bit (0…4095). Ab diesem Rohwert (nahe Maximum) ist der
-    // Buzzer KOMPLETT STUMM; darunter quadratische Kennlinie bis volle Lautstärke
-    // bei ADC = 0. (Poti verpolt → Invertierung in updatePotis().)
-    // Schwelle bei 99 % der Range → nur im letzten 1 % der Reglerstellung stumm.
-    constexpr uint16_t OFF_THRESHOLD = 4054;  // 4095 × 0,99 ≈ 4054 (letztes 1 %)
+    // Unterhalb dieser Reglerstellung (Poti::level, NICHT Rohwert) ist der Buzzer
+    // KOMPLETT STUMM; darüber quadratische Kennlinie bis volle Lautstärke am
+    // oberen Anschlag. Bewusst sehr schmal (2026-10-01): stumm wird es nur noch
+    // direkt am unteren Anschlag, der nutzbare Lautstärkeweg beginnt sofort
+    // danach. Falls das Stummschalten am Anschlag nicht greift, liegt der
+    // ADC-Nullpunkt des Exemplars über diesem Wert → Schwelle wieder anheben.
+    constexpr uint16_t OFF_THRESHOLD = 5;  // nur der unterste Anschlag ist stumm
 
 } // namespace Volume
 
@@ -314,10 +352,10 @@ namespace Fan {
                                                   // außerhalb des Hörbereichs)
     constexpr uint8_t PWM_RESOLUTION_BITS = 8;    // Duty 0-255
 
-    // Lüfter-Poti (D2) verpolt → in Software invertiert (ADC klein = volle Drehzahl).
-    // Ab diesem Rohwert (nahe Maximum) Lüfter aus (bzw. Minimaldrehzahl bei 4-Draht-
-    // Lüftern, die per PWM nicht vollständig stoppen).
-    constexpr uint16_t OFF_THRESHOLD = 4000;
+    // Unterhalb dieser Reglerstellung (Poti::level, NICHT Rohwert) ist der Lüfter
+    // aus (bzw. auf Minimaldrehzahl bei 4-Draht-Lüftern, die per PWM nicht
+    // vollständig stoppen). ~2,3 % des Drehwegs am unteren Anschlag.
+    constexpr uint16_t OFF_THRESHOLD = 95;  // 4095 − 4000 (Totband wie vorher)
 
     // Kennlinie Poti → Drehzahl: Gamma < 1 (konkav) verschiebt die Drehzahl-
     // änderung nach "früher" im Drehweg und macht die GEFÜHLTE Änderung gleich-

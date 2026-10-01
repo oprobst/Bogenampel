@@ -237,11 +237,12 @@ void setupNormal() {
     // Helligkeitsartefakte. Ohne Dither ist die Ausgabe deterministisch.
     FastLED.setDither(DISABLE_DITHER);
 
-    // Initiale Helligkeit aus Poti lesen (15-100 %, FR-022). Poti verpolt →
-    // invertiert (ADC klein = hell), konsistent mit updatePotis() — sonst liefe
-    // der Regenbogen-Effekt mit verkehrter (oft viel zu dunkler) Helligkeit.
-    uint16_t potiValue = Adc::readAveraged(Pins::BRIGHTNESS_POTI);  // gemittelt (Rauschunterdrückung)
-    currentBrightness = map(potiValue, 0, 4095, LEDStrip::BRIGHTNESS_MAX, LEDStrip::BRIGHTNESS_MIN);
+    // Initiale Helligkeit aus Poti lesen (15-100 %, FR-022) — über Poti::level,
+    // konsistent mit updatePotis(); sonst liefe der Regenbogen-Effekt mit
+    // verkehrter (oft viel zu dunkler) Helligkeit.
+    uint16_t potiValue = Poti::level(Adc::readAveraged(Pins::BRIGHTNESS_POTI));  // gemittelt (Rauschunterdrückung)
+    currentBrightness = map(potiValue, 0, Poti::ADC_MAX,
+                            LEDStrip::BRIGHTNESS_MIN, LEDStrip::BRIGHTNESS_MAX);
     FastLED.setBrightness(currentBrightness);
 
     FastLED.clear();
@@ -398,8 +399,9 @@ void updateLedDebugAnimation() {
         lastColor = now;
     }
 
-    uint16_t potiValue = Adc::readAveraged(Pins::BRIGHTNESS_POTI);
-    uint8_t brightness = map(potiValue, 0, 4095, LEDStrip::BRIGHTNESS_MAX, LEDStrip::BRIGHTNESS_MIN);
+    uint16_t potiValue = Poti::level(Adc::readAveraged(Pins::BRIGHTNESS_POTI));
+    uint8_t brightness = map(potiValue, 0, Poti::ADC_MAX,
+                             LEDStrip::BRIGHTNESS_MIN, LEDStrip::BRIGHTNESS_MAX);
     FastLED.setBrightness(brightness);
 
     fill_solid(leds, LEDStrip::TOTAL_LEDS, colors[colorIndex]);
@@ -591,9 +593,9 @@ void checkButton() {
 /**
  * @brief Liest Lautstärke- und Helligkeits-Poti und wendet die Werte live an
  *
- * Lautstärke: Poti verpolt → in Software invertiert (ADC klein = laut, groß = aus).
- * Quadratische Kennlinie über den invertierten Wert; ab Volume::OFF_THRESHOLD stumm.
- * Helligkeit: linear 25-100 % wie V2.
+ * Lautstärke: quadratische Kennlinie über die Reglerstellung (Poti::level);
+ * unterhalb Volume::OFF_THRESHOLD stumm.
+ * Helligkeit: linear 15-100 % über die Reglerstellung.
  */
 void updatePotis() {
     if (millis() - lastPotiUpdate < Timing::POTI_UPDATE_INTERVAL_MS && lastPotiUpdate != 0) return;
@@ -601,18 +603,19 @@ void updatePotis() {
 
     const bool firstRead = !potiFeedbackEnabled;
 
-    // --- Lautstärke (D0) — Poti verpolt: ADC klein = laut, ADC groß = aus.
-    // Quadratische Kennlinie über den INVERTIERTEN Rohwert (gleiche Steilheit wie
-    // bisher); ab Volume::OFF_THRESHOLD (nahe Maximum) komplett stumm (duty 0).
-    uint32_t rawVol = Adc::readAveraged(Pins::VOLUME_POTI);  // gemittelt (Rauschunterdrückung)
+    // --- Lautstärke (D0): aufdrehen = lauter. Quadratische Kennlinie über die
+    // Reglerstellung; unterhalb Volume::OFF_THRESHOLD (unterer Anschlag)
+    // komplett stumm (duty 0).
+    uint32_t volLevel = Poti::level(Adc::readAveraged(Pins::VOLUME_POTI));  // gemittelt (Rauschunterdrückung)
     uint8_t duty;
-    if (rawVol >= Volume::OFF_THRESHOLD) {
-        duty = 0;  // Poti am Maximum → Buzzer aus
+    if (volLevel <= Volume::OFF_THRESHOLD) {
+        duty = 0;  // Poti am unteren Anschlag → Buzzer aus
     } else {
-        uint32_t inv = (uint32_t)Volume::OFF_THRESHOLD - rawVol;  // groß = laut, 0 = leise
+        constexpr uint32_t SPAN = (uint32_t)Poti::ADC_MAX - Volume::OFF_THRESHOLD;
+        uint32_t eff = volLevel - Volume::OFF_THRESHOLD;  // 0 = leise, SPAN = laut
         duty = BuzzerManager::DUTY_MIN +
-            (uint8_t)((inv * inv * (uint32_t)(BuzzerManager::DUTY_MAX - BuzzerManager::DUTY_MIN))
-                      / ((uint32_t)Volume::OFF_THRESHOLD * Volume::OFF_THRESHOLD));
+            (uint8_t)((eff * eff * (uint32_t)(BuzzerManager::DUTY_MAX - BuzzerManager::DUTY_MIN))
+                      / (SPAN * SPAN));
     }
     buzzer.setVolume(duty);
 
@@ -636,9 +639,10 @@ void updatePotis() {
         lastVolumeDuty = duty;         // Startwert übernehmen, ohne Ton
     }
 
-    // --- Helligkeit (D1, linear 15-100 %, Poti verpolt → invertiert: ADC klein = hell) ---
-    uint16_t rawBright = Adc::readAveraged(Pins::BRIGHTNESS_POTI);  // gemittelt (Rauschunterdrückung)
-    uint8_t newBrightness = map(rawBright, 0, 4095, LEDStrip::BRIGHTNESS_MAX, LEDStrip::BRIGHTNESS_MIN);
+    // --- Helligkeit (D1, linear 15-100 %, aufdrehen = heller) ---
+    uint16_t brightLevel = Poti::level(Adc::readAveraged(Pins::BRIGHTNESS_POTI));  // gemittelt (Rauschunterdrückung)
+    uint8_t newBrightness = map(brightLevel, 0, Poti::ADC_MAX,
+                                LEDStrip::BRIGHTNESS_MIN, LEDStrip::BRIGHTNESS_MAX);
 
     // Nur aktualisieren wenn sich Helligkeit signifikant geändert hat (Hysterese)
     if (abs((int)newBrightness - (int)currentBrightness) > 3) {
