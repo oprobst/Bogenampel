@@ -10,7 +10,6 @@
 EpaperDisplay::EpaperDisplay()
     : display(GxEPD2_154_D67(Pins::EPD_CS, Pins::EPD_DC, Pins::EPD_RST, Pins::EPD_BUSY))
     , railEnabled(false)
-    , partialCount(0)
     , forceFullNext(true) {
 }
 
@@ -33,7 +32,6 @@ void EpaperDisplay::begin() {
     // Frisch initialisiertes Panel hat kein gültiges Referenzbild im RAM —
     // das erste Bild muss voll geschrieben werden (GxEPD2 erzwingt das intern
     // ebenfalls über _initial_refresh; hier explizit für unsere Buchhaltung).
-    partialCount = 0;
     forceFullNext = true;
 }
 
@@ -45,10 +43,13 @@ void EpaperDisplay::refreshScreen() {
     // Nur wenn das Panel zwingend ein Vollbild braucht (frisch initialisiert
     // oder aus dem Tiefschlaf) — sonst blitzt ein Zustandswechsel NIE.
     //
-    // Früher stand hier zusätzlich ein Ghosting-Budget (20 Partials). Das war
-    // in der Praxis unbrauchbar: Der 1-Hz-Countdown brauchte es binnen 20 s
-    // auf, also blitzte jeder Wechsel nach einer Passe. Die Entschattung
-    // passiert jetzt zeitgesteuert in "Pfeile holen" (GHOST_CLEAR_DELAY_MS).
+    // Die Entwicklung dieser Stelle in zwei Schritten, damit sie nicht
+    // zurückgedreht wird: Zuerst stand hier ein Ghosting-Budget (20 Partials) —
+    // unbrauchbar, weil der 1-Hz-Countdown es binnen 20 s aufbrauchte und
+    // danach jeder Wechsel blitzte. Dann eine zeitgesteuerte Entschattung in
+    // "Pfeile holen" — die fiel auf jedes Passenende und blieb damit die
+    // auffälligste Unruhe im Bild. Seit 2026-10-01 blitzt im Betrieb NICHTS
+    // mehr; Restschatten sind bewusst akzeptiert.
     if (forceFullNext) {
         fullRefresh();
         return;
@@ -58,28 +59,16 @@ void EpaperDisplay::refreshScreen() {
     // Pixel um, ohne den schwarz/weiß-Invertierungszyklus des Voll-Refresh.
     display.setFullWindow();
     display.display(true);
-    if (partialCount < 255) {
-        partialCount++;
-    }
 }
 
 void EpaperDisplay::fullRefresh() {
     display.setFullWindow();
     display.display(false);  // Voll-Refresh (setzt Ghosting zurück, R-2)
-    partialCount = 0;
     forceFullNext = false;
 }
 
 void EpaperDisplay::partialUpdate(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
     display.displayWindow(x, y, w, h);  // Partial-Refresh aus dem Puffer
-
-    // Restschatten-Buchhaltung: Der Zähler sagt nur noch, OB sich seit dem
-    // letzten Voll-Refresh Ghosting angesammelt hat (hasGhosting()). Er löst
-    // selbst nichts mehr aus — ein Voll-Refresh darf niemals mitten in einen
-    // laufenden Countdown platzen.
-    if (partialCount < 255) {
-        partialCount++;
-    }
 }
 
 void EpaperDisplay::hibernate() {

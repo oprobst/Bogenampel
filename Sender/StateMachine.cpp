@@ -36,7 +36,6 @@ StateMachine::StateMachine(EpaperDisplay& epdRef, ButtonManager& btnMgr, RadioMa
     , lastPingOk(false)
     , currentGroup(Groups::Type::GROUP_AB)     // Start mit A/B
     , currentPosition(Groups::Position::POS_1) // Start mit Position 1
-    , ghostClearPending(false)
     , inPreparationPhase(false)
     , preparationSecondsRemaining(0)
     , shootingSecondsRemaining(0)
@@ -298,10 +297,6 @@ void StateMachine::enterPfeileHolen() {
     pfeileHolenMenu.draw();
     epd.refreshScreen();  // Zustandswechsel ohne Blitzen (Ghosting-Regel R-2)
 
-    // Entschattung einplanen: der eine Voll-Refresh dieses Aufenthalts steht
-    // noch aus (ausgelöst in handlePfeileHolen nach GHOST_CLEAR_DELAY_MS)
-    ghostClearPending = true;
-
     // Gruppen-Signal sofort senden (Empfänger zeigt die richtige Gruppe)
     sendGroupCommand();
 
@@ -319,18 +314,11 @@ void StateMachine::handlePfeileHolen() {
 
     checkIdleTimeout();
 
-    // Entschattung: einmal pro Aufenthalt voll durchblitzen, sobald das Gerät
-    // GHOST_CLEAR_DELAY_MS (30 s) hier steht. Bis dahin liegt die
-    // Bedieneinheit aus der Hand und die Schützen sind an den Scheiben — das
-    // ist der einzige Moment im Ablauf, in dem das Blitzen niemanden stört.
-    // Ohne angesammelte Partials wird es übersprungen.
-    if (ghostClearPending && timeInState(Timing::GHOST_CLEAR_DELAY_MS)) {
-        ghostClearPending = false;
-        if (epd.hasGhosting()) {
-            DEBUG_PRINTLN("Pfeile holen: Entschattung (Voll-Refresh)");
-            epd.fullRefresh();
-        }
-    }
+    // Hier stand bis 2026-10-01 die zeitgesteuerte Entschattung: 30 s nach dem
+    // Eintritt blitzte das Panel einmal voll durch. Im Feld war das die
+    // auffälligste Unruhe im Bild — jede Passe endete mit einem Blitzer. Der
+    // Voll-Refresh liegt jetzt ausschließlich am Anfang (Splash) und am Ende
+    // (Abschalt-Screen) einer Sitzung; dazwischen bleibt das Bild ruhig.
 
     // Verbindungstest alle 5 Sekunden (PING + Statuszeile, V2-Verhalten)
     if (lastConnectionCheck == 0 || millis() - lastConnectionCheck >= 5000) {
