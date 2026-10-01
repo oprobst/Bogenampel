@@ -1,6 +1,6 @@
 # Bogenampel Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-06-11
+Auto-generated from all feature plans. Last updated: 2026-10-01
 
 ## Project Overview
 
@@ -9,7 +9,10 @@ Bogenampel ist eine funkgesteuerte Timer-Anzeige für Bogenschießplätze.
 **Aktuelle Generation V3 (`Sender/`, `Empfaenger/`, `Schaltung-Sender/`, `Schaltung-Empfaenger/`):**
 - **Sender (Bedieneinheit)**: ESP32-S3-WROOM-1U + 1.54″ e-Paper (SSD1681) + LiPo/MCP73837 + Power-Latch
 - **Empfänger (Anzeigeeinheit)**: XIAO ESP32C3 + WS2811 LED Strip (12 V, 66 Pixel) + Lüfter + 3 Potis,
-  seit Rev. 2026-08-03 auf der PD-12V-Platine (CH224K-Trigger, Pegelwandler 74AHCT1G125)
+  seit Rev. 2026-08-03 auf der PD-12V-Platine (CH224K-Trigger, Pegelwandler 74AHCT1G125).
+  Potis-Drehrichtung sitzt an EINER Stelle: `Timing`-naher Namespace `Poti` in
+  `Empfaenger/Config.h` (`Poti::ASCENDING` + `Poti::level()`) — nie einzeln in den
+  Kennlinien invertieren (2026-10-01, siehe Recent Changes).
 - **Kommunikation**: ESP-NOW (Kanal 1, 6-Byte-Frames, Discovery zur Laufzeit), 11 Kommandos unverändert
 - **Features**: Timer-Steuerung, Gruppen-Anzeige, Alarm-System, NVS-Konfiguration, autonomes Passenende (FR-004),
   OTA-Wartungsmodus (beide Taster beim Einschalten; im Normalbetrieb läuft kein WiFi)
@@ -57,6 +60,7 @@ Sender/               # Bedieneinheit (ESP32-S3 + e-Paper)
   │                   #   Wake-Window (Strom!), Relink nach 3 Fehlversuchen
   ├── PowerManager.*  # Latch, Akku (Median-5), MCP73837-Status, Power-Off
   ├── EpaperDisplay.* # GxEPD2-Wrapper: Voll-/Partial-Refresh, Statuszeile
+  │                   #   Voll-Refresh NUR Start/Ende — im Betrieb blitzt nichts!
   ├── ButtonManager.* # 2 Taster; Rolle→Pin NUR in readRawState() zugeordnet
   ├── OTAManager.*    # Wartungsmodus: WiFi-Station + ArduinoOTA (kein SoftAP)
   ├── OtaScreen.*     # Wartungsmodus-Anzeige: WLAN-Status + eigene IP
@@ -99,6 +103,26 @@ pio device monitor -e sender # 115200 Baud
 pio run -e sender-release  # Feld-Build ohne Debug-Ausgaben/CDC
 pio run -t upload -e sender-release-ota  # Feld-Build per OTA (Auslieferungsweg)
 ```
+**Testlauf mit verkürzten Zeiten** (seit 2026-10-01): Vorbereitung 5 s statt 10,
+Schießzeit 6 s statt 120 bzw. 12 s statt 240, Orange-Phase 2 s statt 30. Eine
+komplette Passe läuft damit in unter einer Minute durch.
+```bash
+pio run -t upload -e empfaenger-debug-ota   # BEIDE Geräte als Paar!
+pio run -t upload -e sender-debug-ota
+```
+Eingeschaltet wird das über `-DDEBUG_SHORT_TIMES=1` aus der `platformio.ini`,
+**nicht** im Quellcode (dort `#ifndef`-Guard, Default 0) — so landet ein Build mit
+6-Sekunden-Passe nicht versehentlich im Feld. **Immer beide Geräte umstellen**: der
+Empfänger zählt die Passe autonom und bekommt per Funk nur `CMD_START_120/240`, nie
+die Dauer; die Zeittabelle (`Timing::shootingSeconds()`) steht wortgleich in beiden
+`Config.h` und muss es bleiben.
+
+**`lib_deps`-Versionen sind gepinnt** (FastLED 3.10.3, GxEPD2 1.6.9, Adafruit GFX
+1.12.6) — unpinned zieht ein **neu angelegtes** Environment die jeweils aktuellste
+Version und baut dann anders als die bestehenden. Genau so kam FastLED 3.10.5 herein
+und brach den Empfänger-Build (`ambiguous memcpy`), während `env:empfaenger` mit
+gecachtem 3.10.3 weiterlief. Beim Hochziehen einer Version alle Envs frisch bauen.
+
 **Sender-USB-Flash**: `upload_speed` MUSS 115200 bleiben (natives USB-Serial/JTAG — ein
 Baudratenwechsel re-enumeriert den Port und killt den Upload). `pio run -t upload` startet
 esptool erst nach ~65 s Build-Scan; für BTN1-Halten ist ein direkter esptool-Aufruf mit
@@ -167,6 +191,59 @@ Verbindlich: `specs/004-v3-esp32-port/contracts/hardware-pins.md` (aus KiCad-Net
 - Empfänger: NRF24 CE=D9/CSN=D8; LED-Strip D3; Buzzer D4; Debug D7/D2; Status-LEDs A2-A4
 
 ## Recent Changes
+- 2026-10-01: **Erste Session mit beiden fertig gebauten Geräten.** Vier Befunde, alle
+  im Betrieb an der Hardware entdeckt und per OTA eingespielt. Am Gerät
+  ausdrücklich bestätigt wurden der Debug-Testlauf (Punkt 2) und der
+  Gruppen-Fix (Punkt 4); Punkt 1 und 3 sind geflasht, aber nicht gegen eine
+  Checkliste abgenommen:
+  1. **Poti-Drehrichtung korrigiert** (`8560ab9`): Alle drei Regler liefen falsch
+     herum (aufdrehen = dunkler/leiser/langsamer). Ursache war NICHT die
+     Verdrahtung, sondern die Firmware — sie invertierte die Potis an fünf Stellen
+     einzeln („Poti verpolt", Erbe des Vorserien-Aufbaus). Auf der PD-12V-Platine
+     sind sie regulär verdrahtet. Die Orientierung sitzt jetzt an einer Stelle:
+     `Poti::ASCENDING` + `Poti::level()` in `Empfaenger/Config.h`; alle Kennlinien
+     rechnen mit der Reglerstellung statt mit dem Rohwert. Schwellen mitgedreht:
+     `Volume::OFF_THRESHOLD` 4054 → **5** (nur der Anschlag selbst ist stumm, auf
+     Wunsch sehr schmal — liegt unter dem ADC-Nullpunkt mancher C3-Exemplare,
+     dann greift das Stummschalten nicht und die Schwelle muss hoch),
+     `Fan::OFF_THRESHOLD` 4000 → 95. Die zweite Invertierung im `FanManager`
+     (`255 - fanDuty`) ist **Hardware** (Q2 Open-Drain) und muss bleiben.
+  2. **Debug-Zeiten** (`22bfca7`): siehe Commands-Abschnitt. Dabei `lib_deps`
+     gepinnt.
+  3. **e-Paper blitzt nur noch beim Start und beim Beenden** (`bdf2650`): Die
+     zeitgesteuerte Entschattung in „Pfeile holen" (Voll-Refresh 30 s nach
+     Eintritt) ist entfernt — sie fiel auf jedes Passenende und war damit die
+     auffälligste Unruhe im Bild. Voll-Refresh jetzt nur noch Splash (Start),
+     Abschalt-Screen (Ende), Wartungsmodus-Screen und `forceFullNext` (Panel
+     braucht zwingend ein Vollbild). `Timing::GHOST_CLEAR_DELAY_MS`,
+     `StateMachine::ghostClearPending` und die Ghosting-Buchhaltung
+     (`partialCount`, `hasGhosting()`) sind mit raus. **Restschatten werden
+     bewusst in Kauf genommen** und erst beim nächsten Einschalten weggeblitzt —
+     wie viel sich über ein ganzes Turnier ansammelt, ist noch nicht beurteilt.
+     Die Historie der Stelle (Ghosting-Budget → Zeitsteuerung → gar nichts) steht
+     in `EpaperDisplay.cpp`, damit niemand einen Schritt zurück macht.
+  4. **Gruppen-Desync beim vorzeitigen Abbruch behoben** (`b2f81af`): Bei 3-4
+     Schützen zeigte die Bedieneinheit nach einem vorzeitigen Passenende korrekt
+     die nächste Gruppe, der Empfänger blieb auf der alten und zählte sie ein
+     zweites Mal — danach schaltete er autonom weiter und hängte eine dritte
+     Hälfte an. Der Empfänger wechselt die Gruppe nämlich erst, wenn SEIN
+     Countdown auf 0 läuft; beim Abbruch lief der noch. Das als Sync gedachte
+     `CMD_START` greift dann (die Ignorier-Regel 3 deckt nur den autonomen Fall
+     ab). Fix: beim `manualStop` wird vor dem `CMD_START` das passende
+     `CMD_GROUP_FINISH_*` gesendet — das setzt Gruppe + Position und stoppt den
+     laufenden Countdown, ohne das „Passe vorbei"-Signal (3× Piep) von `CMD_STOP`.
+     Im regulären Zeitablauf wird bewusst NICHT gesendet (FR-004a).
+     **Kein** `showStopFailedNotice()` bei Zustellfehler: die Meldung wartet
+     blockierend, und solange läuft `update()` nicht — der Sender-Countdown bliebe
+     stehen, während der Empfänger weiterzählt.
+
+  **Offener Punkt aus dieser Session**: Im Schaltplan heißen die MOSFETs seit
+  `1263445` **Q1 = AO3401A** (vorher IRLML9301) und **Q2 = BSS138** (vorher
+  2N7002). `HARDWARE.md`, die Kommentare in `Empfaenger/Config.h`/`FanManager.h`
+  und `specs/004-v3-esp32-port/contracts/hardware-pins.md` nennen noch die alten
+  Typen. Autoritativ ist das KiCad-Projekt (Constitution V) — beim nächsten
+  Durchgang nachziehen. Auch `Empfaenger.csv` (BOM-Export) stammt noch von vor
+  der Umbenennung.
 - 2026-08-05: **Empfänger-Firmware auf die PD-12V-Platine angepasst** (Schaltplan-Rev.
   `cdde8dc`). Pin-Funktionen unverändert, aber: `BRIGHTNESS_MAX` 64 → **255** (der
   USB-Übergangsdeckel ist hinfällig — der Strip hängt jetzt direkt am 12-V-PD-Netz, der
