@@ -273,7 +273,7 @@ void StateMachine::handleConfigMenu() {
 // STATE_PFEILE_HOLEN
 //=============================================================================
 
-void StateMachine::sendGroupCommand() {
+TransmissionResult StateMachine::sendGroupCommand() {
     // Bei 1-2 Schützen: CMD_GROUP_NONE (beide Gruppen aus)
     // Bei 3-4 Schützen: Gruppe UND Position berücksichtigen (halbe Passe)
     RadioCommand groupCmd;
@@ -285,7 +285,7 @@ void StateMachine::sendGroupCommand() {
         groupCmd = (currentGroup == Groups::Type::GROUP_AB) ? CMD_GROUP_FINISH_AB
                                                             : CMD_GROUP_FINISH_CD;
     }
-    radio.sendCommand(groupCmd);
+    return radio.sendCommand(groupCmd);
 }
 
 void StateMachine::enterPfeileHolen() {
@@ -501,6 +501,31 @@ void StateMachine::handleShootingPhaseEnd(bool manualStop) {
             inPreparationPhase = true;
             preparationSecondsRemaining = Timing::PREPARATION_TIME_MS / 1000;
             shootingSecondsRemaining = shootingDurationMs / 1000;
+
+            // VORZEITIGER Abbruch der ersten Hälfte: Der Empfänger hat seinen
+            // autonomen Gruppenwechsel NICHT vollzogen — der passiert dort erst,
+            // wenn sein Countdown auf 0 läuft, und der lief hier noch. Er steht
+            // also weiter auf der ALTEN Gruppe mit POS_1. Das folgende CMD_START
+            // greift bei ihm (sein inPreparationPhase ist false, die
+            // Ignorier-Regel 3 deckt nur den autonomen Fall ab) und er zählt
+            // dieselbe Gruppe ein zweites Mal herunter — danach schaltet er
+            // autonom weiter und hängt eine dritte Hälfte an.
+            //
+            // Deshalb hier erst die neue Gruppe/Position setzen: Das
+            // GROUP_FINISH_* stoppt beim Empfänger auch den laufenden Countdown,
+            // ohne das "Passe vorbei"-Signal (3× Piep) von CMD_STOP zu geben.
+            // Im regulären Zeitablauf wird NICHT gesendet — dort darf der
+            // autonome Wechsel nicht von Funk abhängen (FR-004a).
+            //
+            // Bewusst OHNE showStopFailedNotice() bei Fehlschlag: die Meldung
+            // wartet blockierend auf eine Bestätigung, und währenddessen läuft
+            // StateMachine::update() nicht — der Sender-Countdown bliebe stehen,
+            // während der Empfänger weiterzählt. Ein Zustellfehler ist hier
+            // also das kleinere Übel als die Meldung; sendCommand() wiederholt
+            // intern bereits.
+            if (manualStop && sendGroupCommand() != TX_SUCCESS) {
+                DEBUG_PRINTLN("GROUP_FINISH nicht bestaetigt — Empfaenger evtl. auf alter Gruppe");
+            }
 
             // Empfänger startet zweite Gruppe autonom – CMD_START nur als Sync
             RadioCommand startCmd = (shootingTime == 120) ? CMD_START_120 : CMD_START_240;

@@ -160,8 +160,9 @@ private:
 
     /**
      * @brief Sendet das zur aktuellen Gruppe/Position passende GROUP-Kommando
+     * @return Zustellstatus (Aufrufer darf ihn ignorieren, wo er nichts ändert)
      */
-    void sendGroupCommand();
+    TransmissionResult sendGroupCommand();
 
     /**
      * @brief Alarm mit App-Level-Retries senden (3 Versuche à 200 ms, V2)
