@@ -1,419 +1,290 @@
-# Hardware-Spezifikation: Bogenampel
+# Hardware-Übersicht: Bogenampel V3
 
-> **Aktuelle Generation: V3 (ESP32)** — siehe direkt unten.
-> Die V2-Spezifikation (Arduino Nano) folgt weiter unten als eingefrorener
-> Legacy-Stand.
+Diese Übersicht ist aus den KiCad-Projekten abgeleitet (Stand 2026-10-26):
 
-## Hardware V3 (aktuell)
+| Gerät | KiCad-Projekt | Titel im Schaltplan | Rev. / Datum |
+|---|---|---|---|
+| Sender (Bedieneinheit) | `Schaltung-Sender/BogenampelV3.kicad_sch` / `.kicad_pcb` | „Universal-Fernbedienung ESP32" | 3.0 / 2026-05-29 |
+| Empfänger (Anzeigeeinheit) | `Schaltung-Empfaenger/Empfaenger.kicad_sch` / `.kicad_pcb` | „Bogenampel Empfänger — ESP32 Version 12V per USB-DP" | 3 / 2026-08-03 |
 
-Autoritative Quelle ist der KiCad-Schaltplan in `Schaltung-Sender/` bzw. `Schaltung-Empfaenger/`
-(Constitution V: „Schaltplan zuerst, dann Code"); die daraus extrahierte,
-verbindliche Pin-Tabelle für beide Firmwares steht in
+Autoritativ ist immer der KiCad-Schaltplan (Constitution V: „Schaltplan zuerst, dann
+Code"). Die verbindliche Pin-Tabelle für beide Firmwares steht in
 [`specs/004-v3-esp32-port/contracts/hardware-pins.md`](specs/004-v3-esp32-port/contracts/hardware-pins.md).
+Exporte ohne KiCad: `doc/Sender_Schaltplan.png`, `doc/Sender_PCB.png`,
+`doc/Empfänger_Schaltplan.png`, `doc/Empfänger_PCB.png`.
 
-### Sender V3 („Universal-Fernbedienung")
+Die beiden Geräte sind nur über Funk verbunden (ESP-NOW, Kanal 1) — es gibt keine
+Kabelverbindung zwischen Sender und Empfänger.
 
-- **ESP32-S3-WROOM-1U-N16R8** (16 MB Flash, 8 MB Octal-PSRAM → GPIO35-37 reserviert)
-- **1.54″ e-Paper** Waveshare V2 (GDEH0154D67/SSD1681, 200×200) als rohes Panel an J1
-  (24-pol FPC) mit diskretem Boost (Si1308EDL + MBR0530)
-- **Power**: TPS62742 mit Latch (GPIO16 hält das Gerät an, LOW = Selbstabschaltung),
-  LOAD-Rail (GPIO7) schaltet die Display-Versorgung
-- **Akku**: einzelne LiIon-/LiPo-Zelle (verbaut: 14500, 1500 mAh) mit MCP73837-Lader
-  (STAT1/STAT2/PG an GPIO11/12/17),
-  Spannungsmessung über Teiler R4=150k/R8=100k an GPIO10 (ADC1, ×2,5)
-- **Taster**: BTN1 = SW2/GPIO15, aktiv HIGH über Teiler R2=47k/R7=240k an +BATT;
-  BTN2 = SW1/GPIO9 gegen GND (interner Pull-up).
-  **Rollen** (seit 2026-08-01 an der Gehäusebeschriftung ausgerichtet):
-  GPIO15 = **CONFIG** (Weiter/Ändern; hält beim Einschalten den Power-Latch — das ist
-  Hardware und per Firmware nicht auf den anderen Taster verlegbar),
-  GPIO9 = **OK** (Bestätigen, Dreifachklick = Alarm). Die Zuordnung Rolle → Pin steht
-  ausschließlich in `ButtonManager::readRawState()`.
-- **Funk**: ESP-NOW; der **-1U** hat keine Leiterplattenantenne, sondern einen
-  **U.FL-Anschluss für eine externe Antenne** (verbaut: SMA-Pigtail)
+---
+
+## 1. Sender (Bedieneinheit)
+
+Akkubetriebene Handeinheit mit e-Paper-Display und zwei Tastern.
+
+### 1.1 Blockschaltbild
+
+```text
+USB-C (J2) ──FB1──► VCC (5 V) ──► MCP73837 (IC3) ──► +BATT ◄── LiIon-Zelle (J4), NTC (J3)
+   │  D+/D- über USBLC6 (U2) ──► ESP32-S3 IO19/IO20 (natives USB)
+   └─ VCC/2 ──► USB_CON (IO8)
+
++BATT ──► TPS62742 (IC1, EN = BTN1 ODER LATCH) ──► +3V3 ──► ESP32-S3-WROOM-1U (IC2)
+                                               └─ LOAD-Schalter (CTRL = IO7) ──► +3V3_LOAD
+                                                                                  │
+                                                     e-Paper-Boost (Q3, L2, D2–D4)┘──► VGH / VGL
+                                                                                       │
+                                     ESP32 SPI (IO13/14/21/47/48/38) ──► 24-pol FPC (J1) ┘ e-Paper
+```
+
+### 1.2 Hauptbauteile
+
+| Ref. | Bauteil | Funktion |
+|---|---|---|
+| IC2 | **ESP32-S3-WROOM-1U-N16R8** | MCU, 16 MB Flash, 8 MB Octal-PSRAM (GPIO35–37 dadurch belegt). Variante **-1U**: keine Leiterplattenantenne, **U.FL-Anschluss** für externe Antenne (verbaut: SMA-Pigtail) |
+| IC1 | **TPS62742DSSR** | Step-down +BATT → **3,3 V** (VSEL1–4 alle an +BATT), 360 nA Ruhestrom, integrierter Lastschalter (LOAD-Ausgang → `+3V3_LOAD`) |
+| IC3 | **MCP73837T-FCI/UN** | LiIon-Lader aus USB (VUSB), Ladestrom über R19 = 2 k → **500 mA**; PROG2 an IO18 (USB 100/500 mA, R20 100 k Pull-down); NTC-Eingang an J3 |
+| J1 | Hirose **FH12-24S-0.5SH** | 24-pol FPC für das rohe e-Paper-Panel **Waveshare 1.54″ V2** (GDEH0154D67 / SSD1681, 200×200) |
+| J2 | **UJ20-C-H-G-MSMT-4B-P16-TR** | USB-C-Buchse (USB 2.0), CC1/CC2 über R15/R16 = 5,1 k an GND (Sink, 5 V) |
+| U2 | **USBLC6-2SC6** | ESD-Schutz für D+/D- |
+| SW1, SW2 | Würth 430476085716 (12 mm) | Bedientaster OK bzw. CONFIG |
+| SW3, SW4 | 6-mm-Taster | Reset (EN) bzw. Boot (IO0) — Service-Taster auf der Platine |
+| J3 / J4 | Stiftleiste 2-pol | NTC / Akku |
+
+Akku (nicht auf der Platine): eine LiIon-/LiPo-Zelle, verbaut ist eine **14500 mit 1500 mAh**.
+
+### 1.3 Stromversorgung und Soft-Power
+
+- **Einschalten**: SW2 (BTN1) legt +BATT über R2 47 k / R3 100 k und die Dioden-ODER-Schaltung
+  D1 (**BAS40-05**) auf den EN-Pin des TPS62742 (R10 1 M Pull-down). Die Firmware setzt
+  sofort **LATCH (IO16) = HIGH** — der zweite Zweig von D1 hält EN dann auch nach dem
+  Loslassen. **LATCH = LOW schaltet das Gerät ab.** Deshalb kann nur CONFIG (GPIO15) das
+  Gerät einschalten; das ist Hardware und per Firmware nicht verlegbar.
+- **LOAD-Rail**: Der LOAD-Ausgang des TPS62742 (CTRL an IO7, R11 1 M Pull-down) speist
+  `+3V3_LOAD` für den e-Paper-Boost. Display aus = Rail aus.
+- **Akkumessung**: +BATT → Q1 (**IRLML9301**, P-Kanal) → Teiler R4 150 k / R8 100 k
+  (C2 100 nF) → R5 1 k → **IO10** (ADC1, Faktor **×2,5**). Q1 wird über Q2 (**IRLML6346**,
+  Gate an +3V3 über R6 47 k) nur durchgeschaltet, solange +3V3 anliegt — im
+  ausgeschalteten Zustand zieht der Teiler keinen Strom aus dem Akku.
+- **USB-Erkennung**: VCC über R17/R18 (je 100 k) → **IO8** (`USB_CON`, aktiv HIGH).
+- **Lader-Status**: STAT1/STAT2/PG an IO11/IO12/IO17, PROG2 an IO18.
+- Messpunkte: TP1 BAT, TP2 3V3, TP3 3V3L, TP4 GND, TP5 VGL, TP6 VGH.
+
+### 1.4 e-Paper-Ansteuerung
+
+Das Panel hängt **ohne fertiges Modul** direkt am FPC-Stecker J1; die Hochspannung für das
+Panel erzeugt eine diskrete Boost-/Ladungspumpen-Schaltung nach Waveshare-Referenz:
+
+- Schalt-MOSFET Q3 **Si1308EDL** (Gate = `GDR` vom SSD1681, R12 10 k Pull-down),
+  Strommess-Shunt R13 = 3 Ω (`RESE`), Speicherdrossel L2 **10 µH** (Coilcraft LPS3314)
+  aus `+3V3_LOAD`
+- Dioden D2/D3/D4 **MBR0530T1G** und C6 4,7 µF/50 V → `VGH` / `VGL`
+- Stützkondensatoren 1 µF/50 V an VSH1, VSH2, VSL, VGH, VGL, VCOM, VDD, VCI (C7–C14)
+- SPI ist **write-only** (kein MISO)
+
+### 1.5 Taster
+
+| Taster | Net | GPIO | Beschaltung | Rolle (Firmware) |
+|---|---|---|---|---|
+| SW2 | BTN1 | 15 | an +BATT, Teiler R2 47 k / R7 240 k, C1 100 nF → **aktiv HIGH**, keine internen Pulls | **CONFIG** (Weiter/Ändern), schaltet das Gerät ein |
+| SW1 | BTN2 | 9 | gegen GND, interner Pull-up → **aktiv LOW** | **OK** (Bestätigen, Dreifachklick = Alarm) |
+
+Halten ≥ 3 s (beliebige Taste) = Ausschalten; beide beim Einschalten halten = OTA-Wartungsmodus.
+Die Zuordnung Rolle → Pin steht ausschließlich in `ButtonManager::readRawState()`.
+
+### 1.6 Pinbelegung ESP32-S3
 
 | Funktion | GPIO | | Funktion | GPIO |
 |---|---|---|---|---|
-| LATCH (Power halten) | 16 | | e-Paper CS | 21 |
+| LATCH (Power halten) | 16 | | e-Paper CS (`CS_D`) | 21 |
 | LOAD (Display-Rail) | 7 | | e-Paper DC | 47 |
-| BTN1 = CONFIG (Power-On, aktiv HIGH) | 15 | | e-Paper RES | 48 |
+| BTN1 = CONFIG (aktiv HIGH) | 15 | | e-Paper RES | 48 |
 | BTN2 = OK (aktiv LOW) | 9 | | e-Paper BUSY | 38 |
 | ADC_BAT (ADC1, ×2,5) | 10 | | SPI CLK | 14 |
 | USB_CON (aktiv HIGH) | 8 | | SPI MOSI | 13 |
-| Lader ST1 / ST2 / PG / PRG | 11 / 12 / 17 / 18 | | USB D-/D+ | 19/20 |
+| Lader STAT1 / STAT2 | 11 / 12 | | USB D- / D+ | 19 / 20 |
+| Lader PG / PROG2 | 17 / 18 | | | |
 
-### Empfänger V3 (PD-12V-Platine, Rev. 2026-08-03)
+**Strapping/Boot**: IO0 (R22 10 k Pull-up, SW4 Boot), EN (R21 10 k + C20 1 µF, SW3 Reset),
+IO3 (R23 10 k Pull-up), IO45 und IO46 (R24/R25 10 k Pull-down).
+**Frei**: IO1, IO2, IO4–IO6, IO39–IO42, RXD0/TXD0. **Belegt durch PSRAM**: IO35–IO37.
 
-- **Seeed XIAO ESP32C3** (4 MB Flash), Versorgung über den **3V3-Pin** (VUSB/Batt unbeschaltet)
-- **Stromversorgung**: USB-C (J1) → **CH224K** (U2) verhandelt 12 V → Verpolungsschutz
-  Q1 (**AO3401A**, P-Kanal) + TVS D2 (SMBJ13A) → +12V-Netz; daraus **TSR0.5-2433** (U4) → 3V3
-  für den XIAO und **L7805** (U1) → 5 V nur für den Pegelwandler U5. Kein Step-up, keine
-  Jumper mehr. Netzteil: 12 V / ≥ 2 A.
-- **WS2811-Strip** 66 Pixel, direkt am 12V-Netz (2×12 Gruppen + 3×14 Ziffern-Pixel)
-- **Pegelwandler U5 74AHCT1G125** (3,3 → 5 V, /OE fest an GND) in der Datenleitung,
-  Ausgang über R14 330 Ω an J7 — behebt die früheren Farbkipper bei 3,3-V-Pegel
-- **Piezo**: 12-V-Transducer über BC337 (Q3; R10 2k2 Basisvorwiderstand, R12 10k
-  Basis-Pulldown, R15 2k2 nach +12 V als Entlade-Pfad), LEDC-PWM (3,25 kHz = Resonanz,
-  Lautstärke = Duty 0-50 %)
-- **Lüfter**: **BSS138** Low-Side (Q2, **invertiert**: Gate HIGH = PWM-Leitung LOW =
-  langsam), LEDC-PWM 25 kHz, Drehzahl per Poti;
-  Tacho bewusst unbeschaltet (R11 = Gate-Pull-up → Lüfter läuft beim Boot auf Minimaldrehzahl)
-- **Potis** (3 × 47 k, je über 1 k am Schleifer): regulär zwischen GND und 3V3 verdrahtet,
-  **Aufdrehen liefert den höheren ADC-Wert**. Die Firmware rechnet deshalb über
-  `Poti::level()` mit der Reglerstellung statt mit dem Rohwert; die Drehrichtung steht
-  als einziges Flag in `Poti::ASCENDING` (`Empfaenger/Config.h`) — nie einzeln in den
-  Kennlinien invertieren.
-- **ESP32-C3-Strapping-Fixes** (alle im Schaltplan umgesetzt):
-  GPIO2 (Lautstärke-Poti) → Fußpunkt an D4/GPIO6 statt GND („POTI_GND");
-  GPIO9 (Status-LED) → aktiv LOW (3V3 → LED → R9 → Pin); GPIO8 frei (kein Tacho)
+### 1.7 Platine
 
-| Funktion | XIAO-Pin | GPIO |
+- 2 Lagen, Umriss **L-förmig**, Gesamtmaß **147 × 36 mm** (breiter Teil 89 × 36 mm,
+  schmaler Ausleger 58 × 20 mm)
+- 3 Befestigungslöcher M2,5
+- Passive Bauteile überwiegend 1206 (Widerstände) bzw. 0805/0603 (Kondensatoren)
+
+---
+
+## 2. Empfänger (Anzeigeeinheit)
+
+Netzbetriebene Anzeige mit WS2811-LED-Strip, Piezo, Lüfter und drei Reglern.
+PD-12V-Platine, Rev. 2026-08-03.
+
+### 2.1 Blockschaltbild
+
+```text
+USB-C-Buchse ──6-pol JST (J1)──► CH224K (U2): fordert 12 V per USB-PD an
+                     │
+                   VBUS ──► Q1 AO3401A (Verpolungsschutz) ──► +12V ──┬─► WS2811-Strip (J7)
+                                                    D2 SMBJ13A (TVS) ┤─► Lüfter (J6)
+                                                       C8 47 µF      ├─► Piezo (J8, über Q3)
+                                                                     ├─► TSR0.5-2433 (U4) ──► +3V3 ──► XIAO ESP32C3 (U3)
+                                                                     └─► L7805 (U1) ──► +5V ──► Pegelwandler U5
+```
+
+### 2.2 Hauptbauteile
+
+| Ref. | Bauteil | Funktion |
 |---|---|---|
-| Poti Lautstärke (J3, Fußpunkt an D4!) | D0 | 2 |
-| Poti Helligkeit (J4) | D1 | 3 |
-| Poti Lüfter-Drehzahl (J2) | D2 | 4 |
-| Piezo (J8, über BC337) | D3 | 5 |
-| POTI_GND (geschalteter Fußpunkt) | D4 | 6 |
-| Lüfter-PWM (J6 Pin 4, über Q2 BSS138) | D6 | 21 |
-| Debug-Taster (J5, aktiv LOW) | D7 | 20 |
-| Status-LED (**aktiv LOW**) | D9 | 9 |
-| WS2811 Data (J7, über U5) | D10 | 10 |
-| frei / Reserve | D5, D8 | 7, 8 |
+| U3 | **Seeed XIAO ESP32C3** | MCU (4 MB Flash), Versorgung über den **3V3-Pin**; VUSB und Batt+/- unbeschaltet |
+| U2 | **CH224K** | USB-PD-Sink-Trigger; CFG1 = GND, CFG2 = GND, CFG3 = VDD → **12 V**. VDD über R1 1 k (C3/C11), VBUS-Sense über R2 10 k |
+| Q1 | **AO3401A** (P-Kanal) | Verpolungsschutz VBUS → +12V, Gate-Teiler R8 20 k / R7 10 k |
+| D2 | **SMBJ13A** | TVS-Diode am +12V-Netz |
+| U4 | **TRACO TSR0.5-2433** | Schaltregler 12 V → **3,3 V** für den XIAO |
+| U1 | **L7805** (TO-220) | 12 V → **5 V**, versorgt **nur** den Pegelwandler U5 |
+| U5 | **74AHCT1G125** | Pegelwandler 3,3 → 5 V für die WS2811-Datenleitung, /OE fest an GND; Ausgang über R14 330 Ω an J7 |
+| Q2 | **BSS138** (N-Kanal) | Lüfter-PWM, Open-Drain auf die PWM-Leitung |
+| Q3 | **BC337** (NPN, TO-92) | Piezo-Treiber |
+| D1 | LED 5 mm | PD-OK-Anzeige: +3V3 → R6 470 Ω → D1 → PG-Pin des CH224K (leuchtet, wenn 12 V ausgehandelt) |
+| D3 | LED 5 mm | Status-LED, **aktiv LOW**: +3V3 → D3 → R9 220 Ω → D9 |
+
+Netzteil: USB-C-PD-Netzteil, das **12 V / ≥ 2 A** liefert.
+
+### 2.3 Steckverbinder (alle JST-XH, 2,5 mm)
+
+| Ref. | Polzahl | Belegung | Gegenstück |
+|---|---|---|---|
+| J1 | 6 | 1 VBUS, 2 CC1, 3 CC2, 4 D-, 5 D+, 6 GND | USB-C-Buchse (Gehäuse) |
+| J2 | 3 | 1 +3V3, 2 Schleifer, 3 GND | Poti 47 k **Lüfter** |
+| J3 | 3 | 1 +3V3, 2 Schleifer, 3 **POTI_GND (D4)** | Poti 47 k **Lautstärke** |
+| J4 | 3 | 1 +3V3, 2 Schleifer, 3 GND | Poti 47 k **Helligkeit** |
+| J5 | 2 | 1 GND, 2 BTN (D7) | Debug-Taster (Wartungsmodus beim Boot) |
+| J6 | 4 | 1 GND, 2 +12V, 3 Tacho (**unbeschaltet**), 4 PWM | 4-Pin-PC-Lüfter 12 V |
+| J7 | 3 | 1 +12V, 2 Data (über R14), 3 GND | WS2811-Strip |
+| J8 | 2 | 1 +12V, 2 Kollektor Q3 | Piezo-Transducer 12 V |
+
+### 2.4 Peripherie im Detail
+
+- **WS2811-Strip**: 66 Pixel (2 × 12 Gruppen-Pixel + 3 × 14 Ziffern-Pixel), direkt am
+  +12V-Netz. Daten von D10 über U5 auf 5-V-Pegel — behebt die früheren Farbkipper bei
+  3,3-V-Pegel. U5 hat **keinen Eingangs-Pulldown**, deshalb legt die Firmware GPIO10 in
+  `setup()` früh auf OUTPUT LOW.
+- **Piezo**: 12-V-Transducer zwischen +12V und Kollektor Q3; R10 2k2 Basisvorwiderstand,
+  R12 10 k Basis-Pulldown, R15 2k2 parallel zum Piezo als Entladepfad. LEDC-PWM mit
+  3,25 kHz (Resonanz), Lautstärke = Duty 0–50 %.
+- **Lüfter**: PWM-Leitung (J6 Pin 4) mit R13 10 k auf +3V3 hochgezogen, Q2 zieht sie
+  nach GND. Dadurch **invertiert**: Gate HIGH = PWM LOW = langsam. R11 10 k zieht das Gate
+  auf +3V3 → der Lüfter läuft beim Booten auf Minimaldrehzahl. LEDC-PWM 25 kHz. Die
+  Invertierung `255 - fanDuty` im `FanManager` ist diese Hardware und muss bleiben.
+- **Potis**: 3 × 47 k, Schleifer jeweils über 1 k (R3/R4/R5) an den ADC. Regulär zwischen
+  GND und 3V3 verdrahtet — **Aufdrehen liefert den höheren ADC-Wert**. Die Drehrichtung
+  steht in der Firmware als einziges Flag in `Poti::ASCENDING` (`Empfaenger/Config.h`) —
+  nie einzeln in den Kennlinien invertieren.
+- Messpunkte: TP1 +3V3, TP2 VPD (CH224K-Versorgung), TP3 +5V.
+
+### 2.5 ESP32-C3-Strapping-Fixes (im Schaltplan umgesetzt)
+
+- **GPIO2** (Lautstärke-Poti): Fußpunkt des Potis an D4/GPIO6 (`POTI_GND`) statt GND —
+  die Firmware legt D4 in `setup()` früh auf OUTPUT LOW.
+- **GPIO9** (Status-LED): aktiv LOW verdrahtet (3V3 → LED → R9 → Pin), damit der Pin beim
+  Boot nicht nach unten geklemmt wird.
+- **GPIO8**: frei (kein Tacho angeschlossen).
+
+### 2.6 Pinbelegung XIAO ESP32C3
+
+| Funktion | XIAO-Pin | GPIO | Net |
+|---|---|---|---|
+| Poti Lautstärke (J3, Fußpunkt an D4!) | D0 | 2 | über R3 |
+| Poti Helligkeit (J4) | D1 | 3 | über R4 |
+| Poti Lüfter-Drehzahl (J2) | D2 | 4 | über R5 |
+| Piezo (J8, über Q3 BC337) | D3 | 5 | `SIG_BUZ` |
+| POTI_GND (geschalteter Fußpunkt) | D4 | 6 | `GND_POTI` |
+| Lüfter-PWM (J6 Pin 4, über Q2) | D6 | 21 | `SIG_FAN` |
+| Debug-Taster (J5, aktiv LOW) | D7 | 20 | `BTN` |
+| Status-LED D3 (**aktiv LOW**) | D9 | 9 | über R9 |
+| WS2811 Data (J7, über U5) | D10 | 10 | `SIG_LED` |
+| frei | D5, D8 | 7, 8 | — |
+
+### 2.7 Platine
+
+- 2 Lagen, **61 × 43 mm**, 3 Befestigungslöcher M2
+- Gemischte Bestückung: SMD 0603/1206, THT für XIAO, L7805, TSR0.5, BC337, 47-µF-Elko, LEDs
+- Weitere Dateien im Ordner: `Empfaenger-Lochraster.diy` / `Lochraster.png`
+  (Lochraster-Layout, DIY Layout Creator), `Regler-Aufkleber.svg` (Beschriftung der
+  drei Regler), `Empfaenger.csv` (BOM-Export, siehe 4.1)
 
 ---
 
-# Hardware-Spezifikation V2 (Legacy): Bogenampel Sender
+## 3. Kosten (grobe Schätzung, Stand 2026-10-26)
 
-## Übersicht
+Einzelstückpreise in Euro. **Fett** = tatsächlich bezahlt, Rest geschätzt
+(LCSC/Mouser/Reichelt bzw. AliExpress). Kabel, Schrauben und Versand sind nicht enthalten.
 
-Der Sender ist die Bedieneinheit der Bogenampel und basiert auf einem Arduino Nano V3. Er steuert per Funk (NRF24L01) die Anzeigeeinheit und verfügt über ein TFT-Display zur Statusanzeige.
+### 3.1 Sender: ca. 55–80 €
 
-## Komponenten
+| Posten | € |
+|---|---|
+| Platine | **20** |
+| Antenne mit Kabel (U.FL-SMA-Pigtail) | 10–20 |
+| e-Paper-Panel 1.54″ V2 | 6–12 |
+| ESP32-S3-WROOM-1U-N16R8 | 4–6 |
+| Akku 14500 | 3–6 |
+| Restliche Bauteile (TPS62742, MCP73837, USB-C, Taster, FPC-Stecker, Kleinteile) | 12–17 |
 
-### Mikrocontroller
-- **Arduino Nano V3**
-  - ATmega328P @ 16 MHz
-  - 32 KB Flash (2 KB für Bootloader)
-  - 2 KB SRAM
-  - 1 KB EEPROM
-  - Betriebsspannung: 5V
-  - I/O-Pins: 3.3V/5V tolerant (über Level Shifter für Display)
+### 3.2 Empfänger: ca. 105–130 €
 
-### Display
-- **2.4" TFT LCD ST7789**
-  - Auflösung: 240 x 320 Pixel
-  - Farbtiefe: 65K (16-bit RGB565)
-  - Interface: SPI
-  - Betriebsspannung: 3.3V (via Level Shifter)
-  - Controller: ST7789
+| Posten | € |
+|---|---|
+| WS2811-Strip 12 V, 66 Pixel | **45** |
+| Platine | **20** |
+| USB-C-PD-Netzteil 12 V / ≥ 2 A | 12–25 |
+| Lüfter 12 V, 4-Pin-PWM | 5–12 |
+| XIAO ESP32C3 | 5–7 |
+| TRACO TSR0.5-2433 | 4–6 |
+| Restliche Bauteile (Potis, Piezo, JST-XH-Stecker, Kleinteile) | 10–15 |
 
-### Level Shifter
-- **TXS0108EPW**
-  - 8-Kanal bidirektionaler Level Shifter
-  - Konvertiert 5V (Arduino) ↔ 3.3V (Display)
-  - Kanäle für: SCK, MOSI, MISO, CS, DC, RST
+### 3.3 Gehäuse: 25 €
 
-### Funk-Modul
-- **NRF24L01**
-  - 2.4 GHz Transceiver
-  - Reichweite: ~20-50m (indoor), bis 100m (Freifeld)
-  - Interface: SPI
-  - Betriebsspannung: 3.3V
-  - Datenstrom 1-2 Mbps
+| Posten | € |
+|---|---|
+| Filament für den 3D-Druck, 2 kg | **25** |
 
-### Spannungsversorgung
-- **9V Block-Batterie**
-  - Über Ein/Aus-Schalter zuschaltbar
-  - Spannungsüberwachung über Spannungsteiler an A7
-  - Spannungsteiler: 2x 10kΩ (1:1)
+### 3.4 Gesamt: ca. 185–235 €
 
-- **USB-Versorgung (5V)**
-  - Alternative zur Batterie
-  - Für Entwicklung und Programmierung
-
-### Weitere Komponenten
-- **Taster** (für Timer-Steuerung und Menü-Navigation)
-- **Status-LEDs** (Betriebsanzeige)
-- **Kondensatoren** (Spannungsstabilisierung für NRF24L01)
+Platinen, LED-Strip und Filament machen zusammen 110 € und damit gut die Hälfte aus.
+Die Bauteile auf den Platinen (ICs, Widerstände, Kondensatoren) liegen zusammen nur bei
+etwa 30–40 €. Bei Einzelstücken fallen zusätzlich Mindestmengen und Versand pro Shop
+(5–20 €) ins Gewicht.
 
 ---
 
-## Pin-Belegung Arduino Nano
+## 4. Offene Punkte / Auffälligkeiten in den KiCad-Daten
 
-> **WICHTIG:** Die folgenden Pin-Zuweisungen basieren auf typischen SPI-Konfigurationen.
-> Der zugehörige KiCad-Schaltplan `Schaltung/Bogenampel.kicad_sch` wurde am 2026-08-01
-> aus dem Arbeitsverzeichnis entfernt und ist nur noch über die Git-Historie zugänglich
-> (`git show <commit>:Schaltung/Bogenampel.kicad_sch`). Da V2 eingefroren ist (FR-025),
-> werden diese Angaben nicht mehr nachgeführt.
+### 4.1 MOSFET-Typen im Empfänger uneinheitlich
 
-### SPI-Bus (Gemeinsam für Display und NRF24L01)
+Im Schaltplan stehen im **Value**-Feld Q1 = **AO3401A** und Q2 = **BSS138**. Auf den
+**alten** Typen stehen weiterhin: die `MPN`-Eigenschaft im `.kicad_sch` (Q2: `2N7002`),
+die Felder im `.kicad_pcb` (IRLML9301 / 2N7002) und der BOM-Export `Empfaenger.csv`.
+**Wer nach BOM oder MPN bestellt, bekommt IRLML9301/2N7002.** Vorgehen: klären, was
+physisch bestückt ist, dann in KiCad die MPN nachziehen, „Update PCB from Schematic" und
+die BOM neu exportieren.
 
-| Arduino Pin | Signal | Funktion | Level Shifter | Ziel |
-|-------------|--------|----------|---------------|------|
-| D13 (SCK) | SPI.SCK | SPI Clock | → 3.3V | Display SCK, NRF24 SCK |
-| D11 (MOSI) | SPI.MOSI | SPI Data Out | → 3.3V | Display MOSI (SDI), NRF24 MOSI |
-| D12 (MISO) | SPI.MISO | SPI Data In | ← 3.3V | Display MISO (SDO), NRF24 MISO |
+Nicht verwechseln: Im **Sender** sind Q1 = IRLML9301 und Q2 = IRLML6346 korrekt.
 
-### ST7789 TFT Display (über TXS0108EPW Level Shifter)
+### 4.2 Sender: e-Paper-Versorgung VCI ohne Anschluss an eine Versorgung
 
-| Arduino Pin | Signal | Display Pin | Funktion | Level |
-|-------------|--------|-------------|----------|-------|
-| A0 | UI_CS → DSPL_CS | CS | Chip Select | 5V → 3.3V |
-| D10 | UI_DC/RS → DSPL_DC/RS | DC/RS | Data/Command | 5V → 3.3V |
-| A1 | UI_RES → DSPL_RES | RESET | Reset | 5V → 3.3V |
-| D13 | SPI.SCK → DSPL_SCK | SCK | SPI Clock | 5V → 3.3V |
-| D11 | SPI.MOSI → DSPL_MOSI | SDA | SPI Data Out | 5V → 3.3V |
-| D12 | SPI.MISO → DSPL_MISO | - | SPI Data In | 5V → 3.3V |
+Das Netz `VCI` (FPC J1 Pin 15 und 16) ist in Schaltplan und Layout **nur mit C9** (1 µF)
+verbunden — weder mit `+3V3` noch mit `+3V3_LOAD`. Bei einem SSD1681-Panel ist VCI der
+Versorgungseingang. Da das Display im Betrieb funktioniert, ist die Verbindung am
+gebauten Gerät vermutlich von Hand nachgerüstet. Vor einer Neubestellung der Platine
+prüfen und im Schaltplan nachziehen (naheliegend: an `+3V3_LOAD`, damit das Panel mit der
+LOAD-Rail abgeschaltet wird).
 
-**Aktualisiert für ST7789:**
-- A0  → UI_CS → TXS0108 → DSPL_CS (Display Chip Select)
-- D10 → UI_DC/RS → TXS0108 → DSPL_DC/RS (Data/Command)
-- A1  → UI_RES → TXS0108 → DSPL_RES (Reset)
-- Backlight: Fest an 3.3V (kein PWM-Control)
+### 4.3 Sender: Pegel an BTN1 bei vollem Akku
 
-### NRF24L01 Funkmodul
-
-| Arduino Pin | Signal | NRF24 Pin | Funktion | Level |
-|-------------|--------|-----------|----------|-------|
-| D9 | CE_NRF | CE (Pin 3) | Chip Enable | 5V → 3.3V intern |
-| D8 | CS_NRF | CSN (Pin 4) | Chip Select | 5V → 3.3V intern |
-| D13 | SPI.SCK | SCK (Pin 5) | SPI Clock | Gemeinsam mit Display |
-| D11 | SPI.MOSI | MOSI (Pin 6) | SPI Data Out | Gemeinsam mit Display |
-| D12 | SPI.MISO | MISO (Pin 7) | SPI Data In | Gemeinsam mit Display |
-| 3.3V | VCC | VCC (Pin 2) | Stromversorgung | 3.3V |
-| GND | GND | GND (Pin 1) | Masse | 0V |
-
-**Verifiziert aus Code (Sender/Config.h):**
-- D9 → CE_NRF (Chip Enable)
-- D8 → CS_NRF (Chip Select)
-- 10µF Kondensator (C1) zwischen VCC und GND für Stabilisierung
-
-### Eingänge (Taster & Schalter)
-
-| Arduino Pin | Signal | Funktion | Pull-Up | Bemerkung |
-|-------------|--------|----------|---------|-----------|
-| D5 | Input 1 (J1) | Menü-Navigation links | Ja | Aktiv LOW |
-| D6 | Input 2 (J2) | Menü-Auswahl bestätigen (OK) | Ja | Aktiv LOW |
-| D7 | Input 3 (J3) | Menü-Navigation rechts | Ja | Aktiv LOW |
-
-**Verifiziert aus Code (Sender/Config.h):**
-- J1 (Input 1) → D5 mit internem Pull-Up (Links)
-- J2 (Input 2) → D6 mit internem Pull-Up (OK)
-- J3 (Input 3) → D7 mit internem Pull-Up (Rechts)
-- Alle Taster sind aktiv LOW (Taster schließt gegen GND)
-
-### Analoge Eingänge
-
-| Arduino Pin | Signal | Funktion | Spannungsteiler | Bemerkung |
-|-------------|--------|----------|-----------------|-----------|
-| A5 | VOLTAGE_SENSE | Batteriespannung | 10kΩ:10kΩ (1:1) | Median-Filter über 5 Werte |
-
-**Berechnung Batteriespannung:**
-```cpp
-// Spannungsteiler 1:1 → Vbat = 2 × Vmeasured
-uint16_t adcValue = analogRead(A5);
-float voltage = (adcValue / 1023.0) * 5.0 * 2.0;  // in Volt
-uint8_t percent = map(voltage, 6.0, 9.6, 0, 100); // 6V=0%, 9.6V=100%
-```
-
-### Status-LEDs
-
-| Arduino Pin | Signal | Funktion | Widerstand | Bemerkung |
-|-------------|--------|----------|------------|-----------|
-| A2 | LED_STATUS (D1) | Debug/Status LED | 330Ω | Rot |
-
-**Aktualisiert:**
-- D1 (rot) → A2 über 330Ω Widerstand
-- Nur eine LED bestückt, verwendet für Debug-Zwecke (z.B. RF-Übertragung)
-
-### Buzzer (Akustisches Feedback)
-
-| Arduino Pin | Signal | Funktion | Bemerkung |
-|-------------|--------|----------|-----------|
-| D4 | BUZZER | KY-006 Passiver Piezo Buzzer | Für Tastentöne (Click-Feedback) |
-
-**Details:**
-- Frequenz: 1600 Hz (satter Klick-Ton)
-- Dauer: 25ms pro Klick
-- Wird beim Drücken von Tasten aktiviert (ButtonManager)
-
-### Stromversorgung
-
-| Pin | Funktion | Spannung | Bemerkung |
-|-----|----------|----------|-----------|
-| VIN | Batterie-Eingang | 9V | Über Schalter |
-| 5V | Spannungsausgang | 5V | Geregelt durch Nano |
-| 3.3V | Spannungsausgang | 3.3V | Für NRF24L01 |
-| GND | Masse | 0V | Gemeinsam für alle Komponenten |
-
----
-
-## SPI-Bus Konfiguration
-
-Der Arduino Nano nutzt **Hardware-SPI** für Display und NRF24L01:
-
-### SPI-Einstellungen ST7789
-```cpp
-SPISettings displaySPI(40000000, MSBFIRST, SPI_MODE0);
-// 40 MHz (max für ST7789), MSB First, Mode 0
-```
-
-### SPI-Einstellungen NRF24L01
-```cpp
-SPISettings nrfSPI(10000000, MSBFIRST, SPI_MODE0);
-// 10 MHz (max für NRF24L01), MSB First, Mode 0
-```
-
-### Chip Select Management
-Da Display und NRF24L01 den gleichen SPI-Bus teilen, ist ein sauberes CS-Management kritisch:
-
-```cpp
-// Display aktivieren
-digitalWrite(DSPL_CS, LOW);
-SPI.beginTransaction(displaySPI);
-// ... Display-Kommunikation ...
-SPI.endTransaction();
-digitalWrite(DSPL_CS, HIGH);
-
-// NRF24 aktivieren
-digitalWrite(CS_NRF, LOW);
-SPI.beginTransaction(nrfSPI);
-// ... NRF-Kommunikation ...
-SPI.endTransaction();
-digitalWrite(CS_NRF, HIGH);
-```
-
----
-
-## Level Shifter Details (TXS0108EPW)
-
-Der TXS0108EPW konvertiert bidirektional zwischen 5V (Arduino) und 3.3V (Display):
-
-| Kanal | Arduino (5V) | Display (3.3V) | Signal |
-|-------|--------------|----------------|--------|
-| A1 | DSPL_SCK | SCK | SPI Clock |
-| A2 | DSPL_MOSI | MOSI/SDI | SPI Data Out |
-| A3 | DSPL_MISO | MISO/SDO | SPI Data In |
-| A4 | DSPL_CS | CS | Chip Select |
-| A5 | DSPL_DC | DC/RS | Data/Command |
-| A6 | DSPL_RST | RESET | Reset |
-
-**Wichtig:**
-- VCCB = 5V (Arduino-Seite)
-- VCCA = 3.3V (Display-Seite)
-- OE (Output Enable) = VCCA (immer aktiviert)
-
----
-
-## Ressourcen-Übersicht
-
-### SRAM-Nutzung (Arduino Nano: 2 KB)
-
-| Komponente | Geschätzter Verbrauch | Bemerkung |
-|------------|----------------------|-----------|
-| Display-Buffer (TFT_eSPI) | ~200-400 Bytes | Sprite-Buffer optional |
-| NRF24 Library | ~150 Bytes | RF24 Library |
-| State Machine | ~50 Bytes | Enum + Zeitstempel |
-| Median Filter (5 Werte) | 10 Bytes | uint16_t × 5 |
-| Button Manager | ~20 Bytes | 2 Buttons |
-| String Konstanten (PROGMEM) | 0 Bytes (Flash) | Im Flash gespeichert |
-| **Gesamt (grob)** | **~500-700 Bytes** | ~30% von 2 KB |
-
-### Flash-Nutzung (Arduino Nano: 30 KB nutzbar)
-
-| Komponente | Geschätzter Verbrauch | Bemerkung |
-|------------|----------------------|-----------|
-| TFT_eSPI Library | ~15-20 KB | Mit ILI9341 Treiber |
-| RF24 Library | ~8-10 KB | NRF24L01 |
-| Application Code | ~5-8 KB | State Machine, UI |
-| **Gesamt (grob)** | **~28-38 KB** | Knapp! Optimierung nötig |
-
-**Optimierungen:**
-- `#define TFT_eSPI_DISABLE_ALL_FONTS` - nur benötigte Fonts
-- `#define RF24_TINY` - reduzierte RF24-Version
-- Strings im PROGMEM (`PROGMEM`)
-- `-Os` Compiler-Flag (Size-Optimierung)
-
----
-
-## Empfohlene Bibliotheken
-
-### Display
-- **Adafruit ST7789** (verwendet)
-  - Offizielle Adafruit Library
-  - Hardware-SPI-Unterstützung
-  - ST7789-Treiber integriert
-  - `lib_deps = adafruit/Adafruit ST7735 and ST7789 Library@^1.10.0`
-  - Benötigt auch: `adafruit/Adafruit GFX Library@^1.11.0`
-
-### Funk
-- **RF24** (empfohlen)
-  - Optimiert für NRF24L01
-  - `lib_deps = nRF24/RF24@^1.4.0`
-
----
-
-## Schaltplan-Referenz
-
-**KiCad-Dateien** (nur noch in der Git-Historie, siehe oben):
-- `Schaltung/Bogenampel.kicad_sch` - Hauptschaltplan
-- `Schaltung/Bogenampel.kicad_pcb` - PCB-Layout
-
-**Netz-Labels im Schaltplan:**
-- `SPI.SCK`, `SPI.MOSI`, `SPI.MISO` - Gemeinsamer SPI-Bus
-- `DSPL_CS`, `DSPL_DC`, `DSPL_RST` - Display Control Pins
-- `CE_NRF`, `CS_NRF` - NRF24L01 Control Pins
-
----
-
-## ✅ Pin-Verifikation - Komplett
-
-**Alle Pin-Zuweisungen wurden aus dem Code (Sender/Config.h) verifiziert:**
-
-1. ✅ **ST7789 Display** (über TXS0108EPW Level Shifter):
-   - [x] DSPL_CS → A0
-   - [x] DSPL_DC/RS → D10
-   - [x] DSPL_RES → A1
-   - [x] DSPL_LED → 3.3V (fest)
-
-2. ✅ **NRF24L01**:
-   - [x] CE_NRF → D9
-   - [x] CS_NRF → D8
-
-3. ✅ **Taster**:
-   - [x] Input 1 (J1) → D5 (Menü Links)
-   - [x] Input 2 (J2) → D6 (Menü OK)
-   - [x] Input 3 (J3) → D7 (Menü Rechts)
-
-4. ✅ **Status-LED**:
-   - [x] LED 1 (D1 rot) → A2 (Debug/Status)
-
-5. ✅ **Buzzer**:
-   - [x] Buzzer → D4 (KY-006 Passiver Piezo)
-
-6. ✅ **Analoge Eingänge**:
-   - [x] Batteriespannung → A5 (via 1:1 Spannungsteiler)
-
-7. ✅ **SPI-Bus** (gemeinsam):
-   - [x] SCK → D13
-   - [x] MOSI → D11
-   - [x] MISO → D12
-
----
-
-## Änderungshistorie
-
-| Datum | Version | Änderung |
-|-------|---------|----------|
-| 2025-12-13 | 1.0 | Initiale Version mit Platzhalter-Pins |
-| 2025-12-13 | 1.1 | Pin-Zuweisungen aus Schaltplan.png verifiziert und aktualisiert |
-| 2025-12-13 | 1.2 | Display auf ST7789 korrigiert, Pin-Zuweisungen aktualisiert (TFT_CS→A0, TFT_RST→A1, LEDs→A2/A3/A4) |
-| 2025-12-13 | 1.3 | Button-Namen aktualisiert (Links/OK/Rechts), nur LED_RED (A2) bestückt, grüne und gelbe LED entfernt |
-| 2025-12-25 | 1.4 | Pin-Zuweisungen aus Code synchronisiert: NRF (D9/D8), Buttons (D5/D6/D7), VOLTAGE_SENSE (A5), Buzzer (D4) hinzugefügt |
-
----
-
-**Nächste Schritte** (historisch, bezieht sich auf V2 — V2 ist seit 2026-08-01
-eingefroren, diese Punkte werden nicht mehr verfolgt):
-1. Pin-Zuweisungen aus KiCad-Schaltplan übernehmen
-2. Hardware-Tests durchführen
-3. Config.h mit korrekten Pins aktualisieren
+BTN1 liegt über den Teiler R2 47 k / R7 240 k an +BATT. Bei einer voll geladenen Zelle
+(4,2 V) ergeben sich am GPIO15 rund **3,5 V** — über VDD (3,3 V), aber noch unter dem
+Absolute-Maximum-Wert des ESP32-S3 (VDD + 0,3 V). Funktioniert, hat aber wenig Reserve.

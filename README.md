@@ -3,10 +3,8 @@
 Eine funkgesteuerte Timer-Anzeige für Bogenschießplätze — zwei Geräte, zwei Taster,
 kein Pairing, kein Netzwerk.
 
-<!-- TODO: Durch ein Foto der fertig montierten Anzeigetafel im Betrieb ersetzen
-     (leuchtende 7-Segment-Anzeige). Bis dahin steht hier die geöffnete
-     Bedieneinheit, weil sie das Projekt am besten zeigt. -->
-<img src="doc/20260730_234701.jpg" alt="Bedieneinheit geöffnet: ESP32-S3, 14500-Akku und e-Paper mit dem Startbildschirm" width="300">
+
+<img src="doc/20261009_193534-2.jpg" alt="Bogenampel in der Halle in Aktion" width="700">
 
 ---
 
@@ -15,6 +13,14 @@ kein Pairing, kein Netzwerk.
 ---
 
 # 1. Das Projekt
+
+## Optimierungspotentiale
+
+* Auch mit dem 12-V-Buzzer ist das Signal in einer großen Halle mit Hintergrundgeräuschen noch zu leise.
+Für die nächste Version wird deshalb vorgeschlagen, alternativ eine Box per Bluetooth anzuschließen.
+
+* Weiterhin ist das Gehäuse alles andere als wartungsfreundlich. Hier sollten vor allem die Bohrungen noch mal überdacht werden.
+
 
 ## Worum es geht
 
@@ -57,6 +63,10 @@ dem Ausschalten lesbar stehen.
 Die Platine trägt den Namen „Universal ESP32 Fernbedienung V3" — sie ist bewusst
 etwas allgemeiner gehalten als nötig. Links sitzen Ladeteil und USB-C, in der Mitte
 das Funkmodul mit den beiden Tastern, rechts die Ansteuerung für das e-Paper.
+
+<img src="doc/20260730_234701.jpg" alt="Bedieneinheit im Gehäuse" width="300">
+
+
 
 ## Die Anzeigeeinheit
 
@@ -146,6 +156,14 @@ gedacht, die ohne KiCad hineinsehen wollen.
 ![Platinenlayout Empfänger](doc/Empf%C3%A4nger_PCB.png)
 
 ---
+
+## 3D-Druckteile
+Der 3D-Druck ist noch bei weitem nicht optimal. Manche Bohrlöcher sind redundant, manche schlecht erreichbar.
+
+![3D-Druckteile](doc/druckteile.png)
+
+Generell wurde mit schwarzem und weißem PETG gedruckt, für die Verschraubungen wurden Einschmelzgewinde genutzt. Damit der Aufbau verstärkt wird, ist oben und unten abgewinkeltes Stahlblech über die ganze Breite verschraubt.
+
 
 # 2. Entwicklung
 
