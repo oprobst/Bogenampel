@@ -35,6 +35,7 @@ Bogenampel ist eine funkgesteuerte Timer-Anzeige für Bogenschießplätze.
 - C++ (Arduino core for ESP32 / arduino-esp32 3.x, C++17; V2 logic is C++11 and ports without changes) (004-v3-esp32-port)
 - ESP32 NVS via `Preferences` (replaces AVR EEPROM), namespace `bogenampel` (004-v3-esp32-port)
 - C++17, Arduino core for ESP32 (arduino-esp32 3.3.7) + WiFi, ArduinoOTA, ESPmDNS (Arduino-ESP32 built-ins), FastLED (already used); ESP-NOW via `esp_now`/`esp_wifi` (normal path only) (005-ota-maintenance-mode)
+- arduino-esp32 **3.3.12** (pioarduino 55.03.312-1, gepinnt seit 2026-11-03) + ESP32-A2DP v1.8.9, LiquidCrystal 1.0.7 (Bluetooth-Brücke)
 - N/A — no new persistence. WiFi credentials remain compile-time (`wifi_credentials.h`, gitignored); no NVS changes. (005-ota-maintenance-mode)
 - C++17, arduino-esp32 3.3.7 + GxEPD2-Busy-Callback (`setBusyCallback()` — hält die
   Tastenabfrage während des 300-400 ms blockierenden e-Paper-Refreshs am Laufen);
@@ -77,6 +78,15 @@ Empfaenger/           # Anzeigeeinheit (XIAO ESP32C3)
   ├── BuzzerManager.* # LEDC-PWM, Lautstärke vom Poti (Duty 0-50%)
   ├── FanManager.*    # Lüfter-PWM 25 kHz, Drehzahl vom Poti
   └── OTAManager.*    # Wartungsmodus (Debug-Taster D7 beim Boot)
+
+Bruecke/              # Bluetooth-Brücke (ESP32-DevKitC V4, Steckbrett-Stand)
+  ├── Bruecke.cpp     # Setup/Loop, LCD-Anzeige, Bedienlogik (Normal / Box-Suche)
+  ├── Config.h        # Pins LCD 16x2 + KY-040, Tonparameter, NVS
+  ├── Commands.h      # dritte byte-identische Kopie des Protokolls
+  ├── RadioManager.*  # ESP-NOW: hört nur auf FT_SIGNAL, sendet nichts
+  ├── AudioManager.*  # A2DP-Source (ESP32-A2DP), Sinus-Synthese im Datencallback
+  ├── EncoderManager.*# KY-040: Gray-Code per Interrupt, kurz/lang drücken
+  └── STECKBRETT.md   # Verdrahtung + Testplan (Koexistenz ESP-NOW/Bluetooth)
 
 Schaltung-Sender/     # KiCad Sender    — autoritative Hardware-Quelle (Constitution V)
 Schaltung-Empfaenger/ # KiCad Empfänger — dito
@@ -125,6 +135,17 @@ die Dauer; die Zeittabelle (`Timing::shootingSeconds()`) steht wortgleich in bei
 Version und baut dann anders als die bestehenden. Genau so kam FastLED 3.10.5 herein
 und brach den Empfänger-Build (`ambiguous memcpy`), während `env:empfaenger` mit
 gecachtem 3.10.3 weiterlief. Beim Hochziehen einer Version alle Envs frisch bauen.
+
+**Plattform gepinnt** (seit 2026-11-03): `[common] platform` = pioarduino **55.03.312-1**
+(arduino-esp32 **3.3.12**), alle Envs ziehen sie über `${common.platform}`. Das alte
+unversionierte `espressif32` (55.03.37 / 3.3.7) baute nicht mehr: es wollte bei jedem
+Build platformio-core 6.1.19 nachinstallieren, dessen Paket upstream umbenannt ist.
+Die neue Plattform braucht **PlatformIO Core ≥ 6.2.0** — und zwar genau `pioarduino==6.2.0`
+im penv; `6.2.0.post1` wertet die Versionsprüfung als *kleiner* 6.2.0 (`IncompatiblePlatform`).
+**Erstinstallation auf Windows**: aus **PowerShell** bauen, nicht aus der Git-Bash
+(`idf_tools.py`: „MSys/Mingw is not supported"), und solange `LongPathsEnabled` aus ist,
+`$env:PLATFORMIO_CACHE_DIR="C:\pc"` setzen — sonst sprengt ein Matter-Header der
+esp32c5-Libs beim Entpacken die 260 Zeichen. Danach baut es auch wieder ohne beides.
 
 **Sender-USB-Flash**: `upload_speed` MUSS 115200 bleiben (natives USB-Serial/JTAG — ein
 Baudratenwechsel re-enumeriert den Port und killt den Upload). `pio run -t upload` startet
@@ -194,6 +215,20 @@ Verbindlich: `specs/004-v3-esp32-port/contracts/hardware-pins.md` (aus KiCad-Net
 - Empfänger: NRF24 CE=D9/CSN=D8; LED-Strip D3; Buzzer D4; Debug D7/D2; Status-LEDs A2-A4
 
 ## Recent Changes
+- 2026-11-03: **Bluetooth-Brücke, Steckbrett-Stand** (`Bruecke/`, `env:bruecke`):
+  ESP32-DevKitC V4 + LCD 16x2 (5 V, parallel, R/W an GND) + KY-040 spielt die
+  Signaltöne des Empfängers über eine Bluetooth-Box (A2DP-Source, ESP32-A2DP v1.8.9).
+  Der **Empfänger** schickt dafür jeden Signalton zusätzlich als `FT_SIGNAL`-Broadcast
+  (neuer FrameType 0x06, 3 Kopien mit gleicher seq; Contract-Regel 8) — alle
+  `buzzer.beep()` laufen jetzt über `signalBeep()`. **Am Steckbrett bestätigt**:
+  Flashen (nur ohne LCD-Hintergrundlicht und mit BOOT halten), LCD, Box-Suche,
+  Pairing mit einer BOOMPODS „BEACHBOOM", Testton und Lautstärke. **Noch nicht
+  getestet**: die Strecke Empfänger → Brücke (der Empfänger mit `FT_SIGNAL` ist
+  gebaut, aber nicht geflasht); offen ist vor allem, ob ESP-NOW und A2DP auf einem
+  Funkteil ohne Aussetzer koexistieren (Testplan in `Bruecke/STECKBRETT.md`). Akku, Piezo-Verhalten
+  bei verbundener Brücke und Platine sind noch nicht entschieden.
+  Zugleich Plattform-Update 3.3.7 → 3.3.12 (siehe Commands) — **Sender und Empfänger
+  bauen damit, sind aber auf 3.3.12 nicht am Gerät abgenommen.**
 - 2026-10-01: **Erste Session mit beiden fertig gebauten Geräten.** Vier Befunde, alle
   im Betrieb an der Hardware entdeckt und per OTA eingespielt. Am Gerät
   ausdrücklich bestätigt wurden der Debug-Testlauf (Punkt 2) und der

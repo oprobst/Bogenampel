@@ -47,6 +47,7 @@ FanManager fan(Pins::FAN_PWM, Pins::FAN_POTI);
 void showRainbowEffect();
 void showLedsSoftStart();
 void handleCommand(RadioCommand cmd);
+void signalBeep(uint8_t count);
 void updateAlarm();
 void updatePotis();
 void updateBrightnessPreview();
@@ -830,7 +831,7 @@ void updateTimer() {
         if (!groupsEnabled || currentPosition == Groups::Position::POS_2) {
             // Ende der Passe: 1-2 Schützen, oder zweite Gruppe bei 3-4 Schützen
             DEBUG_PRINTLN("Pass END -> 3x beep");
-            buzzer.beep(3);
+            signalBeep(3);
         } else {
             // Erste Gruppe fertig (POS_1) → automatisch zur zweiten Gruppe wechseln
             if (currentGroup == Groups::Type::GROUP_AB) {
@@ -851,7 +852,7 @@ void updateTimer() {
             display.displayTimer(preparationRemainingSeconds, CRGB::Red);
 
             // 2x Piepen (Vorbereitungsphase startet)
-            buzzer.beep(2);
+            signalBeep(2);
         }
     } else {
         // Begrenze auf 999 Sekunden (7-Segment-Display Maximum)
@@ -925,7 +926,7 @@ void updatePreparation() {
         showCurrentGroup(CRGB::Green);
 
         // Akustisches Signal: 1x Piepen (Ampel wird grün)
-        buzzer.beep(1);
+        signalBeep(1);
     } else {
         // Zeige verbleibende Vorbereitungszeit in ROT
         display.displayTimer(preparationRemainingSeconds, CRGB::Red);
@@ -1003,6 +1004,19 @@ void showRainbowEffect() {
 //=============================================================================
 // Kommando-Verarbeitung (PORT aus V2, Semantik unverändert — FR-002)
 //=============================================================================
+
+/**
+ * @brief Akustisches Signal: Piezo + Meldung an die Bluetooth-Brücke
+ *
+ * Alle Signaltöne laufen hierüber, damit die Brücke dieselbe Folge spielt wie
+ * der Piezo. Der Lautstärke-Vorhörton (startPreview) ist bewusst kein Signal.
+ *
+ * @param count Anzahl Töne (1 = grün, 2 = Vorbereitung, 3 = Passe vorbei, 8 = Alarm)
+ */
+void signalBeep(uint8_t count) {
+    buzzer.beep(count);
+    radio.sendSignal(count);
+}
 
 /**
  * @brief Verarbeitet empfangenes Kommando
@@ -1104,7 +1118,7 @@ void handleCommand(RadioCommand cmd) {
             }
 
             // Akustisches Signal: 2x Piepen (Vorbereitungsphase startet)
-            buzzer.beep(2);
+            signalBeep(2);
             break;
 
         case CMD_STOP:
@@ -1128,7 +1142,7 @@ void handleCommand(RadioCommand cmd) {
             // weiter 8× blinkt. Der Sender schickt beim Quittieren des Alarms
             // genau dieses CMD_STOP, der Fall tritt also regulär auf.
             if (!alarmActive) {
-                buzzer.beep(3);
+                signalBeep(3);
             }
             break;
 
@@ -1243,7 +1257,7 @@ void handleCommand(RadioCommand cmd) {
             alarmLedState = true;
 
             // Akustisches Signal: 8x Piepen (Alarm)
-            buzzer.beep(8);
+            signalBeep(8);
             break;
 
         default:

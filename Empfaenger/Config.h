@@ -179,6 +179,14 @@ namespace Radio {
     // WLAN-Kanal (fest, beide Geräte identisch — espnow-protocol.md)
     constexpr uint8_t CHANNEL = 1;
 
+    // Signalton an die Bluetooth-Brücke (FT_SIGNAL, Broadcast). Broadcasts
+    // bekommen kein ACK, und die Brücke teilt sich ihr Funkteil mit Classic
+    // Bluetooth — ein einzelner Frame kann im BT-Zeitschlitz untergehen. Deshalb
+    // geht jeder Signalton mehrfach mit derselben seq raus; die Brücke
+    // dedupliziert. Gesendet wird aus update(), der Loop blockiert nicht.
+    constexpr uint8_t SIGNAL_REPEATS = 3;
+    constexpr uint8_t SIGNAL_REPEAT_INTERVAL_MS = 20;
+
 } // namespace Radio
 
 //=============================================================================

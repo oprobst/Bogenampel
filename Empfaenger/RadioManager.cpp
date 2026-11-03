@@ -10,6 +10,10 @@
 
 RadioManager* RadioManager::instance = nullptr;
 
+namespace {
+    const uint8_t BROADCAST_MAC[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+}
+
 RadioManager::RadioManager()
     : initialized(false)
     , queueHead(0)
@@ -17,7 +21,11 @@ RadioManager::RadioManager()
     , lastSeq(0)
     , lastSeqValid(false)
     , helloPending(false)
-    , frameCounter(0) {
+    , frameCounter(0)
+    , signalSeq(0)
+    , signalCount(0)
+    , signalRepeatsLeft(0)
+    , signalLastSendMs(0) {
     memset(helloMac, 0, sizeof(helloMac));
 }
 
@@ -37,17 +45,51 @@ bool RadioManager::begin() {
 
     esp_now_register_recv_cb(onRecvStatic);
 
+    // Broadcast-Peer für FT_SIGNAL an die Brücke
+    registerPeer(BROADCAST_MAC);
+    signalSeq = (uint8_t)esp_random();
+
     initialized = true;
     DEBUG_PRINTF("ESP-NOW init OK (Kanal %u)\n", Radio::CHANNEL);
     return true;
 }
 
 void RadioManager::update() {
-    if (!initialized || !helloPending) return;
+    if (!initialized) return;
 
-    helloPending = false;
-    registerPeer(helloMac);
-    sendHelloAck(helloMac);
+    if (helloPending) {
+        helloPending = false;
+        registerPeer(helloMac);
+        sendHelloAck(helloMac);
+    }
+
+    if (signalRepeatsLeft > 0
+        && millis() - signalLastSendMs >= Radio::SIGNAL_REPEAT_INTERVAL_MS) {
+        sendSignalFrame();
+    }
+}
+
+void RadioManager::sendSignal(uint8_t count) {
+    if (!initialized || count == 0) return;
+
+    signalSeq++;
+    signalCount = count;
+    signalRepeatsLeft = Radio::SIGNAL_REPEATS;
+    sendSignalFrame();  // erste Kopie sofort, der Rest aus update()
+}
+
+void RadioManager::sendSignalFrame() {
+    RadioPacketV3 packet;
+    packet.magic0 = PACKET_MAGIC0;
+    packet.magic1 = PACKET_MAGIC1;
+    packet.type = FT_SIGNAL;
+    packet.seq = signalSeq;
+    packet.command = signalCount;
+    packet.checksum = calculateChecksum(packet.command);
+
+    esp_now_send(BROADCAST_MAC, (const uint8_t*)&packet, sizeof(packet));
+    signalRepeatsLeft--;
+    signalLastSendMs = millis();
 }
 
 RadioCommand RadioManager::nextCommand() {
