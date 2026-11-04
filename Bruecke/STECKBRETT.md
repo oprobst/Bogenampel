@@ -106,6 +106,10 @@ bevor sie sucht oder neu verbindet („BT startet ...").
 
 ## Versorgung
 
+Im Gehäuse (V3.1): eigener TSR0.5-2433 aus den 12 V für die Brücke, die 5 V fürs LCD
+kommen provisorisch von TP3 des Empfängers. In V4 sauber lösen, ebenso UART-Zugang
+und BOOT/EN. Der Piezo piept parallel zur Box weiter; stumm per Lautstärke-Poti.
+
 **5 V nur an LCD Pin 2, Pin 15 und das obere Ende des Kontrast-Trimmers. ESP32 und
 KY-040 bekommen 3,3 V.** Liegen 5 V auf der 3V3-Schiene, stürzt die Brücke beim Start
 ab: Guru Meditation, und im seriellen Monitor erscheint nur Salat aus `00`/`E0`/`F0`.
@@ -138,3 +142,4 @@ profitieren, zeigt erst der Vergleichstest unten.
    Sender in größter realer Entfernung. Kommen alle Befehle an, wie viele
    Wiederholungen braucht es? Vergleich: Brücke aus, Brücke an ohne und mit
    AFH-Sperre (zum Abschalten den Aufruf in `AudioManager::update()` auskommentieren).
+   Stand 2026-11-04: im Einbauabstand ohne Auffälligkeiten gelaufen, Befehle nicht gezählt.

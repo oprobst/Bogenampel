@@ -144,7 +144,7 @@ USB-C-Buchse ──6-pol JST (J1)──► CH224K (U2): fordert 12 V per USB-PD 
 | Q1 | **AO3401A** (P-Kanal) | Verpolungsschutz VBUS → +12V, Gate-Teiler R8 20 k / R7 10 k |
 | D2 | **SMBJ13A** | TVS-Diode am +12V-Netz |
 | U4 | **TRACO TSR0.5-2433** | Schaltregler 12 V → **3,3 V** für den XIAO |
-| U1 | **L7805** (TO-220) | 12 V → **5 V**, versorgt **nur** den Pegelwandler U5 |
+| U1 | **L7805** (TO-220) | 12 V → **5 V**, versorgt den Pegelwandler U5 und seit V3.1 provisorisch das LCD der Bluetooth-Brücke (angelötet an TP3, in V4 sauber lösen) |
 | U5 | **74AHCT1G125** | Pegelwandler 3,3 → 5 V für die WS2811-Datenleitung, /OE fest an GND; Ausgang über R14 330 Ω an J7 |
 | Q2 | **BSS138** (N-Kanal) | Lüfter-PWM, Open-Drain auf die PWM-Leitung |
 | Q3 | **BC337** (NPN, TO-92) | Piezo-Treiber |

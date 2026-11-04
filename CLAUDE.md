@@ -239,11 +239,13 @@ Verbindlich: `specs/004-v3-esp32-port/contracts/hardware-pins.md` (aus KiCad-Net
   **Befund Steckbrett**: Abstürze beim Start (Guru Meditation, UART0 statt 115200 grob 10–20 kBaud,
   serieller Salat aus `00`/`E0`/`F0`) kamen davon, dass versehentlich 5 V auf der 3V3-Schiene
   lagen: danach 9-10 von 10 Starts gestört, nach der Korrektur 10 von 10 sauber, auch mit GND und
-  Signaldraht zum Empfänger. Ein bleibender Schaden am DevKitC ist nicht ausgeschlossen. Offen: stört Bluetooth den
-  ESP-NOW-Empfang des XIAO direkt daneben (Test 7 in `Bruecke/STECKBRETT.md`);
-  Versorgung der Brücke (TP1 hängt am 500-mA-TSR0.5, empfohlen eigener Regler an 12 V);
-  Schaltplan V3.1 ist Blatt `BluetoothBridge` (in Arbeit, PCB noch nicht nachgezogen). Akku entfällt mit dem Einbau; Piezo-Verhalten
-  bei verbundener Brücke und Platine sind noch nicht entschieden.
+  Signaldraht zum Empfänger. Ein bleibender Schaden am DevKitC ist nicht ausgeschlossen. Im Test standen Empfänger und Brücke im späteren Einbauabstand und
+  liefen ohne Auffälligkeiten; eine Zählung der Befehle (Test 7 in `Bruecke/STECKBRETT.md`) gab es nicht.
+  **Entscheidungen 2026-11-04**: Die Brücke bekommt einen eigenen TSR0.5-2433 aus den 12 V, das LCD
+  (5 V) ist am TP3 (+5 V, L7805) des Empfängers angelötet. Bewusst provisorisch, in **V4** sauber lösen,
+  ebenso UART-Zugang und BOOT/EN auf der Brücken-Platine. Der **Piezo piept weiter parallel**, stumm
+  schaltet der Nutzer ihn per Lautstärke-Poti.
+  Schaltplan V3.1 ist Blatt `BluetoothBridge` (in Arbeit, PCB noch nicht nachgezogen). Akku entfällt mit dem Einbau.
   Zugleich Plattform-Update 3.3.7 → 3.3.12 (siehe Commands) — **Sender und Empfänger
   bauen damit, sind aber auf 3.3.12 nicht am Gerät abgenommen.**
 - 2026-10-01: **Erste Session mit beiden fertig gebauten Geräten.** Vier Befunde, alle
