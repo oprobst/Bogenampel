@@ -2,8 +2,8 @@
  * @file Bruecke.cpp
  * @brief Hauptdatei der Bluetooth-Brücke (Bogenampel V3, Steckbrett-Stand)
  *
- * Empfängt die Signaltöne des Empfängers per ESP-NOW (FT_SIGNAL) und spielt
- * sie über eine Bluetooth-Box. Bedienung mit dem KY-040:
+ * Bekommt die Signaltöne des Empfängers über eine UART-Leitung und spielt sie
+ * über eine Bluetooth-Box. Bedienung mit dem KY-040:
  *
  * Normalbetrieb
  * - Drehen:        Lautstärke (mit kurzem Vorhörton)
@@ -19,6 +19,9 @@
  * A2DP-Bibliothek die alte Box nicht wieder ansteuern, und das lässt sich nur
  * vor ihrem start() festlegen.
  *
+ * Wartungsmodus: Taster beim Einschalten halten → WLAN + ArduinoOTA statt
+ * Bluetooth, das LCD zeigt die IP (siehe OTAManager.h).
+ *
  * @date 2026-11-03
  */
 
@@ -27,9 +30,10 @@
 #include <Preferences.h>
 
 #include "Config.h"
-#include "RadioManager.h"
+#include "SignalLink.h"
 #include "AudioManager.h"
 #include "EncoderManager.h"
+#include "OTAManager.h"
 
 //=============================================================================
 // Globale Objekte
@@ -37,13 +41,14 @@
 
 LiquidCrystal lcd(Pins::LCD_RS, Pins::LCD_E,
                   Pins::LCD_D4, Pins::LCD_D5, Pins::LCD_D6, Pins::LCD_D7);
-RadioManager radio;
+SignalReceiver signalLine;
 AudioManager audio;
 EncoderManager encoder;
 Preferences prefs;
 
 enum class Mode : uint8_t { MAIN, SCAN };
 Mode mode = Mode::MAIN;
+bool maintenanceMode = false;
 
 uint8_t volume = Audio::VOLUME_DEFAULT;
 bool volumeDirty = false;
@@ -66,6 +71,9 @@ void restartInto(bool scan, const char* line0);
 void draw();
 void lcdLine(uint8_t row, const char* text);
 void toLcdText(const char* in, char* out, size_t len);
+bool readMaintenanceButton();
+void loopMaintenance();
+void showOtaProgress(uint8_t percent);
 
 //=============================================================================
 // Setup / Loop
@@ -80,14 +88,25 @@ void setup() {
     lcdLine(0, "Bogenampel");
     lcdLine(1, "BT-Br\xF5" "cke");  // \xF5 = ü im HD44780-ROM (A00)
 
+    // Vor allem anderen: im Wartungsmodus startet Bluetooth gar nicht erst
+    maintenanceMode = readMaintenanceButton();
+    if (maintenanceMode) {
+        DEBUG_PRINTLN("Boot-Modus: WARTUNG");
+        OTAManager::begin(showOtaProgress);
+        return;
+    }
+
     prefs.begin(Nvs::NAMESPACE, false);
     volume = prefs.getUChar(Nvs::KEY_VOLUME, Audio::VOLUME_DEFAULT);
     if (volume > Audio::VOLUME_STEPS) volume = Audio::VOLUME_DEFAULT;
     boxName = prefs.getString(Nvs::KEY_BOX_NAME, "");
+    // Ohne gespeicherte Adresse kann die Bibliothek nicht neu verbinden, auch wenn
+    // der Anzeigename noch da ist → dann muss die Box einmal gewählt werden
+    if (!audio.hasStoredBox()) boxName = "";
     bool scanBoot = prefs.getUChar(Nvs::KEY_SCAN, 0) != 0 || boxName.length() == 0;
 
     encoder.begin();
-    radio.begin();          // ESP-NOW zuerst, dann Bluetooth (Coexistence)
+    signalLine.begin();
     audio.setVolume(volume);
     audio.begin(scanBoot);
 
@@ -96,16 +115,23 @@ void setup() {
 }
 
 void loop() {
-    encoder.update();
+    if (maintenanceMode) {
+        loopMaintenance();
+        return;
+    }
 
-    uint8_t signal = radio.takeSignal();
+    encoder.update();
+    audio.update();
+    signalLine.update();
+
+    uint8_t signal = signalLine.takeSignal();
     if (signal != 0) {
         audio.playSignal(signal);
         lastSignalCount = signal;
-        // Coexistence-Messgröße: je Signal sendet der Empfänger 3 Kopien
-        DEBUG_PRINTF("Signal %ux (Signale %lu, Kopien %lu)\n", signal,
-                     (unsigned long)radio.signalsReceived(),
-                     (unsigned long)radio.copiesReceived());
+        // Verworfen > 0 heißt: Störungen auf der Leitung
+        DEBUG_PRINTF("Signal %ux (Signale %lu, verworfen %lu)\n", signal,
+                     (unsigned long)signalLine.signalsReceived(),
+                     (unsigned long)signalLine.rejected());
     }
 
     int16_t detents = encoder.takeDetents();
@@ -127,6 +153,52 @@ void loop() {
     }
 
     delay(1);
+}
+
+//=============================================================================
+// Wartungsmodus
+//=============================================================================
+
+/**
+ * @brief Liest den Drehgeber-Taster entprellt beim Boot
+ * @return true, wenn er stabil gedrückt ist (~25 ms)
+ */
+bool readMaintenanceButton() {
+    pinMode(Pins::ENC_SW, INPUT_PULLUP);
+    delay(1);  // Pull-up einschwingen lassen
+    for (uint8_t i = 0; i < 5; i++) {
+        if (digitalRead(Pins::ENC_SW) != LOW) return false;
+        delay(5);
+    }
+    return true;
+}
+
+void loopMaintenance() {
+    OTAManager::handle();  // blockiert während einer Übertragung
+
+    if (millis() - lastDrawMs < 200) return;
+    lastDrawMs = millis();
+
+    if (OTAManager::lastUpdateFailed()) {
+        lcdLine(0, "Update-Fehler");
+    } else {
+        lcdLine(0, "Wartungsmodus");
+    }
+
+    if (!OTAManager::hasCredentials()) {
+        lcdLine(1, "Keine WLAN-Daten");
+    } else if (OTAManager::isConnected()) {
+        lcdLine(1, OTAManager::ipAddress().c_str());
+    } else {
+        lcdLine(1, "WLAN verbindet");
+    }
+}
+
+void showOtaProgress(uint8_t percent) {
+    char line[17];
+    snprintf(line, sizeof(line), "%u %%", percent);
+    lcdLine(0, "Update l\xE1uft");  // \xE1 = ä im HD44780-ROM (A00)
+    lcdLine(1, line);
 }
 
 //=============================================================================
@@ -161,6 +233,7 @@ void handleScan(int16_t detents, EncoderManager::Event event) {
         // Gewählt, Verbindung läuft: auf Erfolg warten
         if (audio.state() == AudioManager::State::CONNECTED) {
             boxName = selectedName;
+            audio.rememberSelectedBox();
             prefs.putString(Nvs::KEY_BOX_NAME, boxName);
             prefs.putUChar(Nvs::KEY_SCAN, 0);
             mode = Mode::MAIN;
@@ -229,7 +302,7 @@ void draw() {
         } else if (lastSignalCount == 0) {
             strcpy(l1, "Kein Signal");
         } else {
-            uint32_t age = (millis() - radio.lastSignalMs()) / 1000;
+            uint32_t age = (millis() - signalLine.lastSignalMs()) / 1000;
             if (age < 60) {
                 snprintf(l1, sizeof(l1), "Sig %ux vor %lus", lastSignalCount, (unsigned long)age);
             } else if (age < 3600) {

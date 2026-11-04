@@ -1,7 +1,9 @@
 # Bluetooth-Brücke — Steckbrett-Aufbau
 
-Stand 2026-11-03. Ziel: prüfen, ob ESP-NOW-Empfang und Bluetooth-Audio (A2DP)
-auf **einem** ESP32 zuverlässig nebeneinander laufen, bevor es eine Platine gibt.
+Stand 2026-11-04. Ziel: prüfen, ob die Brücke direkt neben dem Empfänger im
+Ampel-Gehäuse laufen kann, ohne dessen ESP-NOW-Empfang zu stören, bevor es eine
+Platine gibt. Die Signaltöne kommen per Kabel (UART), nicht mehr per Funk — der
+ESP32 braucht also kein ESP-NOW neben Bluetooth.
 
 ## Teile
 
@@ -10,7 +12,7 @@ auf **einem** ESP32 zuverlässig nebeneinander laufen, bevor es eine Platine gib
 - 10-kΩ-Trimmer für den Kontrast
 - KY-040-Drehgeber
 - Bluetooth-Box
-- Versorgung zunächst über USB (Akku folgt später)
+- Versorgung am Steckbrett über USB (im Gehäuse später aus der Ampel)
 
 ## Verdrahtung
 
@@ -45,6 +47,16 @@ auf **einem** ESP32 zuverlässig nebeneinander laufen, bevor es eine Platine gib
 Läuft die Lautstärke verkehrt herum: CLK und DT tauschen. Springt sie pro
 Rastung um zwei: `Ui::ENC_STEPS_PER_DETENT` in `Config.h` auf 2.
 
+### Signalleitung zum Empfänger
+
+| Empfänger (XIAO) | | DevKitC |
+|---|---|---|
+| D5 / GPIO7 | ca. 330 Ω in Reihe | GPIO4 |
+| GND | | GND (**ohne gemeinsame Masse kein Signal**) |
+
+UART, 9600 Baud, nur Empfänger → Brücke. Telegramm: `0xA5`, Anzahl Töne (1–8),
+`0xA5 ^ Anzahl`. Im KiCad-Schaltplan ist das Netz `BT` (Blatt `BluetoothBridge`).
+
 ## Flashen
 
 ```bash
@@ -58,8 +70,19 @@ ohne lief er beim ersten Versuch durch. Außerdem bringt die Auto-Reset-Schaltun
 dieses DevKitC den Chip nicht zuverlässig in den Download-Modus: **BOOT halten**,
 bis „Writing at …" läuft.
 
-Der **Empfänger** braucht ebenfalls die neue Firmware (er sendet die
-Signal-Frames), am einfachsten per OTA:
+**Per OTA** (ab dem ersten USB-Flash mit dieser Version): Drehgeber-Taster beim
+Einschalten halten, bis das LCD „Wartungsmodus" und die IP zeigt. Dann:
+
+```bash
+pio run -t upload -e bruecke-ota   # weicht die IP ab: --upload-port <IP>
+```
+
+Im Wartungsmodus läuft kein Bluetooth und im Normalbetrieb kein WLAN. Die
+Zugangsdaten kommen aus `wifi_credentials.h`. Bootloader und Partitionstabelle
+lassen sich per OTA nicht ändern; dafür bleibt der USB-/UART-Weg nötig.
+
+Der **Empfänger** braucht ebenfalls die neue Firmware (er schickt die Telegramme
+auf die Leitung), am einfachsten per OTA:
 
 ```bash
 pio run -t upload -e empfaenger-debug-ota
@@ -75,21 +98,43 @@ Minute durch, und es kommen in kurzer Zeit viele Signale zusammen.
 | Normal | Lautstärke (mit Vorhörton) | Testton | Box-Suche (Neustart) |
 | Box-Suche | durch die Geräte blättern | Gerät wählen | Abbruch (Neustart) |
 
+Taster beim Einschalten gehalten = Wartungsmodus (OTA).
+
 Beim allerersten Start (noch keine Box gespeichert) startet die Box-Suche
 automatisch. Nach dem Einschalten wartet die Bluetooth-Bibliothek etwa 10 s,
 bevor sie sucht oder neu verbindet („BT startet ...").
 
+## Versorgung
+
+**5 V nur an LCD Pin 2, Pin 15 und das obere Ende des Kontrast-Trimmers. ESP32 und
+KY-040 bekommen 3,3 V.** Liegen 5 V auf der 3V3-Schiene, stürzt die Brücke beim Start
+ab: Guru Meditation, und im seriellen Monitor erscheint nur Salat aus `00`/`E0`/`F0`.
+Außerdem sollten USB und ein zweiter 3,3-V-Regler (TSR0.5-2433) nicht gleichzeitig
+die Schiene speisen.
+
+## AFH-Kanalsperre
+
+Die Brücke sperrt für Bluetooth die Kanäle 0–21 (2402–2423 MHz), damit der Sender
+den ESP-NOW-Kanal 1 auslässt. Der Log bestätigt nach dem Start
+`AFH-Sperre aktiv: BT-Kanaele 0-21 gesperrt`. Das heißt nur, dass der eigene
+Controller den Befehl angenommen hat — ob die Box und der Funkbetrieb davon
+profitieren, zeigt erst der Vergleichstest unten.
+
 ## Was getestet werden soll
 
-1. **Koexistenz**: Der serielle Monitor zeigt pro Signal
-   `Signal 3x (Signale N, Kopien K)`. Der Empfänger sendet jedes Signal 3×;
-   bei störungsfreiem Empfang ist K ≈ 3·N. Fehlt ein ganzes Signal, sieht man
-   das an einer Lücke in N gegenüber den Piepern des Empfängers.
-2. **Tonqualität**: Aussetzer oder Knacken während ESP-NOW-Frames ankommen?
+1. **Signalleitung**: Der serielle Monitor zeigt pro Signal
+   `Signal 3x (Signale N, verworfen V)`. N muss zu den Piepern des Empfängers
+   passen. V darf beim Einschalten des Empfängers kurz steigen, im Betrieb nicht —
+   sonst streut etwas ein (LED-Datenleitung, Lüfter-PWM).
+2. **Tonqualität**: Aussetzer oder Knacken, auch mit der AFH-Sperre?
 3. **Latenz**: Wie weit liegt die Box hinter dem Piezo? Erwartet 150–250 ms.
 4. **Wiederverbinden**: Box aus- und wieder einschalten — verbindet die
    Brücke von selbst neu (Heartbeat alle 10 s)?
 5. **Box-Abschaltung**: Bleibt die Box an, obwohl die meiste Zeit Stille
    gestreamt wird?
 6. **Stromaufnahme** am USB-Messgerät, mit und ohne LCD-Hintergrundlicht —
-   Grundlage für die Akku-Auslegung.
+   Grundlage für die Versorgung aus der Ampel.
+7. **Einbau-Test**: Brücke im Ampel-Gehäuse neben dem Empfänger, Dauerton läuft,
+   Sender in größter realer Entfernung. Kommen alle Befehle an, wie viele
+   Wiederholungen braucht es? Vergleich: Brücke aus, Brücke an ohne und mit
+   AFH-Sperre (zum Abschalten den Aufruf in `AudioManager::update()` auskommentieren).

@@ -223,6 +223,9 @@ void setupNormal() {
     // schon beim Boot gesperrt)
     buzzer.begin();
 
+    // Signalleitung zur Bluetooth-Brücke: nur Senden (kein RX-Pin)
+    Serial1.begin(SignalLink::BAUD, SERIAL_8N1, -1, Pins::BRIDGE_TX);
+
     // LED Strip initialisieren (WS2811-Protokoll, RGB). Reihenfolge erst mit
     // sauberem Datensignal (330-Ω-Serienwiderstand am Daten-Pin) zuverlässig
     // bestimmt: feste Helligkeit + einheitliche Pixel zeigten gesendet Rot→Grün,
@@ -1010,12 +1013,17 @@ void showRainbowEffect() {
  *
  * Alle Signaltöne laufen hierüber, damit die Brücke dieselbe Folge spielt wie
  * der Piezo. Der Lautstärke-Vorhörton (startPreview) ist bewusst kein Signal.
+ * Das Telegramm passt in den UART-FIFO, der Loop blockiert also nicht; hängt
+ * keine Brücke am Pin, geht es einfach ins Leere.
  *
  * @param count Anzahl Töne (1 = grün, 2 = Vorbereitung, 3 = Passe vorbei, 8 = Alarm)
  */
 void signalBeep(uint8_t count) {
     buzzer.beep(count);
-    radio.sendSignal(count);
+
+    const uint8_t frame[3] = {SignalLink::FRAME_START, count,
+                              (uint8_t)(SignalLink::FRAME_START ^ count)};
+    Serial1.write(frame, sizeof(frame));
 }
 
 /**

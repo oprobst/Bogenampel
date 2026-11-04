@@ -82,14 +82,14 @@ Empfaenger/           # Anzeigeeinheit (XIAO ESP32C3)
 Bruecke/              # Bluetooth-Brücke (ESP32-DevKitC V4, Steckbrett-Stand)
   ├── Bruecke.cpp     # Setup/Loop, LCD-Anzeige, Bedienlogik (Normal / Box-Suche)
   ├── Config.h        # Pins LCD 16x2 + KY-040, Tonparameter, NVS
-  ├── Commands.h      # dritte byte-identische Kopie des Protokolls
-  ├── RadioManager.*  # ESP-NOW: hört nur auf FT_SIGNAL, sendet nichts
+  ├── SignalLink.*    # UART-Empfang der Signaltöne vom Empfänger (GPIO4)
+  ├── OTAManager.*    # Wartungsmodus (Drehgeber-Taster beim Boot): WLAN + ArduinoOTA, kein BT
   ├── AudioManager.*  # A2DP-Source (ESP32-A2DP), Sinus-Synthese im Datencallback
   ├── EncoderManager.*# KY-040: Gray-Code per Interrupt, kurz/lang drücken
-  └── STECKBRETT.md   # Verdrahtung + Testplan (Koexistenz ESP-NOW/Bluetooth)
+  └── STECKBRETT.md   # Verdrahtung + Testplan (Einbau neben dem Empfänger)
 
 Schaltung-Sender/     # KiCad Sender    — autoritative Hardware-Quelle (Constitution V)
-Schaltung-Empfaenger/ # KiCad Empfänger — dito
+Schaltung-Empfaenger/ # KiCad Empfänger — dito; Blatt BluetoothBridge.kicad_sch = Brücke (V3.1, in Arbeit)
 doc/                  # Fotos + Exporte (Schaltplan/Layout), ohne KiCad lesbar
                       #   Sender_Schaltplan.png, Empfänger_Schaltplan.png,
                       #   Sender_PCB.png, Empfänger_PCB.png
@@ -208,7 +208,8 @@ Verbindlich: `specs/004-v3-esp32-port/contracts/hardware-pins.md` (aus KiCad-Net
 - Piezo=D3/GPIO5 (LEDC), Lüfter-PWM=D6/GPIO21 (LEDC 25 kHz)
 - Debug-Taster=D7/GPIO20, Status-LED=D9/GPIO9 (**aktiv LOW** — Strapping-Fix),
   WS2811-Data=D10/GPIO10 (über Pegelwandler U5 74AHCT1G125 → 5 V; früh OUTPUT LOW setzen!)
-- Frei: D5/GPIO7, D8/GPIO8
+- Signal zur Brücke: D5/GPIO7 (UART TX, 9600 Baud, Netz `BT`, Schaltplan-Blatt `BluetoothBridge`)
+- Frei: D8/GPIO8 (Strapping-Pin)
 
 ### V2 (Legacy)
 - Sender: NRF24 CE=D9/CSN=D8; Display CS=A0/DC=D10/RST=A1; Buttons D5/D6/D7; Buzzer D4; Battery A4
@@ -218,14 +219,30 @@ Verbindlich: `specs/004-v3-esp32-port/contracts/hardware-pins.md` (aus KiCad-Net
 - 2026-11-03: **Bluetooth-Brücke, Steckbrett-Stand** (`Bruecke/`, `env:bruecke`):
   ESP32-DevKitC V4 + LCD 16x2 (5 V, parallel, R/W an GND) + KY-040 spielt die
   Signaltöne des Empfängers über eine Bluetooth-Box (A2DP-Source, ESP32-A2DP v1.8.9).
-  Der **Empfänger** schickt dafür jeden Signalton zusätzlich als `FT_SIGNAL`-Broadcast
-  (neuer FrameType 0x06, 3 Kopien mit gleicher seq; Contract-Regel 8) — alle
-  `buzzer.beep()` laufen jetzt über `signalBeep()`. **Am Steckbrett bestätigt**:
-  Flashen (nur ohne LCD-Hintergrundlicht und mit BOOT halten), LCD, Box-Suche,
-  Pairing mit einer BOOMPODS „BEACHBOOM", Testton und Lautstärke. **Noch nicht
-  getestet**: die Strecke Empfänger → Brücke (der Empfänger mit `FT_SIGNAL` ist
-  gebaut, aber nicht geflasht); offen ist vor allem, ob ESP-NOW und A2DP auf einem
-  Funkteil ohne Aussetzer koexistieren (Testplan in `Bruecke/STECKBRETT.md`). Akku, Piezo-Verhalten
+  Alle `buzzer.beep()` des **Empfängers** laufen über `signalBeep()`, das den Ton
+  zusätzlich an die Brücke meldet. **Am Steckbrett bestätigt**: Flashen (nur ohne
+  LCD-Hintergrundlicht und mit BOOT halten), LCD, Box-Suche, Pairing mit einer
+  BOOMPODS „BEACHBOOM", Testton und Lautstärke.
+  **Umbau 2026-11-04, Einbau ins Ampel-Gehäuse beschlossen**: Die Signaltöne laufen per
+  **UART-Draht** (D5/GPIO7 → GPIO4, 9600 Baud, Telegramm `0xA5, n, 0xA5^n`) statt per
+  ESP-NOW; der erste Ansatz (`FT_SIGNAL`-Broadcast, Commit `3f72c83`) ist wieder raus,
+  das ESP-NOW-Protokoll ist unverändert wie vorher, die Brücke hat keine eigene
+  `Commands.h` mehr. Dazu sperrt die Brücke per AFH die Bluetooth-Kanäle 0–21, die
+  ESP-NOW-Kanal 1 überlappen — das automatische AFH erkennt die seltenen ESP-NOW-Frames
+  kaum (Wirkung nicht gemessen). Dazu ein OTA-Wartungsmodus (Drehgeber-Taster beim Einschalten, `env:bruecke-ota`,
+  LCD zeigt die IP, Flash jetzt 87 % von 1,9 MB). OTA der Brücke am Steckbrett bestätigt,
+  **mit** LCD-Licht am USB-Port. Signaltöne über die UART-Strecke Empfänger → Brücke
+  sind am Steckbrett **laut Bedienertest in Ordnung** (ohne Log-Auswertung). Empfänger und Sender
+  tragen derzeit die **Debug-Zeiten** (`*-debug-ota`), fürs Feld zurückflashen. Die Box-Adresse speichert die Brücke
+  selbst (`rememberSelectedBox()`), weil die Bibliothek das bei ausgeschaltetem
+  Auto-Reconnect nicht tut; Wiederverbinden nach Neustart am Steckbrett bestätigt.
+  **Befund Steckbrett**: Abstürze beim Start (Guru Meditation, UART0 statt 115200 grob 10–20 kBaud,
+  serieller Salat aus `00`/`E0`/`F0`) kamen davon, dass versehentlich 5 V auf der 3V3-Schiene
+  lagen: danach 9-10 von 10 Starts gestört, nach der Korrektur 10 von 10 sauber, auch mit GND und
+  Signaldraht zum Empfänger. Ein bleibender Schaden am DevKitC ist nicht ausgeschlossen. Offen: stört Bluetooth den
+  ESP-NOW-Empfang des XIAO direkt daneben (Test 7 in `Bruecke/STECKBRETT.md`);
+  Versorgung der Brücke (TP1 hängt am 500-mA-TSR0.5, empfohlen eigener Regler an 12 V);
+  Schaltplan V3.1 ist Blatt `BluetoothBridge` (in Arbeit, PCB noch nicht nachgezogen). Akku entfällt mit dem Einbau; Piezo-Verhalten
   bei verbundener Brücke und Platine sind noch nicht entschieden.
   Zugleich Plattform-Update 3.3.7 → 3.3.12 (siehe Commands) — **Sender und Empfänger
   bauen damit, sind aber auf 3.3.12 nicht am Gerät abgenommen.**

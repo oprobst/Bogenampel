@@ -34,8 +34,7 @@ enum FrameType : uint8_t {
     FT_HELLO     = 0x02,  // Discovery-Broadcast Sender → alle
     FT_HELLO_ACK = 0x03,  // Discovery-Antwort Empfänger → Sender (unicast)
     FT_PING      = 0x04,  // Qualitätstest Sender → Empfänger
-    FT_PING_ACK  = 0x05,  // optionale App-Antwort (Link-ACK genügt für Qualität)
-    FT_SIGNAL    = 0x06   // Signalton Empfänger → Broadcast (Bluetooth-Brücke)
+    FT_PING_ACK  = 0x05   // optionale App-Antwort (Link-ACK genügt für Qualität)
 };
 ```
 
@@ -94,11 +93,3 @@ enum FrameType : uint8_t {
    fehl, meldet der Sender das im Log als `WARNUNG: Power Save nicht aktiv`.
    **Der Empfänger ist ausgenommen** — er muss jederzeit empfangsbereit sein und hängt ohnehin
    am Netzteil.
-8. **Signalton an die Bluetooth-Brücke (FT_SIGNAL, ergänzt 2026-11-03)**: Jeder Signalton des
-   Empfängers (1 = grün, 2 = Vorbereitung, 3 = Passe vorbei, 8 = Alarm) geht zusätzlich als
-   Broadcast an `FF:FF:FF:FF:FF:FF`, `command` = Anzahl Töne, `checksum` wie gehabt. Broadcasts
-   werden nicht bestätigt, deshalb sendet der Empfänger jeden Frame `Radio::SIGNAL_REPEATS` (3)
-   mal im Abstand von 20 ms mit **derselben** `seq` (eigener Zähler, pro Boot zufällig); die
-   Brücke dedupliziert über `seq` + Absender-MAC. Die Brücke sendet nichts und ist keinem Gerät
-   als Peer bekannt. Der Sender ignoriert FT_SIGNAL (er wertet nur FT_HELLO_ACK aus).
-   Die Kommandos 0x01-0x0C bleiben unverändert.

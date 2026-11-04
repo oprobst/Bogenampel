@@ -36,6 +36,9 @@ public:
      */
     void begin(bool scanMode);
 
+    /// Muss in jedem loop() laufen (setzt die AFH-Kanalsperre, siehe Radio in Config.h)
+    void update();
+
     /// Zustand für die Anzeige
     State state() const;
 
@@ -49,6 +52,12 @@ public:
     void setVolume(uint8_t step);
 
     // --- Suchmodus -----------------------------------------------------------
+
+    /// Ist eine Box-Adresse im NVS gespeichert? (Vor begin() aufrufbar, NVS muss laufen)
+    bool hasStoredBox();
+
+    /// Adresse der gewählten Box dauerhaft speichern (nach erfolgreicher Verbindung)
+    void rememberSelectedBox();
 
     /// Anzahl bisher gefundener Geräte
     uint8_t deviceCount() const;

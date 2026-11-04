@@ -8,7 +8,6 @@
  * - FT_HELLO → FT_HELLO_ACK unicast + Peer-Registrierung (Discovery, R-3)
  * - Kommandos werden in eine kleine Queue gelegt und im loop() abgeholt
  *   (der Recv-Callback läuft im WiFi-Task → volatile Ring-Puffer)
- * - Signaltöne gehen als FT_SIGNAL-Broadcast an die Bluetooth-Brücke
  *
  * Protokoll-Contract: specs/004-v3-esp32-port/contracts/espnow-protocol.md
  */
@@ -40,18 +39,6 @@ public:
     void update();
 
     /**
-     * @brief Meldet einen Signalton an die Bluetooth-Brücke (FT_SIGNAL-Broadcast)
-     *
-     * Nicht blockierend: der Frame geht Radio::SIGNAL_REPEATS-mal im Abstand
-     * von Radio::SIGNAL_REPEAT_INTERVAL_MS aus update() heraus, alle Kopien mit
-     * derselben seq. Ein neuer Aufruf ersetzt eine noch laufende Wiederholung.
-     * Ohne Brücke hört niemand zu — der Broadcast kostet dann nur Sendezeit.
-     *
-     * @param count Anzahl Töne (wie BuzzerManager::beep)
-     */
-    void sendSignal(uint8_t count);
-
-    /**
      * @brief Liegt ein empfangenes Kommando in der Queue?
      */
     bool commandAvailable() const { return queueHead != queueTail; }
@@ -69,7 +56,6 @@ public:
 
 private:
     void sendHelloAck(const uint8_t* mac);
-    void sendSignalFrame();
     void registerPeer(const uint8_t* mac);
 
     // ESP-NOW-Callbacks (Signaturen abhängig von der IDF-Version — Guards halten
@@ -99,10 +85,4 @@ private:
     uint8_t helloMac[6];
 
     volatile uint32_t frameCounter;  // akzeptierte Frames (LED-Feedback)
-
-    // Signal an die Brücke (nur Loop-Kontext)
-    uint8_t signalSeq;          // pro Boot zufällig, ++ pro Signal (nicht pro Kopie)
-    uint8_t signalCount;        // Anzahl Töne des laufenden Signals
-    uint8_t signalRepeatsLeft;  // noch zu sendende Kopien
-    uint32_t signalLastSendMs;
 };

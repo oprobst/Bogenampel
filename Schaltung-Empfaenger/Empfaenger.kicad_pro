@@ -746,15 +746,24 @@
         "filename": "Empfaenger.kicad_sch",
         "name": "Empfaenger",
         "uuid": "2f5e2bd3-24fa-4ddb-a911-7a84d4c0ceae"
+      },
+      {
+        "filename": "BluetoothBridge.kicad_sch",
+        "name": "BT-Bruecke",
+        "uuid": "cba249b9-cca6-4579-9ca8-21411a8df990"
       }
     ],
-    "used_designators": "",
+    "used_designators": "#PWR57-72,C12-13,U6-8,R16-17,RV1",
     "variants": []
   },
   "sheets": [
     [
       "2f5e2bd3-24fa-4ddb-a911-7a84d4c0ceae",
       "Empfaenger"
+    ],
+    [
+      "cba249b9-cca6-4579-9ca8-21411a8df990",
+      "BT-Bruecke"
     ]
   ],
   "text_variables": {},

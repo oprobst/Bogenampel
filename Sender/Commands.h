@@ -1,16 +1,16 @@
 /**
  * @file Commands.h
- * @brief ESP-NOW-Protokoll-Definitionen für Bogenampel V3 (Sender ↔ Empfänger → Brücke)
+ * @brief ESP-NOW-Protokoll-Definitionen für Bogenampel V3 (Sender ↔ Empfänger)
  *
  * Definiert das Funkprotokoll zwischen Sender und Empfänger.
- * WICHTIG: Diese Datei MUSS byte-identisch in Sender/, Empfaenger/ und Bruecke/ sein!
+ * WICHTIG: Diese Datei MUSS byte-identisch in Sender/ und Empfaenger/ sein!
  * Verbindliche Quelle: specs/004-v3-esp32-port/contracts/espnow-protocol.md
  *
  * Frame (6 Bytes, packed):
  * - Byte 0-1: magic 'B','3' (Filter gegen fremde ESP-NOW-Frames)
- * - Byte 2:   FrameType (CMD/HELLO/HELLO_ACK/PING/PING_ACK/SIGNAL)
+ * - Byte 2:   FrameType (CMD/HELLO/HELLO_ACK/PING/PING_ACK)
  * - Byte 3:   Sequenznummer (Dedup bei Retries)
- * - Byte 4:   RadioCommand bei FT_CMD, Anzahl Töne bei FT_SIGNAL, sonst 0x00
+ * - Byte 4:   RadioCommand (nur bei FT_CMD, sonst 0x00)
  * - Byte 5:   XOR-Checksumme (command ^ 0xFF, V2-Semantik)
  *
  * @date 2026-06-11
@@ -46,9 +46,7 @@ enum FrameType : uint8_t {
     FT_HELLO     = 0x02,  // Discovery-Broadcast Sender → alle
     FT_HELLO_ACK = 0x03,  // Discovery-Antwort Empfänger → Sender (unicast)
     FT_PING      = 0x04,  // Qualitätstest Sender → Empfänger
-    FT_PING_ACK  = 0x05,  // optionale App-Antwort (Link-ACK genügt für Qualität)
-    FT_SIGNAL    = 0x06   // Signalton Empfänger → Broadcast (Bluetooth-Brücke),
-                          // command = Anzahl Töne; Sender ignoriert den Frame
+    FT_PING_ACK  = 0x05   // optionale App-Antwort (Link-ACK genügt für Qualität)
 };
 
 // Magic-Bytes (Frame-Filter)
@@ -63,7 +61,7 @@ struct RadioPacketV3 {
     uint8_t magic1;    // '3' (0x33)
     uint8_t type;      // FrameType
     uint8_t seq;       // Sequenznummer, pro Boot zufällig initialisiert, ++ pro Sendung
-    uint8_t command;   // RadioCommand bei FT_CMD, Tonanzahl bei FT_SIGNAL, sonst 0x00
+    uint8_t command;   // RadioCommand bei type==FT_CMD, sonst 0x00
     uint8_t checksum;  // command ^ 0xFF
 } __attribute__((packed));
 

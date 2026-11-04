@@ -113,7 +113,12 @@ namespace Pins {
     constexpr uint8_t BTN_DEBUG = 20;  // D7/GPIO20 (J5): Debug-/Testtaster gegen GND,
                                        // INPUT_PULLUP, aktiv LOW
 
-    // Frei/Reserve: D5/GPIO7, D8/GPIO8 (Tacho bewusst nicht angeschlossen)
+    //-------------------------------------------------------------------------
+    // Signalleitung zur Bluetooth-Brücke (Netz BT, Blatt BluetoothBridge)
+    //-------------------------------------------------------------------------
+    constexpr uint8_t BRIDGE_TX = 7;   // D5/GPIO7 → ca. 330 Ω → GPIO4 der Brücke
+
+    // Frei/Reserve: D8/GPIO8 (Strapping-Pin; Tacho bewusst nicht angeschlossen)
 
 } // namespace Pins
 
@@ -179,15 +184,22 @@ namespace Radio {
     // WLAN-Kanal (fest, beide Geräte identisch — espnow-protocol.md)
     constexpr uint8_t CHANNEL = 1;
 
-    // Signalton an die Bluetooth-Brücke (FT_SIGNAL, Broadcast). Broadcasts
-    // bekommen kein ACK, und die Brücke teilt sich ihr Funkteil mit Classic
-    // Bluetooth — ein einzelner Frame kann im BT-Zeitschlitz untergehen. Deshalb
-    // geht jeder Signalton mehrfach mit derselben seq raus; die Brücke
-    // dedupliziert. Gesendet wird aus update(), der Loop blockiert nicht.
-    constexpr uint8_t SIGNAL_REPEATS = 3;
-    constexpr uint8_t SIGNAL_REPEAT_INTERVAL_MS = 20;
-
 } // namespace Radio
+
+//=============================================================================
+// SIGNALLEITUNG ZUR BLUETOOTH-BRÜCKE (UART, nur Empfänger → Brücke)
+//=============================================================================
+
+// Namespace wortgleich in Empfaenger/Config.h und Bruecke/Config.h halten!
+// Telegramm: START, Anzahl Töne, START ^ Anzahl. Die Prüfung verwirft Störungen
+// auf der Leitung und den undefinierten Pegel, solange der Empfänger bootet.
+namespace SignalLink {
+
+    constexpr uint32_t BAUD = 9600;  // langsam: robust auf dem Draht, 3 Bytes ≈ 3 ms
+    constexpr uint8_t FRAME_START = 0xA5;
+    constexpr uint8_t MAX_COUNT = 8;  // Alarm, längste Tonfolge
+
+} // namespace SignalLink
 
 //=============================================================================
 // TIMING-KONSTANTEN

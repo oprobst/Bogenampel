@@ -10,9 +10,66 @@
 
 namespace {
 
-    BluetoothA2DPSource a2dp;
+    // --- AFH-Kanalsperre -----------------------------------------------------
+
+    // Die Bibliothek registriert ihren GAP-Callback erst im Stack-Up-Ereignis
+    // (kurz nach start()) und wartet danach ~10 s, bevor sie verbindet. Vor dem
+    // Registrieren ginge die Quittung verloren, darum nicht direkt nach start().
+    constexpr uint32_t AFH_DELAY_MS = 2000;
+    constexpr uint32_t AFH_RETRY_MS = 1000;
+
+    volatile bool afhResultReady = false;
+    volatile esp_bt_status_t afhResult = ESP_BT_STATUS_SUCCESS;
+
+    // Die Bibliothek bietet keinen Haken für GAP-Ereignisse. Der einzige andere
+    // Weg, esp_bt_gap_register_callback(), würde ihren eigenen Callback ersetzen.
+    class BridgeA2dpSource : public BluetoothA2DPSource {
+    public:
+        // Die Bibliothek schreibt die Adresse nur bei aktivem Auto-Reconnect in den
+        // NVS. Im Suchmodus ist der aus, darum speichert die Brücke sie selbst, im
+        // selben Schlüssel, aus dem die Bibliothek beim nächsten Start liest.
+        void rememberBox(const uint8_t* address) {
+            esp_bd_addr_t bda;
+            memcpy(bda, address, sizeof(bda));
+            write_address(last_bda_nvs_name(), bda);
+        }
+
+        bool hasStoredBox() {
+            esp_bd_addr_t bda = {0};
+            static const esp_bd_addr_t EMPTY = {0};
+            return read_address(last_bda_nvs_name(), bda)
+                   && memcmp(bda, EMPTY, sizeof(bda)) != 0;
+        }
+
+    protected:
+        void app_gap_callback(esp_bt_gap_cb_event_t event,
+                              esp_bt_gap_cb_param_t* param) override {
+            if (event == ESP_BT_GAP_SET_AFH_CHANNELS_EVT) {
+                afhResult = param->set_afh_channels.stat;
+                afhResultReady = true;
+            }
+            BluetoothA2DPSource::app_gap_callback(event, param);
+        }
+    };
+
+    BridgeA2dpSource a2dp;
     AudioManager* owner = nullptr;
     uint32_t beginMs = 0;
+    bool afhPending = false;
+    uint32_t afhLastTryMs = 0;
+    bool wasConnected = false;
+
+    /**
+     * @brief Baut die AFH-Kanalkarte: Bit n von 79 (LSB von Byte 0 = Kanal 0),
+     *        1 = nutzbar, 0 = gesperrt; das oberste Bit ist reserviert (0)
+     */
+    void buildAfhMap(esp_bt_gap_afh_channels map) {
+        memset(map, 0xFF, ESP_BT_GAP_AFH_CHANNELS_LEN);
+        for (uint8_t ch = Radio::AFH_BLOCK_FIRST; ch <= Radio::AFH_BLOCK_LAST; ch++) {
+            map[ch / 8] &= (uint8_t)~(1u << (ch % 8));
+        }
+        map[ESP_BT_GAP_AFH_CHANNELS_LEN - 1] &= 0x7F;
+    }
 
     // --- Tonsynthese (nur im BT-Task benutzt) --------------------------------
 
@@ -115,12 +172,44 @@ void AudioManager::begin(bool scanMode) {
     a2dp.set_data_callback_in_frames(onData);
     a2dp.set_ssid_callback(onSsid);
     // Suchmodus: die zuletzt verbundene Box NICHT wieder ansteuern, sondern
-    // Geräte sammeln. Nach der Verbindung speichert die Bibliothek die neue
+    // Geräte sammeln. Nach der Verbindung speichert rememberSelectedBox() die neue
     // Adresse, der nächste normale Start verbindet dann direkt dorthin.
     a2dp.set_auto_reconnect(!scanMode);
     a2dp.start();
+    afhPending = true;
 
     DEBUG_PRINTF("A2DP-Source gestartet (%s)\n", scanMode ? "Suchmodus" : "Wiederverbinden");
+}
+
+void AudioManager::update() {
+    // Bei jedem Verbindungsaufbau erneut setzen: ob der Controller die Karte über
+    // eine Trennung hinweg behält, ist nicht belegt, und der Befehl kostet nichts
+    bool connected = a2dp.get_connection_state() == ESP_A2D_CONNECTION_STATE_CONNECTED;
+    if (connected && !wasConnected) afhPending = true;
+    wasConnected = connected;
+
+    uint32_t now = millis();
+    if (afhPending && now - beginMs >= AFH_DELAY_MS && now - afhLastTryMs >= AFH_RETRY_MS) {
+        afhLastTryMs = now;
+        esp_bt_gap_afh_channels map;
+        buildAfhMap(map);
+        esp_err_t err = esp_bt_gap_set_afh_channels(map);
+        if (err == ESP_OK) {
+            afhPending = false;
+        } else {
+            DEBUG_PRINTF("AFH-Sperre abgelehnt: %s\n", esp_err_to_name(err));
+        }
+    }
+
+    if (afhResultReady) {
+        afhResultReady = false;
+        if (afhResult == ESP_BT_STATUS_SUCCESS) {
+            DEBUG_PRINTF("AFH-Sperre aktiv: BT-Kanaele %u-%u gesperrt\n",
+                         Radio::AFH_BLOCK_FIRST, Radio::AFH_BLOCK_LAST);
+        } else {
+            DEBUG_PRINTF("AFH-Sperre fehlgeschlagen, Status %d\n", (int)afhResult);
+        }
+    }
 }
 
 AudioManager::State AudioManager::state() const {
@@ -217,6 +306,16 @@ bool AudioManager::handleDiscovered(const char* name, const uint8_t* address) {
                      address[0], address[1], address[2], address[3], address[4], address[5]);
     }
     return false;
+}
+
+bool AudioManager::hasStoredBox() {
+    return a2dp.hasStoredBox();
+}
+
+void AudioManager::rememberSelectedBox() {
+    if (selectionValid) {
+        a2dp.rememberBox(selectedAddress);
+    }
 }
 
 uint8_t AudioManager::deviceCount() const {

@@ -122,7 +122,8 @@ Display: Waveshare 1.54″ e-Paper V2 (GDEH0154D67/SSD1681, 200×200) als rohes 
 | Status-LED (D3) | D9 | 9 | OUT | **aktiv LOW**: 3V3 → LED → R9 220 Ω → Pin (sinkt Strom) — Strapping-Fix Befund 3 |
 | WS2811 Data (J7) | D10 | 10 | OUT | 66 Pixel, 12-V-Strip. **Neu**: über U5 (74AHCT1G125, 3,3 → 5 V, /OE fest an GND) → R14 330 Ω → J7 Pin 2. U5-Eingang ohne Pulldown → GPIO10 in `setup()` früh OUTPUT LOW |
 | POTI_GND | D4 | 6 | OUT | geschalteter Fußpunkt des Lautstärke-Potis J3 Pin 3 (Befund 2); in `setup()` OUTPUT LOW |
-| frei | D5, D8 | 7, 8 | — | Reserve (D5 nach Helligkeits-Poti-Umzug frei; D8 nach Tacho-Verzicht frei) |
+| **Signal Bluetooth-Brücke** | **D5** | **7** | OUT (UART TX) | Ergänzt 2026-11-04: 9600 Baud, Netz `BT`, Blatt `BluetoothBridge` (siehe `Bruecke/STECKBRETT.md`) |
+| frei | D8 | 8 | — | Reserve (nach Tacho-Verzicht frei; Strapping-Pin) |
 
 **Drehrichtung der Potis**: Alle drei sind regulär zwischen GND und 3V3 verdrahtet —
 **Aufdrehen liefert den höheren ADC-Wert**. Die Firmware rechnet deshalb über

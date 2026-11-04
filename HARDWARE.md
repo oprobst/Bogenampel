@@ -206,7 +206,8 @@ Netzteil: USB-C-PD-Netzteil, das **12 V / ≥ 2 A** liefert.
 | Debug-Taster (J5, aktiv LOW) | D7 | 20 | `BTN` |
 | Status-LED D3 (**aktiv LOW**) | D9 | 9 | über R9 |
 | WS2811 Data (J7, über U5) | D10 | 10 | `SIG_LED` |
-| frei | D5, D8 | 7, 8 | — |
+| Signal zur Bluetooth-Brücke (UART TX, Netz `BT`, Blatt `BluetoothBridge`) | D5 | 7 | — |
+| frei | D8 | 8 | — |
 
 ### 2.7 Platine
 
